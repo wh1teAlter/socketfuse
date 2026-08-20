@@ -1,0 +1,23 @@
+{
+  "name": "@wws/test",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:e2e": "playwright test -c playwright.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@wws/core": "workspace:*",
+    "wws": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:dev",
+    "@types/node": "catalog:dev",
+    "@types/ws": "catalog:dev",
+    "@typescript/native": "catalog:dev",
+    "vitest": "catalog:dev",
+    "ws": "catalog:dev"
+  }
+}

@@ -1,0 +1,340 @@
+import type {
+  AuthContext,
+  ClassifyContext,
+  DecodeContext,
+  EncodeContext,
+  HeartbeatContext,
+  JsonMatcher,
+  JsonProtocolOptions,
+  JsonValue,
+  MaybePromise,
+  ProtocolAdapter,
+  ProtocolCapabilities,
+  ProtocolFrame,
+  SocketData,
+} from './types'
+import { isValidAdapterId } from './config'
+import { invalidOptions, WwsError } from './errors'
+import { assertStructuredCloneable, isPlainRecord, stableSerialize } from './structured'
+
+const rawCapabilities: ProtocolCapabilities = Object.freeze({ auth: false, binary: true, heartbeat: false })
+
+export const rawProtocol: ProtocolAdapter<SocketData, SocketData> = Object.freeze({
+  capabilities: rawCapabilities,
+  classify(data: SocketData): ProtocolFrame<SocketData> {
+    return { data, type: 'data' }
+  },
+  decode(data: SocketData): SocketData {
+    return data
+  },
+  encode(data: SocketData): SocketData {
+    return data
+  },
+  id: 'raw',
+  readyWhen: 'socket-open',
+  version: 1,
+})
+
+function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonValue {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean')
+    return true
+  if (typeof value === 'number')
+    return Number.isFinite(value)
+  if (typeof value !== 'object')
+    return false
+  if (seen.has(value))
+    return false
+  seen.add(value)
+  try {
+    if (Array.isArray(value))
+      return value.every(item => isJsonValue(item, seen))
+    if (!isPlainRecord(value))
+      return false
+    return Object.values(value).every(item => isJsonValue(item, seen))
+  }
+  finally {
+    seen.delete(value)
+  }
+}
+
+function pathSegments(path: string): (string | number)[] {
+  if (path.length === 0)
+    throw invalidOptions('JSON matcher paths must not be empty', 'protocol')
+  const segments: (string | number)[] = []
+  const pattern = /([A-Z_$][\w$-]*|\[(\d+)\])/gi
+  let offset = 0
+  for (const match of path.matchAll(pattern)) {
+    if (match.index !== offset && !(offset === 0 && match.index === 0))
+      throw invalidOptions(`Invalid JSON matcher path: ${path}`, 'protocol')
+    const token = match[1]
+    if (token === undefined)
+      throw invalidOptions(`Invalid JSON matcher path: ${path}`, 'protocol')
+    segments.push(match[2] === undefined ? token : Number(match[2]))
+    offset = match.index + match[0].length
+    if (path[offset] === '.')
+      offset++
+  }
+  if (offset !== path.length || segments.length === 0)
+    throw invalidOptions(`Invalid JSON matcher path: ${path}`, 'protocol')
+  return segments
+}
+
+function getPath(value: unknown, path: string): unknown {
+  let current: unknown = value
+  for (const segment of pathSegments(path)) {
+    if (current === null || typeof current !== 'object')
+      return undefined
+    current = (current as Record<string | number, unknown>)[segment]
+  }
+  return current
+}
+
+function matches(value: unknown, matcher: JsonMatcher): boolean {
+  return Object.entries(matcher).every(([path, expected]) => stableSerialize(getPath(value, path)) === stableSerialize(expected))
+}
+
+function validateMatcher(matcher: unknown, field: string): asserts matcher is JsonMatcher {
+  if (!isPlainRecord(matcher) || !Object.entries(matcher).every(([path, expected]) => {
+    pathSegments(path)
+    return isJsonValue(expected)
+  })) {
+    throw invalidOptions(`${field} must be a JSON matcher`, field)
+  }
+}
+
+function readJson(data: SocketData): MaybePromise<JsonValue> {
+  if (typeof data === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(data)
+      if (!isJsonValue(parsed))
+        throw new Error('not JSON value')
+      return parsed
+    }
+    catch (cause) {
+      throw new WwsError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
+    }
+  }
+  if (data instanceof Blob)
+    return data.text().then(text => readJson(text))
+  try {
+    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    return readJson(new TextDecoder().decode(bytes))
+  }
+  catch (cause) {
+    throw new WwsError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
+  }
+}
+
+function resolvePlaceholder(value: string, auth: unknown): unknown {
+  if (value === '$auth')
+    return auth
+  if (!value.startsWith('$auth.'))
+    return value
+  return getPath(auth, value.slice('$auth.'.length))
+}
+
+function applyTemplate(value: JsonValue, auth: unknown): JsonValue {
+  if (typeof value === 'string')
+    return resolvePlaceholder(value, auth) as JsonValue
+  if (Array.isArray(value))
+    return value.map(item => applyTemplate(item, auth))
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, applyTemplate(item, auth)]))
+  }
+  return value
+}
+
+function validateJsonOptions(options: JsonProtocolOptions): void {
+  if (options.type !== 'json')
+    throw invalidOptions('JSON protocol type must be json', 'protocol.type')
+  const id = options.id ?? 'json'
+  if (!isValidAdapterId(id))
+    throw invalidOptions('protocol.id must be a stable lowercase adapter id', 'protocol.id')
+  const version = options.version ?? 1
+  if (!Number.isSafeInteger(version) || version <= 0)
+    throw invalidOptions('protocol.version must be a positive safe integer', 'protocol.version')
+  if (options.ready !== undefined)
+    validateMatcher(options.ready, 'protocol.ready')
+  if (options.ignore !== undefined) {
+    if (!Array.isArray(options.ignore))
+      throw invalidOptions('protocol.ignore must be an array', 'protocol.ignore')
+    options.ignore.forEach((matcher, index) => validateMatcher(matcher, `protocol.ignore[${index}]`))
+  }
+  if (options.auth !== undefined) {
+    if (!isPlainRecord(options.auth) || !('template' in options.auth) || !isJsonValue(options.auth.template))
+      throw invalidOptions('protocol.auth must contain a JSON template', 'protocol.auth')
+    assertStructuredCloneable(options.auth, 'protocol.auth')
+  }
+  if (options.heartbeat !== undefined) {
+    if (!isPlainRecord(options.heartbeat) || !('ping' in options.heartbeat) || !('pong' in options.heartbeat))
+      throw invalidOptions('protocol.heartbeat must contain ping and pong', 'protocol.heartbeat')
+    if (!isJsonValue(options.heartbeat.ping) || !isJsonValue(options.heartbeat.serverPong ?? null))
+      throw invalidOptions('protocol.heartbeat templates must be JSON values', 'protocol.heartbeat')
+    validateMatcher(options.heartbeat.pong, 'protocol.heartbeat.pong')
+    if (options.heartbeat.serverPing !== undefined)
+      validateMatcher(options.heartbeat.serverPing, 'protocol.heartbeat.serverPing')
+    assertStructuredCloneable(options.heartbeat, 'protocol.heartbeat')
+  }
+  assertStructuredCloneable(options, 'protocol')
+}
+
+export function createJsonProtocolAdapter(options: JsonProtocolOptions): ProtocolAdapter<JsonValue, JsonValue, unknown> {
+  validateJsonOptions(options)
+  const id = options.id ?? 'json'
+  const version = options.version ?? 1
+  const ready = options.ready
+  const ignore = options.ignore ?? []
+  const heartbeat = options.heartbeat
+  const capabilities: ProtocolCapabilities = Object.freeze({
+    auth: options.auth !== undefined,
+    binary: false,
+    heartbeat: heartbeat !== undefined,
+  })
+  const descriptorConfig = Object.freeze(JSON.parse(JSON.stringify(options)) as Record<string, unknown>)
+
+  return Object.freeze({
+    capabilities,
+    classify(data: JsonValue): ProtocolFrame<JsonValue> {
+      if (ready !== undefined && matches(data, ready))
+        return { type: 'ready' }
+      if (heartbeat !== undefined && matches(data, heartbeat.pong))
+        return { type: 'pong' }
+      if (heartbeat?.serverPing !== undefined && matches(data, heartbeat.serverPing))
+        return { data, type: 'ping' }
+      if (ignore.some(matcher => matches(data, matcher)))
+        return { type: 'ignore' }
+      return { data, type: 'data' }
+    },
+    createAuth(auth: unknown, context: AuthContext): JsonValue {
+      void context
+      if (options.auth === undefined)
+        throw new WwsError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare an auth template')
+      return applyTemplate(options.auth.template, auth)
+    },
+    createPing(context: HeartbeatContext): JsonValue {
+      void context
+      if (heartbeat === undefined)
+        throw new WwsError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a heartbeat template')
+      return heartbeat.ping
+    },
+    createPong(ping: ProtocolFrame<JsonValue>, context: HeartbeatContext): JsonValue {
+      void ping
+      void context
+      if (heartbeat?.serverPong === undefined)
+        throw new WwsError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a server pong template')
+      return heartbeat.serverPong
+    },
+    decode(data: SocketData, context: DecodeContext): MaybePromise<JsonValue> {
+      void context
+      return readJson(data)
+    },
+    encode(data: JsonValue, context: EncodeContext): string {
+      void context
+      try {
+        if (!isJsonValue(data))
+          throw new Error('Value is not JSON-compatible')
+        return JSON.stringify(data)
+      }
+      catch (cause) {
+        throw new WwsError('ENCODE_FAILED', 'Unable to encode JSON message', { cause })
+      }
+    },
+    id,
+    readyWhen: ready === undefined ? 'socket-open' : 'adapter-frame',
+    sharedConfig: descriptorConfig,
+    version,
+  })
+}
+
+export function getProtocolDescriptor(protocol: 'raw' | JsonProtocolOptions): {
+  readonly kind: 'raw' | 'json'
+  readonly id: string
+  readonly version: number
+  readonly capabilities: ProtocolCapabilities
+  readonly readyWhen: 'socket-open' | 'adapter-frame'
+  readonly sharedConfig: Readonly<Record<string, unknown>>
+} {
+  if (protocol === 'raw')
+    return Object.freeze({ capabilities: rawCapabilities, id: 'raw', kind: 'raw', readyWhen: 'socket-open', sharedConfig: {}, version: 1 })
+  const adapter = createJsonProtocolAdapter(protocol)
+  return Object.freeze({ capabilities: adapter.capabilities, id: adapter.id, kind: 'json', readyWhen: adapter.readyWhen ?? 'socket-open', sharedConfig: adapter.sharedConfig ?? {}, version: adapter.version })
+}
+
+export function validateProtocolAdapter(value: unknown): asserts value is ProtocolAdapter<unknown, unknown, unknown> {
+  if (!isPlainRecord(value)
+    || typeof value.id !== 'string'
+    || !isValidAdapterId(value.id)
+    || typeof value.version !== 'number'
+    || !Number.isSafeInteger(value.version)
+    || value.version <= 0
+    || !isPlainRecord(value.capabilities)
+    || typeof value.capabilities.auth !== 'boolean'
+    || typeof value.capabilities.binary !== 'boolean'
+    || typeof value.capabilities.heartbeat !== 'boolean'
+    || typeof value.encode !== 'function'
+    || typeof value.decode !== 'function'
+    || typeof value.classify !== 'function') {
+    throw invalidOptions('protocol adapter has an invalid shape', 'protocol')
+  }
+}
+
+export async function encodeWithAdapter<Incoming, Outgoing, Auth>(
+  adapter: ProtocolAdapter<Incoming, Outgoing, Auth>,
+  data: Outgoing,
+  context: EncodeContext,
+): Promise<SocketData> {
+  try {
+    const encoded = await adapter.encode(data, context)
+    if (typeof encoded !== 'string'
+      && !(typeof Blob !== 'undefined' && encoded instanceof Blob)
+      && !(encoded instanceof ArrayBuffer)
+      && !ArrayBuffer.isView(encoded)) {
+      throw new Error('Adapter returned unsupported WebSocket data')
+    }
+    return encoded
+  }
+  catch (cause) {
+    if (cause instanceof WwsError && cause.code === 'ENCODE_FAILED')
+      throw cause
+    throw new WwsError('ENCODE_FAILED', 'Protocol adapter encode failed', { cause })
+  }
+}
+
+export async function decodeAndClassify<Incoming, Outgoing, Auth>(
+  adapter: ProtocolAdapter<Incoming, Outgoing, Auth>,
+  data: SocketData,
+  context: DecodeContext & ClassifyContext,
+): Promise<ProtocolFrame<Incoming>> {
+  let decoded: Incoming
+  try {
+    decoded = await adapter.decode(data, context)
+  }
+  catch (cause) {
+    if (cause instanceof WwsError && cause.code === 'DECODE_FAILED')
+      throw cause
+    throw new WwsError('DECODE_FAILED', 'Protocol adapter decode failed', { cause })
+  }
+  try {
+    const frame = await adapter.classify(decoded, context)
+    if (frame === null || typeof frame !== 'object' || !['data', 'ready', 'ping', 'pong', 'ignore', 'fatal'].includes(frame.type))
+      throw new Error('Adapter returned an invalid protocol frame')
+    return frame
+  }
+  catch (cause) {
+    if (cause instanceof WwsError && cause.code === 'PROTOCOL_ERROR')
+      throw cause
+    throw new WwsError('PROTOCOL_ERROR', 'Protocol adapter classify failed', { cause })
+  }
+}
+
+export class OrderedProtocol<Incoming, Outgoing, Auth = unknown> {
+  private tail: Promise<void> = Promise.resolve()
+
+  constructor(readonly adapter: ProtocolAdapter<Incoming, Outgoing, Auth>) {}
+
+  process(data: SocketData, context: DecodeContext & ClassifyContext): Promise<ProtocolFrame<Incoming>> {
+    const result = this.tail.then(() => decodeAndClassify(this.adapter, data, context))
+    this.tail = result.then(() => undefined, () => undefined)
+    return result
+  }
+}

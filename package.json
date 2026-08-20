@@ -1,0 +1,43 @@
+{
+  "name": "wws-workspace",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": "^22.18.0 || >=24.11.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @wws/core build && pnpm --filter wws build && pnpm --filter @wws/playground build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm docs:check && pnpm release:verify",
+    "dev": "pnpm --filter @wws/playground dev",
+    "docs:check": "pnpm --filter @wws/docs build",
+    "docs:dev": "pnpm --filter @wws/docs dev",
+    "lint": "eslint . --cache --concurrency=auto",
+    "lint:fix": "eslint . --cache --concurrency=auto --fix",
+    "release:verify": "node scripts/verify-release.mjs",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "pnpm --filter @wws/test test:e2e",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r --if-present typecheck"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "catalog:dev",
+    "@arethetypeswrong/core": "catalog:dev",
+    "@changesets/cli": "catalog:dev",
+    "@playwright/test": "catalog:dev",
+    "@types/node": "catalog:dev",
+    "@types/ws": "catalog:dev",
+    "@typescript/native": "catalog:dev",
+    "eslint": "catalog:dev",
+    "eslint-plugin-format": "catalog:dev",
+    "publint": "catalog:dev",
+    "rolldown": "catalog:dev",
+    "tsdown": "catalog:dev",
+    "typescript": "catalog:dev",
+    "vite": "catalog:dev",
+    "vitepress": "catalog:dev",
+    "vitest": "catalog:dev",
+    "ws": "catalog:dev"
+  }
+}

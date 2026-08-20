@@ -1,0 +1,14 @@
+*.log
+*.tgz
+.cache
+.DS_Store
+.eslintcache
+.idea
+.temp
+.vitepress/cache
+.vitepress/dist
+coverage
+dist
+node_modules
+playwright-report
+test-results

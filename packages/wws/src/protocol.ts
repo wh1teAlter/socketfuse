@@ -1,0 +1,20 @@
+export { rawProtocol } from '@wws/core'
+export type {
+  AuthContext,
+  ClassifyContext,
+  DecodeContext,
+  EncodeContext,
+  HeartbeatContext,
+  JsonAuthTemplate,
+  JsonHeartbeatTemplate,
+  JsonMatcher,
+  JsonProtocolOptions,
+  JsonValue,
+  MaybePromise,
+  ProtocolAdapter,
+  ProtocolCapabilities,
+  ProtocolContext,
+  ProtocolFrame,
+  SafeCloseInfo,
+  SocketData,
+} from '@wws/core'

@@ -1,0 +1,44 @@
+{
+  "name": "wws",
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Share WebSocket connections across same-origin browser tabs with SharedWorker.",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["LICENSE", "README.md", "dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node ../../scripts/generate-inline-worker.mjs && tsdown",
+    "prepack": "pnpm build",
+    "test": "vitest run src",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/core": "catalog:dev",
+    "@typescript/native": "catalog:dev",
+    "@wws/core": "workspace:*",
+    "publint": "catalog:dev",
+    "rolldown": "catalog:dev",
+    "tsdown": "catalog:dev",
+    "vitest": "catalog:dev"
+  }
+}
