@@ -123,3 +123,117 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
   const prototype = Object.getPrototypeOf(value)
   return prototype === Object.prototype || prototype === null
 }
+
+/**
+ * Conservatively estimate the memory-relevant size of structured-clone data.
+ * It is intentionally not a JSON estimate: binary values retain byteLength,
+ * Maps/Sets are traversed, and repeated/cyclic references are bounded.
+ */
+export function estimateStructuredCloneBytes(value: unknown, limit: number = Number.POSITIVE_INFINITY): number {
+  const encoder = new TextEncoder()
+  const seen = new Set<object>()
+  let total = 0
+
+  const add = (bytes: number): void => {
+    total += bytes
+    if (total > limit)
+      total = limit + 1
+  }
+  const textBytes = (text: string): number => encoder.encode(text).byteLength
+  const visit = (current: unknown): void => {
+    if (total > limit)
+      return
+    if (current === null || current === undefined) {
+      add(1)
+      return
+    }
+    switch (typeof current) {
+      case 'boolean':
+        add(1)
+        return
+      case 'number':
+        add(8)
+        return
+      case 'bigint':
+        add(8 + textBytes(current.toString()))
+        return
+      case 'string':
+        add(4 + textBytes(current))
+        return
+      case 'symbol':
+      case 'function':
+        add(limit + 1)
+        return
+    }
+    if (typeof current !== 'object')
+      return
+    if (seen.has(current)) {
+      add(8)
+      return
+    }
+    seen.add(current)
+    try {
+      if (typeof Blob !== 'undefined' && current instanceof Blob) {
+        add(16 + current.size + textBytes(current.type))
+        return
+      }
+      if (current instanceof ArrayBuffer) {
+        add(16 + current.byteLength)
+        return
+      }
+      if (ArrayBuffer.isView(current)) {
+        add(24 + current.byteLength)
+        return
+      }
+      if (current instanceof Date) {
+        add(16)
+        return
+      }
+      if (current instanceof RegExp) {
+        add(16 + textBytes(current.source) + textBytes(current.flags))
+        return
+      }
+      if (Array.isArray(current)) {
+        add(16)
+        for (const item of current)
+          visit(item)
+        return
+      }
+      if (current instanceof Map) {
+        add(24)
+        for (const [key, item] of current) {
+          visit(key)
+          visit(item)
+        }
+        return
+      }
+      if (current instanceof Set) {
+        add(24)
+        for (const item of current)
+          visit(item)
+        return
+      }
+      if (current instanceof Error) {
+        add(limit + 1)
+        return
+      }
+      const prototype = Object.getPrototypeOf(current)
+      if (prototype !== Object.prototype && prototype !== null) {
+        add(limit + 1)
+        return
+      }
+      add(16)
+      for (const key of Object.keys(current as Record<string, unknown>)) {
+        add(textBytes(key))
+        visit((current as Record<string, unknown>)[key])
+      }
+    }
+    finally {
+      // A repeated reference remains known; keeping it in `seen` is required
+      // for both shared subgraphs and cycles.
+    }
+  }
+
+  visit(value)
+  return total
+}

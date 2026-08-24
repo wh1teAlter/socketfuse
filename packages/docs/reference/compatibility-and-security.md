@@ -7,7 +7,10 @@ available. When it is absent, `fallback: 'direct'` keeps the client API while
 restricting physical sharing to one JavaScript realm. `fallback: 'error'`
 rejects that downgrade.
 
-Importing `wws` is SSR-safe; creating a client requires browser WebSocket APIs.
+Importing `wws` is SSR-safe; creating a client requires a browser **page**
+realm with both `window` and `document`. A Node runtime exposing global
+`WebSocket` is not sufficient: `createWebSocket()` throws
+`ENVIRONMENT_UNSUPPORTED` there and never opens a direct fallback socket.
 Create clients in browser-only lifecycle code, never during server render.
 
 ## Deployment policy

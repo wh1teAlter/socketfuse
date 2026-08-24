@@ -9,7 +9,10 @@ allows a `data:` Worker source.
 `fallback: 'direct'` is the default. It uses a direct, page-local WebSocket
 only when SharedWorker support, construction, loading or initialization fails.
 It does not turn network, authentication, heartbeat or server-close failures
-into a different transport.
+into a different transport. A malformed Worker control response is an error,
+not a reason to silently downgrade. After a SharedWorker has been selected,
+lifecycle recovery recreates only that shared transport and never changes it
+to direct.
 
 Set `fallback: 'error'` for a hard single-connection policy:
 

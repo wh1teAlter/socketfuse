@@ -1,6 +1,6 @@
 # Interface: CreateWebSocketOptions\<Incoming, Outgoing, Auth\>
 
-Defined in: [core/src/types.ts:327](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L327)
+Defined in: [core/src/types.ts:331](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L331)
 
 Configuration for a page client and its shared physical connection.
 
@@ -28,7 +28,7 @@ configuration fingerprint.
 
 > **id**: `string`
 
-Defined in: [core/src/types.ts:329](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L329)
+Defined in: [core/src/types.ts:333](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L333)
 
 Stable application identity used to share a connection across same-origin tabs.
 
@@ -38,7 +38,7 @@ Stable application identity used to share a connection across same-origin tabs.
 
 > `optional` **protocols?**: `string` \| readonly `string`[]
 
-Defined in: [core/src/types.ts:331](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L331)
+Defined in: [core/src/types.ts:335](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L335)
 
 WebSocket subprotocol token or ordered tokens. Defaults to none.
 
@@ -48,7 +48,7 @@ WebSocket subprotocol token or ordered tokens. Defaults to none.
 
 > `optional` **worker?**: () => `SharedWorker`
 
-Defined in: [core/src/types.ts:333](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L333)
+Defined in: [core/src/types.ts:337](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L337)
 
 Page-local custom SharedWorker factory. Defaults to the built-in inline Worker.
 
@@ -62,7 +62,7 @@ Page-local custom SharedWorker factory. Defaults to the built-in inline Worker.
 
 > `optional` **protocol?**: `ProtocolSelector`\<`Incoming`, `Outgoing`, `Auth`\>
 
-Defined in: [core/src/types.ts:335](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L335)
+Defined in: [core/src/types.ts:339](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L339)
 
 Message protocol. Defaults to the raw adapter.
 
@@ -72,7 +72,7 @@ Message protocol. Defaults to the raw adapter.
 
 > `optional` **fallback?**: `"direct"` \| `"error"`
 
-Defined in: [core/src/types.ts:337](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L337)
+Defined in: [core/src/types.ts:341](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L341)
 
 Page-local behavior when Worker setup fails. Defaults to `direct`.
 
@@ -82,7 +82,7 @@ Page-local behavior when Worker setup fails. Defaults to `direct`.
 
 > `optional` **immediate?**: `boolean`
 
-Defined in: [core/src/types.ts:339](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L339)
+Defined in: [core/src/types.ts:343](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L343)
 
 Open immediately after creation. Page-local; defaults to `true`.
 
@@ -92,7 +92,7 @@ Open immediately after creation. Page-local; defaults to `true`.
 
 > `optional` **autoClose?**: `boolean`
 
-Defined in: [core/src/types.ts:341](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L341)
+Defined in: [core/src/types.ts:345](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L345)
 
 Detach automatically during page teardown. Page-local; defaults to `true`.
 
@@ -102,7 +102,7 @@ Detach automatically during page teardown. Page-local; defaults to `true`.
 
 > `optional` **autoReconnect?**: `boolean` \| `Partial`\<[`ReconnectOptions`](ReconnectOptions.md)\>
 
-Defined in: [core/src/types.ts:343](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L343)
+Defined in: [core/src/types.ts:347](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L347)
 
 Shared reconnect policy. `true` or omission uses exponential defaults.
 
@@ -112,7 +112,7 @@ Shared reconnect policy. `true` or omission uses exponential defaults.
 
 > `optional` **connectionTimeout?**: `number`
 
-Defined in: [core/src/types.ts:345](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L345)
+Defined in: [core/src/types.ts:349](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L349)
 
 Shared open/handshake timeout in milliseconds. Defaults to `10000`.
 
@@ -122,7 +122,7 @@ Shared open/handshake timeout in milliseconds. Defaults to `10000`.
 
 > `optional` **binaryType?**: `"arraybuffer"` \| `"blob"`
 
-Defined in: [core/src/types.ts:347](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L347)
+Defined in: [core/src/types.ts:351](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L351)
 
 Shared binary receive representation. Defaults to `arraybuffer`.
 
@@ -132,7 +132,7 @@ Shared binary receive representation. Defaults to `arraybuffer`.
 
 > `optional` **heartbeat?**: `boolean` \| `Partial`\<[`HeartbeatOptions`](HeartbeatOptions.md)\>
 
-Defined in: [core/src/types.ts:349](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L349)
+Defined in: [core/src/types.ts:353](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L353)
 
 Shared heartbeat policy. Disabled by default and requires adapter support.
 
@@ -142,7 +142,7 @@ Shared heartbeat policy. Disabled by default and requires adapter support.
 
 > `optional` **queue?**: `boolean` \| `Partial`\<[`QueueOptions`](QueueOptions.md)\>
 
-Defined in: [core/src/types.ts:351](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L351)
+Defined in: [core/src/types.ts:355](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L355)
 
 Shared bounded outbound queue policy. Queueing is disabled by default.
 
@@ -152,7 +152,7 @@ Shared bounded outbound queue policy. Queueing is disabled by default.
 
 > `optional` **backpressure?**: `Partial`\<[`BackpressureOptions`](BackpressureOptions.md)\>
 
-Defined in: [core/src/types.ts:353](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L353)
+Defined in: [core/src/types.ts:357](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L357)
 
 Shared buffered-amount thresholds.
 
@@ -162,7 +162,7 @@ Shared buffered-amount thresholds.
 
 > `optional` **lease?**: `Partial`\<[`LeaseOptions`](LeaseOptions.md)\>
 
-Defined in: [core/src/types.ts:355](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L355)
+Defined in: [core/src/types.ts:359](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L359)
 
 Shared client liveness lease.
 
@@ -172,7 +172,7 @@ Shared client liveness lease.
 
 > `optional` **lifecycle?**: [`LifecycleOptions`](LifecycleOptions.md)
 
-Defined in: [core/src/types.ts:357](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L357)
+Defined in: [core/src/types.ts:361](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L361)
 
 Page-local freeze/restore handling. Disabled by default.
 
@@ -180,11 +180,11 @@ Page-local freeze/restore handling. Disabled by default.
 
 ### limits?
 
-> `optional` **limits?**: `Partial`\<[`ResourceLimits`](ResourceLimits.md)\>
+> `optional` **limits?**: `Partial`\<[`ConnectionLimits`](ConnectionLimits.md)\>
 
-Defined in: [core/src/types.ts:359](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L359)
+Defined in: [core/src/types.ts:363](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L363)
 
-Shared Worker resource limits.
+Shared physical connection resource limits.
 
 ***
 
@@ -192,7 +192,7 @@ Shared Worker resource limits.
 
 > `optional` **idleGraceMs?**: `number`
 
-Defined in: [core/src/types.ts:361](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L361)
+Defined in: [core/src/types.ts:365](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L365)
 
 Delay before closing an unused physical socket, in milliseconds. Defaults to `5000`.
 
@@ -202,7 +202,7 @@ Delay before closing an unused physical socket, in milliseconds. Defaults to `50
 
 > `optional` **logger?**: [`WwsLogger`](../type-aliases/WwsLogger.md)
 
-Defined in: [core/src/types.ts:363](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L363)
+Defined in: [core/src/types.ts:367](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L367)
 
 Page-local sink for sanitized operational diagnostics.
 
@@ -212,7 +212,7 @@ Page-local sink for sanitized operational diagnostics.
 
 > `optional` **onConnected?**: (`client`, `snapshot`) => `void`
 
-Defined in: [core/src/types.ts:365](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L365)
+Defined in: [core/src/types.ts:369](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L369)
 
 Page-local callback invoked when the logical client opens.
 
@@ -236,7 +236,7 @@ Page-local callback invoked when the logical client opens.
 
 > `optional` **onDisconnected?**: (`client`, `event`) => `void`
 
-Defined in: [core/src/types.ts:367](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L367)
+Defined in: [core/src/types.ts:371](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L371)
 
 Page-local callback invoked when the logical client closes.
 
@@ -260,7 +260,7 @@ Page-local callback invoked when the logical client closes.
 
 > `optional` **onError?**: (`client`, `error`) => `void`
 
-Defined in: [core/src/types.ts:369](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L369)
+Defined in: [core/src/types.ts:373](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L373)
 
 Page-local callback invoked for a sanitized `WwsError`.
 
@@ -284,7 +284,7 @@ Page-local callback invoked for a sanitized `WwsError`.
 
 > `optional` **onMessage?**: (`client`, `event`) => `void`
 
-Defined in: [core/src/types.ts:371](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L371)
+Defined in: [core/src/types.ts:375](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L375)
 
 Initial page-local business message callback; more can be added with `onMessage`.
 

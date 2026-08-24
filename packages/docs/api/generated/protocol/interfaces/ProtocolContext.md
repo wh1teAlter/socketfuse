@@ -1,6 +1,6 @@
 # Interface: ProtocolContext
 
-Defined in: [core/src/types.ts:246](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L246)
+Defined in: [core/src/types.ts:250](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L250)
 
 Timestamp supplied to protocol adapter operations.
 
@@ -18,4 +18,4 @@ Timestamp supplied to protocol adapter operations.
 
 > `readonly` **now**: `number`
 
-Defined in: [core/src/types.ts:247](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L247)
+Defined in: [core/src/types.ts:251](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L251)

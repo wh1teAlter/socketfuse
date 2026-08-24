@@ -1,6 +1,6 @@
 # Interface: ProtocolAdapter\<Incoming, Outgoing, Auth\>
 
-Defined in: [core/src/types.ts:299](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L299)
+Defined in: [core/src/types.ts:303](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L303)
 
 Defines encoding and control-frame semantics for one application protocol.
 
@@ -34,7 +34,7 @@ Revisioned authentication value accepted by `updateAuth`.
 
 > `readonly` **id**: `string`
 
-Defined in: [core/src/types.ts:300](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L300)
+Defined in: [core/src/types.ts:304](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L304)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [core/src/types.ts:300](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **version**: `number`
 
-Defined in: [core/src/types.ts:301](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L301)
+Defined in: [core/src/types.ts:305](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L305)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [core/src/types.ts:301](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **capabilities**: [`ProtocolCapabilities`](../../index/interfaces/ProtocolCapabilities.md)
 
-Defined in: [core/src/types.ts:302](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L302)
+Defined in: [core/src/types.ts:306](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L306)
 
 ***
 
@@ -58,7 +58,7 @@ Defined in: [core/src/types.ts:302](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **sharedConfig?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [core/src/types.ts:303](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L303)
+Defined in: [core/src/types.ts:307](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L307)
 
 ***
 
@@ -66,7 +66,7 @@ Defined in: [core/src/types.ts:303](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **readyWhen?**: `"socket-open"` \| `"adapter-frame"`
 
-Defined in: [core/src/types.ts:304](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L304)
+Defined in: [core/src/types.ts:308](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L308)
 
 ***
 
@@ -74,7 +74,7 @@ Defined in: [core/src/types.ts:304](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > **encode**: (`data`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<[`SocketData`](../../index/type-aliases/SocketData.md)\>
 
-Defined in: [core/src/types.ts:305](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L305)
+Defined in: [core/src/types.ts:309](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L309)
 
 #### Parameters
 
@@ -96,7 +96,7 @@ Defined in: [core/src/types.ts:305](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > **decode**: (`data`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Incoming`\>
 
-Defined in: [core/src/types.ts:306](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L306)
+Defined in: [core/src/types.ts:310](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L310)
 
 #### Parameters
 
@@ -118,7 +118,7 @@ Defined in: [core/src/types.ts:306](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > **classify**: (`data`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<[`ProtocolFrame`](../type-aliases/ProtocolFrame.md)\<`Incoming`\>\>
 
-Defined in: [core/src/types.ts:307](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L307)
+Defined in: [core/src/types.ts:311](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L311)
 
 #### Parameters
 
@@ -140,7 +140,7 @@ Defined in: [core/src/types.ts:307](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `optional` **createAuth?**: (`auth`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Outgoing` \| readonly `Outgoing`[]\>
 
-Defined in: [core/src/types.ts:308](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L308)
+Defined in: [core/src/types.ts:312](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L312)
 
 #### Parameters
 
@@ -162,7 +162,7 @@ Defined in: [core/src/types.ts:308](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `optional` **createPing?**: (`context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Outgoing`\>
 
-Defined in: [core/src/types.ts:309](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L309)
+Defined in: [core/src/types.ts:313](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L313)
 
 #### Parameters
 
@@ -180,7 +180,7 @@ Defined in: [core/src/types.ts:309](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `optional` **createPong?**: (`ping`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Outgoing`\>
 
-Defined in: [core/src/types.ts:310](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L310)
+Defined in: [core/src/types.ts:314](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L314)
 
 #### Parameters
 
@@ -202,7 +202,7 @@ Defined in: [core/src/types.ts:310](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `optional` **shouldReconnect?**: (`close`) => `boolean`
 
-Defined in: [core/src/types.ts:311](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L311)
+Defined in: [core/src/types.ts:315](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L315)
 
 #### Parameters
 

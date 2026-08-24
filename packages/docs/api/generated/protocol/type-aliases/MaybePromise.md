@@ -2,7 +2,7 @@
 
 > **MaybePromise**\<`Value`\> = `Value` \| `Promise`\<`Value`\>
 
-Defined in: [core/src/types.ts:286](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L286)
+Defined in: [core/src/types.ts:290](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L290)
 
 ## Type Parameters
 

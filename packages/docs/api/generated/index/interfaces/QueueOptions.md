@@ -1,6 +1,6 @@
 # Interface: QueueOptions
 
-Defined in: [core/src/types.ts:61](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L61)
+Defined in: [core/src/types.ts:61](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L61)
 
 Shared bounded outbound queue policy.
 
@@ -10,7 +10,7 @@ Shared bounded outbound queue policy.
 
 > **whenDisconnected**: `boolean`
 
-Defined in: [core/src/types.ts:63](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L63)
+Defined in: [core/src/types.ts:63](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L63)
 
 Queue while the socket is disconnected. Defaults to `false`.
 
@@ -20,7 +20,7 @@ Queue while the socket is disconnected. Defaults to `false`.
 
 > **whenBackpressured**: `boolean`
 
-Defined in: [core/src/types.ts:65](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L65)
+Defined in: [core/src/types.ts:65](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L65)
 
 Queue while buffered data is above the high-water mark. Defaults to `false`.
 
@@ -30,7 +30,7 @@ Queue while buffered data is above the high-water mark. Defaults to `false`.
 
 > **maxMessages**: `number`
 
-Defined in: [core/src/types.ts:67](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L67)
+Defined in: [core/src/types.ts:67](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L67)
 
 Maximum queued message count. Defaults to `100`.
 
@@ -40,6 +40,6 @@ Maximum queued message count. Defaults to `100`.
 
 > **maxBytes**: `number`
 
-Defined in: [core/src/types.ts:69](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L69)
+Defined in: [core/src/types.ts:69](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L69)
 
 Maximum encoded queue size. Defaults to 1 MiB.

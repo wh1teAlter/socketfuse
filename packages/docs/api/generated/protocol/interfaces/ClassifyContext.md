@@ -1,6 +1,6 @@
 # Interface: ClassifyContext
 
-Defined in: [core/src/types.ts:258](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L258)
+Defined in: [core/src/types.ts:262](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L262)
 
 Timestamp supplied to protocol adapter operations.
 
@@ -14,7 +14,7 @@ Timestamp supplied to protocol adapter operations.
 
 > `readonly` **now**: `number`
 
-Defined in: [core/src/types.ts:247](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L247)
+Defined in: [core/src/types.ts:251](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L251)
 
 #### Inherited from
 
@@ -26,4 +26,4 @@ Defined in: [core/src/types.ts:247](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **receivedAt**: `number`
 
-Defined in: [core/src/types.ts:259](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L259)
+Defined in: [core/src/types.ts:263](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L263)

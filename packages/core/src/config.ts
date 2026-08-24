@@ -1,5 +1,6 @@
 import type {
   BackpressureOptions,
+  ConnectionLimits,
   CreateWebSocketOptions,
   HeartbeatOptions,
   JsonProtocolOptions,
@@ -9,12 +10,12 @@ import type {
   ProtocolCapabilities,
   QueueOptions,
   ReconnectOptions,
-  ResourceLimits,
   SocketData,
   WwsLogger,
 } from './types'
 import {
   DEFAULT_BACKPRESSURE_OPTIONS,
+  DEFAULT_CONNECTION_LIMITS,
   DEFAULT_CONNECTION_TIMEOUT,
   DEFAULT_HEARTBEAT_OPTIONS,
   DEFAULT_IDLE_GRACE_MS,
@@ -23,7 +24,6 @@ import {
   DEFAULT_RECONNECT_OPTIONS,
   DEFAULT_REPLAY_MAX_BYTES,
   DEFAULT_REPLAY_MAX_MESSAGES,
-  DEFAULT_RESOURCE_LIMITS,
 } from './constants'
 import { createJsonProtocolAdapter, getProtocolDescriptor, rawProtocol, validateProtocolAdapter } from './protocol'
 import { assertStructuredCloneable, stableHash, stableSerialize } from './structured'
@@ -48,7 +48,7 @@ export interface SharedConnectionConfig {
   readonly queue: Readonly<QueueOptions>
   readonly backpressure: Readonly<BackpressureOptions>
   readonly lease: Readonly<LeaseOptions>
-  readonly limits: Readonly<ResourceLimits>
+  readonly limits: Readonly<ConnectionLimits>
   readonly idleGraceMs: number
 }
 
@@ -203,15 +203,12 @@ function normalizeLease(value: Partial<LeaseOptions> | undefined): Readonly<Leas
   return Object.freeze({ interval, timeout })
 }
 
-function normalizeLimits(value: Partial<ResourceLimits> | undefined): Readonly<ResourceLimits> {
+function normalizeLimits(value: Partial<ConnectionLimits> | undefined): Readonly<ConnectionLimits> {
   if (value !== undefined && (value === null || typeof value !== 'object'))
     throw invalidOptions('limits must be an options object', 'limits')
   return Object.freeze({
-    maxClientsPerConnection: positiveInteger(value?.maxClientsPerConnection ?? DEFAULT_RESOURCE_LIMITS.maxClientsPerConnection, 'limits.maxClientsPerConnection'),
-    maxControlEnvelopeBytes: positiveInteger(value?.maxControlEnvelopeBytes ?? DEFAULT_RESOURCE_LIMITS.maxControlEnvelopeBytes, 'limits.maxControlEnvelopeBytes'),
-    maxEncodedMessageBytes: positiveInteger(value?.maxEncodedMessageBytes ?? DEFAULT_RESOURCE_LIMITS.maxEncodedMessageBytes, 'limits.maxEncodedMessageBytes'),
-    maxPortsPerWorker: positiveInteger(value?.maxPortsPerWorker ?? DEFAULT_RESOURCE_LIMITS.maxPortsPerWorker, 'limits.maxPortsPerWorker'),
-    unattachedPortTimeoutMs: positiveNumber(value?.unattachedPortTimeoutMs ?? DEFAULT_RESOURCE_LIMITS.unattachedPortTimeoutMs, 'limits.unattachedPortTimeoutMs'),
+    maxClientsPerConnection: positiveInteger(value?.maxClientsPerConnection ?? DEFAULT_CONNECTION_LIMITS.maxClientsPerConnection, 'limits.maxClientsPerConnection'),
+    maxEncodedMessageBytes: positiveInteger(value?.maxEncodedMessageBytes ?? DEFAULT_CONNECTION_LIMITS.maxEncodedMessageBytes, 'limits.maxEncodedMessageBytes'),
   })
 }
 

@@ -1,6 +1,6 @@
 # Interface: SharedWebSocketRuntime
 
-Defined in: [core/src/worker-runtime.ts:52](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L52)
+Defined in: [core/src/worker-runtime.ts:59](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L59)
 
 SharedWorker-side runtime that accepts page ports and owns connections.
 
@@ -10,7 +10,7 @@ SharedWorker-side runtime that accepts page ports and owns connections.
 
 > `readonly` **instanceId**: `string`
 
-Defined in: [core/src/worker-runtime.ts:53](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L53)
+Defined in: [core/src/worker-runtime.ts:60](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L60)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [core/src/worker-runtime.ts:53](https://github.com/wh1teAlter/wws/bl
 
 > **connect**: (`port`) => `void`
 
-Defined in: [core/src/worker-runtime.ts:54](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L54)
+Defined in: [core/src/worker-runtime.ts:61](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L61)
 
 #### Parameters
 
@@ -36,7 +36,7 @@ Defined in: [core/src/worker-runtime.ts:54](https://github.com/wh1teAlter/wws/bl
 
 > **dispose**: () => `void`
 
-Defined in: [core/src/worker-runtime.ts:55](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L55)
+Defined in: [core/src/worker-runtime.ts:62](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L62)
 
 #### Returns
 

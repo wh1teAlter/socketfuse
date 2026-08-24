@@ -32,6 +32,7 @@ export interface ConnectionSink<Incoming> {
   readonly onState?: (snapshot: ConnectionSnapshot, reasonCode?: string) => void
   readonly onOpen?: (snapshot: ConnectionSnapshot) => void
   readonly onMessage?: (data: Incoming, receivedAt: number, replayed?: boolean) => void
+  readonly onOverflow?: (event: { readonly direction: 'inbound' | 'replay', readonly strategy: 'drop-newest' | 'drop-oldest', readonly droppedMessages: number, readonly droppedBytes: number }) => void
   readonly onClose?: (event: SafeCloseInfo & { readonly willReconnect: boolean }) => void
   readonly onError?: (error: WwsError) => void
 }
@@ -43,6 +44,8 @@ export interface ConnectionControllerOptions<Incoming, Outgoing, Auth> {
   readonly random?: () => number
   readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
   readonly clearTimeout?: (handle: TimerHandle) => void
+  /** Called once an ownerless controller has completed intentional idle close. */
+  readonly onIdle?: (controller: ConnectionController<Incoming, Outgoing, Auth>) => void
 }
 
 interface OpenWaiter {
@@ -117,6 +120,10 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private lastError: WwsError | null = null
   private intentionalClose = false
   private forceReconnect = false
+  private activeAttempt = 0
+  private authReady: { readonly attempt: number, readonly promise: Promise<void> } | undefined
+  private idleNotified = false
+  private idleCloseRequested = false
   private disposed = false
   private outgoingTail: Promise<void> = Promise.resolve()
 
@@ -218,6 +225,8 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     if (!this.sinks.has(sink.id) && this.sinks.size >= this.options.config.shared.limits.maxClientsPerConnection)
       throw new WwsError('RESOURCE_LIMIT_EXCEEDED', 'Maximum clients for this connection has been reached')
     this.sinks.set(sink.id, sink)
+    this.idleNotified = false
+    this.idleCloseRequested = false
     if (this.idleTimer !== undefined) {
       this.clearTimer(this.idleTimer)
       this.idleTimer = undefined
@@ -309,7 +318,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     if (!this.options.config.adapter.capabilities.auth || this.options.config.adapter.createAuth === undefined)
       throw new WwsError('CAPABILITY_UNSUPPORTED', 'The selected protocol does not support auth updates')
     const receipt = this.auth.update(value, revision)
-    if (receipt.status === 'applied' && this.state === 'open' && this.options.config.adapter.createAuth !== undefined)
+    if (receipt.status === 'applied' && this.isAttemptActive())
       await this.reconnect('AUTH_REVISION_UPDATED')
     return receipt
   }
@@ -319,7 +328,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     const receipt = this.auth.update(undefined, revision)
     if (receipt.status === 'applied') {
       this.queue.clear()
-      if (this.state === 'open')
+      if (this.isAttemptActive())
         await this.reconnect('AUTH_CLEARED')
     }
     return receipt
@@ -337,7 +346,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
       throw new WwsError('INVALID_OPTIONS', 'url must use ws: or wss:')
     const receipt = this.endpoint.update(parsed.href, revision)
-    if (receipt.status === 'applied' && this.state === 'open')
+    if (receipt.status === 'applied' && this.isAttemptActive())
       await this.reconnect('ENDPOINT_UPDATED')
     return receipt
   }
@@ -354,7 +363,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       this.socket.close(1000)
       return
     }
-    if (this.state === 'closed' || this.state === 'failed' || this.state === 'idle')
+    if (this.state === 'closed' || this.state === 'failed' || this.state === 'idle' || this.state === 'reconnecting')
       this.transition('connecting', reason)
     this.emitState(reason)
     this.startSocket()
@@ -391,7 +400,8 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       return
     this.intentionalClose = false
     this.lastError = null
-    const attempt = this.retry.recordAttempt()
+    const attempt = ++this.activeAttempt
+    this.retry.recordAttempt()
     let socket: WebSocketLike
     try {
       socket = this.socketFactory(this.endpoint.value, this.options.config.shared.protocols, this.options.config.shared.binaryType)
@@ -403,53 +413,64 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.socket = socket
     socket.binaryType = this.options.config.shared.binaryType
     this.socketCleanups = [
-      addSocketListener(socket, 'open', () => this.handleOpen()),
-      addSocketListener(socket, 'message', (event: { readonly data: SocketData }) => this.handleMessage(event.data)),
-      addSocketListener(socket, 'error', () => this.handleError(new WwsError('SOCKET_ERROR', 'WebSocket reported an error', { retryable: true }))),
-      addSocketListener(socket, 'close', (event: { readonly code: number, readonly wasClean: boolean }) => this.handleClose(event)),
+      addSocketListener(socket, 'open', () => this.handleOpen(socket, attempt)),
+      addSocketListener(socket, 'message', (event: { readonly data: SocketData }) => this.handleMessage(socket, attempt, event.data)),
+      addSocketListener(socket, 'error', () => this.handleError(new WwsError('SOCKET_ERROR', 'WebSocket reported an error', { retryable: true }), socket, attempt)),
+      addSocketListener(socket, 'close', (event: { readonly code: number, readonly wasClean: boolean }) => this.handleClose(socket, attempt, event)),
     ]
     this.connectTimer = this.setTimer(() => {
-      if (this.socket === socket && this.state !== 'open') {
+      if (this.isCurrentAttempt(socket, attempt) && this.state !== 'open') {
         this.lastError = new WwsError('CONNECTION_TIMEOUT', 'WebSocket connection timed out', { retryable: true })
         socket.close(1000)
       }
     }, this.options.config.shared.connectionTimeout)
-    void attempt
   }
 
-  private handleOpen(): void {
-    if (this.socket === null)
+  private handleOpen(socket: WebSocketLike, attempt: number): void {
+    if (!this.isCurrentAttempt(socket, attempt))
       return
-    this.clearConnectTimer()
     this.connectedAt = this.now()
     this.retry.recordOpen(this.connectedAt)
     if (this.options.config.adapter.readyWhen === 'adapter-frame') {
       this.transition('handshaking', 'SOCKET_OPEN')
       this.emitState('SOCKET_OPEN')
-      void this.sendAuth()
+      this.authReady = { attempt, promise: this.sendAuth(socket, attempt) }
       return
     }
-    this.becomeOpen()
+    void this.sendAuth(socket, attempt).then(() => this.becomeOpen(socket, attempt)).catch(() => undefined)
   }
 
-  private async sendAuth(): Promise<void> {
+  private async sendAuth(socket: WebSocketLike, attempt: number): Promise<void> {
     const createAuth = this.options.config.adapter.createAuth
     if (createAuth === undefined || this.auth.value === undefined)
       return
     try {
       const values = await createAuth(this.auth.value, { now: this.now(), revision: this.auth.revision })
+      if (!this.isCurrentAttempt(socket, attempt))
+        return
       const list = Array.isArray(values) ? values : [values]
       for (const value of list) {
         const encoded = await encodeWithAdapter(this.options.config.adapter, value, { messageId: createOperationId(), now: this.now() })
-        this.socket?.send(encoded)
+        if (!this.isCurrentAttempt(socket, attempt))
+          return
+        socket.send(encoded)
       }
     }
     catch (cause) {
-      this.handleError(toWwsError(cause, 'AUTH_FAILED', 'Protocol auth frame failed', { retryable: false }))
+      const error = toWwsError(cause, 'AUTH_FAILED', 'Protocol auth frame failed', { fatal: true, retryable: false })
+      if (this.isCurrentAttempt(socket, attempt)) {
+        this.handleError(error)
+        this.lastError = error
+        socket.close(4001)
+      }
+      throw error
     }
   }
 
-  private becomeOpen(): void {
+  private becomeOpen(socket: WebSocketLike = this.socket as WebSocketLike, attempt: number = this.activeAttempt): void {
+    if (!this.isCurrentAttempt(socket, attempt))
+      return
+    this.clearConnectTimer()
     if (this.state !== 'open')
       this.transition('open', 'READY')
     this.emitState('READY')
@@ -461,19 +482,32 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       sink.onOpen?.(this.snapshot())
   }
 
-  private async handleMessage(data: SocketData): Promise<void> {
+  private async handleMessage(socket: WebSocketLike, attempt: number, data: SocketData): Promise<void> {
+    if (!this.isCurrentAttempt(socket, attempt))
+      return
     try {
       const frame = await this.orderedProtocol.process(data, { now: this.now(), receivedAt: this.now() })
-      await this.handleFrame(frame)
+      await this.handleFrame(socket, attempt, frame)
     }
     catch (cause) {
       this.handleError(toWwsError(cause, 'PROTOCOL_ERROR', 'Protocol frame processing failed', { retryable: false }))
     }
   }
 
-  private async handleFrame(frame: ProtocolFrame<Incoming>): Promise<void> {
+  private async handleFrame(socket: WebSocketLike, attempt: number, frame: ProtocolFrame<Incoming>): Promise<void> {
+    if (!this.isCurrentAttempt(socket, attempt))
+      return
     if (frame.type === 'ready') {
-      this.becomeOpen()
+      const authReady = this.authReady
+      if (authReady?.attempt === attempt) {
+        try {
+          await authReady.promise
+        }
+        catch {
+          return
+        }
+      }
+      this.becomeOpen(socket, attempt)
       return
     }
     if (frame.type === 'pong') {
@@ -483,11 +517,20 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     if (frame.type === 'ping') {
       this.heartbeat?.acknowledge('activity')
       const createPong = this.options.config.adapter.createPong
-      if (createPong !== undefined && this.socket !== null) {
+      if (createPong !== undefined) {
         const value = await createPong(frame, { attempt: this.retry.attempt, now: this.now() })
         const encoded = await encodeWithAdapter(this.options.config.adapter, value, { messageId: createOperationId(), now: this.now() })
-        this.socket.send(encoded)
+        if (this.isCurrentAttempt(socket, attempt))
+          socket.send(encoded)
       }
+      return
+    }
+    if (frame.type === 'fatal') {
+      const error = new WwsError('PROTOCOL_ERROR', 'Protocol rejected the connection', { fatal: true })
+      this.handleError(error)
+      this.lastError = error
+      this.rejectWaiters(error)
+      socket.close(4002)
       return
     }
     if (frame.type !== 'data')
@@ -506,13 +549,17 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       sink.onMessage?.(frame.data, this.now())
   }
 
-  private handleError(error: WwsError): void {
+  private handleError(error: WwsError, socket?: WebSocketLike, attempt?: number): void {
+    if (socket !== undefined && attempt !== undefined && !this.isCurrentAttempt(socket, attempt))
+      return
     this.lastError = error
     for (const sink of this.sinks.values())
       sink.onError?.(error)
   }
 
-  private handleClose(event: { readonly code: number, readonly wasClean: boolean }): void {
+  private handleClose(socket: WebSocketLike, attempt: number, event: { readonly code: number, readonly wasClean: boolean }): void {
+    if (!this.isCurrentAttempt(socket, attempt))
+      return
     this.clearConnectTimer()
     this.heartbeat?.stop()
     this.heartbeat = undefined
@@ -520,14 +567,22 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     const info = safeCloseInfo(event)
     this.lastSafeCloseCode = info.code
     const protocolAllowsRetry = this.forceReconnect
-      || this.lastError?.retryable === true
-      || (this.options.config.adapter.shouldReconnect?.(info) ?? !info.terminal)
-    const shouldRetry = (this.forceReconnect || !this.intentionalClose)
+      || (!this.lastError?.fatal && (this.lastError?.retryable === true
+        || (this.options.config.adapter.shouldReconnect?.(info) ?? !info.terminal)))
+    const forcedAttempt = this.forceReconnect
+    const shouldRetry = (forcedAttempt || !this.intentionalClose)
       && this.sinks.size > 0
       && this.options.config.shared.reconnect !== false
       && protocolAllowsRetry
     let willReconnect = false
-    if (shouldRetry) {
+    if (forcedAttempt) {
+      willReconnect = true
+      this.forceReconnect = false
+      this.transition('connecting', 'RECONNECT_REQUESTED')
+      this.emitState('RECONNECT_REQUESTED')
+      this.startSocket()
+    }
+    else if (shouldRetry) {
       const decision = this.retry.decide(this.now(), true)
       if (decision.allowed) {
         willReconnect = true
@@ -549,15 +604,25 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       }
     }
     else {
-      if (this.state !== 'closed' && this.state !== 'idle')
+      if (this.lastError?.fatal) {
+        if (this.state !== 'failed')
+          this.transition('failed', this.lastError.code)
+        this.emitState(this.lastError.code)
+        this.rejectWaiters(this.lastError)
+      }
+      else if (this.state !== 'closed' && this.state !== 'idle')
         this.transition('closed', info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
-      this.emitState(info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
-      this.rejectWaiters(new WwsError(info.terminal ? 'CLOSE_NOT_RETRYABLE' : 'CLIENT_DISCONNECTED', 'WebSocket closed'))
+      if (!this.lastError?.fatal) {
+        this.emitState(info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
+        this.rejectWaiters(new WwsError(info.terminal ? 'CLOSE_NOT_RETRYABLE' : 'CLIENT_DISCONNECTED', 'WebSocket closed'))
+      }
     }
     for (const sink of this.sinks.values())
       sink.onClose?.({ ...info, willReconnect })
     this.intentionalClose = false
     this.forceReconnect = false
+    if (this.idleCloseRequested && this.sinks.size === 0)
+      this.notifyIdle()
   }
 
   private fail(error: WwsError): void {
@@ -633,8 +698,12 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       return
     this.idleTimer = this.setTimer(() => {
       this.idleTimer = undefined
-      if (this.sinks.size === 0)
+      if (this.sinks.size === 0) {
+        this.idleCloseRequested = true
         this.close()
+        if (this.socket === null)
+          this.notifyIdle()
+      }
     }, this.options.config.shared.idleGraceMs)
   }
 
@@ -675,6 +744,21 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       cleanup()
     this.socketCleanups = []
     this.socket = null
+  }
+
+  private isCurrentAttempt(socket: WebSocketLike, attempt: number): boolean {
+    return this.socket === socket && this.activeAttempt === attempt
+  }
+
+  private notifyIdle(): void {
+    if (this.idleNotified)
+      return
+    this.idleNotified = true
+    this.options.onIdle?.(this)
+  }
+
+  private isAttemptActive(): boolean {
+    return this.socket !== null && (this.state === 'connecting' || this.state === 'handshaking' || this.state === 'open')
   }
 
   private clearConnectTimer(): void {

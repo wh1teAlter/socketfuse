@@ -44,6 +44,10 @@ const emit = defineEmits<{
           v-if="message.replayed"
           class="playground-replayed"
         >[replayed]</span>
+        <span
+          v-if="message.type === 'binary'"
+          class="playground-replayed"
+        >[binary]</span>
         {{ message.value }}
       </li>
     </ol>

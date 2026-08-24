@@ -4,4 +4,5 @@ export type {
   SharedWebSocketRuntime,
   SharedWebSocketRuntimeOptions,
   SharedWorkerGlobalLike,
+  WorkerResourceLimits,
 } from '@wws/core'

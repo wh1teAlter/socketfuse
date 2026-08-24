@@ -21,9 +21,9 @@ import type {
 import type { ConnectionSink } from './connection-controller'
 import type { NormalizedWebSocketConfig } from './config'
 import type { ClientTransport } from './direct-transport'
+import { estimateStructuredCloneBytes, stableHash } from './structured'
+import { toSafePublicError, toWwsError, WwsError } from './errors'
 import { readyStateFor, statusFor } from './connection-state'
-import { stableHash } from './structured'
-import { WwsError } from './errors'
 
 type MessageHandler<Incoming> = (event: WwsMessageEvent<Incoming>) => void
 
@@ -44,10 +44,9 @@ function sanitizeDetails(details: Readonly<Record<string, unknown>> | undefined)
 
 function sanitizeError(error: WwsError): WwsError {
   const details = sanitizeDetails(error.details)
-  const options = { fatal: error.fatal, retryable: error.retryable }
-  return details === undefined
-    ? new WwsError(error.code, error.message, options)
-    : new WwsError(error.code, error.message, { ...options, details })
+  return toSafePublicError(new WwsError(error.code, error.message, details === undefined
+    ? { fatal: error.fatal, retryable: error.retryable }
+    : { details, fatal: error.fatal, retryable: error.retryable }))
 }
 
 function createMessageEvent<Incoming>(data: Incoming, receivedAt: number, transport: Exclude<Transport, 'pending'>, replayed: boolean): WwsMessageEvent<Incoming> {
@@ -80,12 +79,7 @@ function createErrorEvent(error: WwsError): Event {
 }
 
 function estimateValueBytes(value: unknown): number {
-  try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength
-  }
-  catch {
-    return 0
-  }
+  return estimateStructuredCloneBytes(value)
 }
 
 function numberValue(value: unknown): number {
@@ -118,12 +112,17 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   private replayBytes = 0
   private overflowCount = 0
   private lifecycleCleanups: (() => void)[] = []
+  private latestEndpoint: { revision: number, url: string } | undefined
+  private latestAuth: { revision: number, value: Auth | undefined } | undefined
+  private hadDemand = false
+  private recovery: Promise<void> | undefined
 
   constructor(
     readonly config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>,
-    readonly clientTransport: ClientTransport<Incoming, Outgoing, Auth>,
+    private clientTransport: ClientTransport<Incoming, Outgoing, Auth>,
     readonly options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
     readonly clientId: string,
+    private readonly recreateSharedTransport?: () => ClientTransport<Incoming, Outgoing, Auth>,
   ) {
     super()
     this.currentTransport = clientTransport.kind
@@ -131,8 +130,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     this.restore = config.local.lifecycle
     if (options.onMessage !== undefined)
       this.onMessage(event => options.onMessage?.(this, event))
-    if (this.restore.enabled)
-      this.installLifecycle()
+    this.installLifecycle()
   }
 
   get data(): Incoming | null {
@@ -169,7 +167,8 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       this.clientTransport.attach(this.createSink())
       this.attached = true
     }
-    const snapshot = await this.clientTransport.open(options?.signal)
+    const snapshot = await this.sanitizePublicPromise(this.clientTransport.open(options?.signal))
+    this.hadDemand = true
     if (snapshot.state === 'open' && this.currentState !== 'open')
       this.handleOpen(snapshot)
     else
@@ -182,6 +181,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       return
     this.clientTransport.close()
     this.attached = false
+    this.hadDemand = false
     this.setState('closed', 'CLIENT_DISCONNECTED')
   }
 
@@ -189,7 +189,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     this.assertUsable()
     if (!this.attached)
       return Promise.reject(new WwsError('CLIENT_DISCONNECTED', 'Client is not open'))
-    return this.clientTransport.send(data, options)
+    return this.sanitizePublicPromise(this.clientTransport.send(data, options))
   }
 
   onMessage(handler: MessageHandler<Incoming>): () => void {
@@ -205,22 +205,35 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
 
   updateAuth(value: Auth, options: { revision: number }): Promise<RevisionReceipt> {
     this.assertUsable()
-    return this.clientTransport.updateAuth(value, options.revision)
+    return this.sanitizePublicPromise(this.clientTransport.updateAuth(value, options.revision)).then((receipt) => {
+      if (receipt.status === 'applied')
+        this.latestAuth = { revision: receipt.revision, value }
+      return receipt
+    })
   }
 
   clearAuth(options: { revision: number }): Promise<RevisionReceipt> {
     this.assertUsable()
-    return this.clientTransport.clearAuth(options.revision)
+    return this.sanitizePublicPromise(this.clientTransport.clearAuth(options.revision)).then((receipt) => {
+      if (receipt.status === 'applied')
+        this.latestAuth = { revision: receipt.revision, value: undefined }
+      return receipt
+    })
   }
 
   updateUrl(url: string | URL, options: { revision: number }): Promise<RevisionReceipt> {
     this.assertUsable()
-    return this.clientTransport.updateUrl(url instanceof URL ? url.href : url, options.revision)
+    const value = url instanceof URL ? url.href : url
+    return this.sanitizePublicPromise(this.clientTransport.updateUrl(value, options.revision)).then((receipt) => {
+      if (receipt.status === 'applied')
+        this.latestEndpoint = { revision: receipt.revision, url: value }
+      return receipt
+    })
   }
 
   reconnect(options?: { reason?: string }): Promise<void> {
     this.assertUsable()
-    return this.clientTransport.reconnect(options?.reason)
+    return this.sanitizePublicPromise(this.clientTransport.reconnect(options?.reason))
   }
 
   diagnostics(): Readonly<ConnectionDiagnostics> {
@@ -254,7 +267,6 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       cleanup()
     this.lifecycleCleanups = []
     this.handlers.clear()
-    this.clientTransport.detach(this.clientId)
     this.clientTransport.dispose()
     this.setState('closed', 'CLIENT_DISPOSED')
   }
@@ -265,6 +277,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       onClose: event => this.handleClose(event),
       onError: error => this.handleError(error),
       onMessage: (data, receivedAt, replayed) => this.handleMessage(data, receivedAt, replayed),
+      onOverflow: event => this.dispatchRemoteOverflow(event),
       onOpen: snapshot => this.handleOpen(snapshot),
       onState: (snapshot, reasonCode) => this.handleState(snapshot, reasonCode),
     }
@@ -293,8 +306,9 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       this.dispatchMessage(data, receivedAt, true)
       return
     }
-    if (this.suspended && this.restore.replay) {
-      this.pushReplay(data, receivedAt)
+    if (this.suspended) {
+      if (this.restore.replay)
+        this.pushReplay(data, receivedAt)
       return
     }
     this.dispatchMessage(data, receivedAt, false)
@@ -302,7 +316,6 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
 
   private dispatchMessage(data: Incoming, receivedAt: number, replayed: boolean): void {
     const event = createMessageEvent(data, receivedAt, this.clientTransport.kind, replayed)
-    this.dispatchEvent(event)
     for (const handler of [...this.handlers.values()]) {
       try {
         handler(event)
@@ -311,6 +324,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
         this.handleError(new WwsError('INTERNAL_STATE_ERROR', 'onMessage handler failed', { cause }))
       }
     }
+    this.dispatchEvent(event)
   }
 
   private handleClose(event: { readonly code: number, readonly wasClean: boolean, readonly terminal: boolean, readonly willReconnect: boolean }): void {
@@ -365,35 +379,118 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   private installLifecycle(): void {
     if (typeof document === 'undefined' || typeof window === 'undefined')
       return
-    const suspend = (): void => {
-      if (document.visibilityState === 'hidden' || document.hidden) {
+    const suspend = (force = false): void => {
+      if (!this.restore.enabled || !this.attached)
+        return
+      if (force || document.visibilityState === 'hidden' || document.hidden) {
         this.suspended = true
         this.clientTransport.suspend?.()
       }
     }
     const restore = (): void => {
-      const wasSuspended = this.suspended
-      this.suspended = false
-      this.clientTransport.restore?.()
-      if (wasSuspended && this.restore.replay) {
-        const entries = this.replay.splice(0)
-        this.replayBytes = 0
-        for (const entry of entries)
-          this.dispatchMessage(entry.data, entry.receivedAt, true)
-      }
+      if (!this.restore.enabled)
+        return
+      void this.restoreLifecycle()
     }
-    document.addEventListener('visibilitychange', suspend)
-    window.addEventListener('pagehide', suspend)
+    const pagehide = (event: PageTransitionEvent): void => {
+      if (event.persisted && this.restore.enabled) {
+        suspend(true)
+        return
+      }
+      if (this.config.local.autoClose)
+        void this.close()
+    }
+    const visibilityChange = (): void => {
+      if (document.visibilityState === 'visible' && !document.hidden)
+        restore()
+      else
+        suspend()
+    }
+    document.addEventListener('visibilitychange', visibilityChange)
+    window.addEventListener('pagehide', pagehide)
     window.addEventListener('pageshow', restore)
-    document.addEventListener('freeze', suspend)
+    const freeze = (): void => suspend(true)
+    document.addEventListener('freeze', freeze)
     document.addEventListener('resume', restore)
     this.lifecycleCleanups.push(
-      () => document.removeEventListener('visibilitychange', suspend),
-      () => window.removeEventListener('pagehide', suspend),
+      () => document.removeEventListener('visibilitychange', visibilityChange),
+      () => window.removeEventListener('pagehide', pagehide),
       () => window.removeEventListener('pageshow', restore),
-      () => document.removeEventListener('freeze', suspend),
+      () => document.removeEventListener('freeze', freeze),
       () => document.removeEventListener('resume', restore),
     )
+  }
+
+  private async restoreLifecycle(): Promise<void> {
+    if (this.recovery !== undefined)
+      return this.recovery
+    this.recovery = this.performRestoreLifecycle().finally(() => {
+      this.recovery = undefined
+    })
+    return this.recovery
+  }
+
+  private async performRestoreLifecycle(): Promise<void> {
+    const wasSuspended = this.suspended
+    if (!wasSuspended)
+      return
+    this.suspended = false
+    try {
+      await this.clientTransport.probe?.()
+    }
+    catch (error) {
+      try {
+        await this.recreateTransport()
+      }
+      catch (recoveryError) {
+        this.handleError(recoveryError instanceof WwsError
+          ? recoveryError
+          : new WwsError('WORKER_DISCONNECTED', 'SharedWorker recovery failed', { cause: error ?? recoveryError, retryable: true }))
+        return
+      }
+    }
+    this.clientTransport.restore?.()
+    if (wasSuspended && this.restore.replay) {
+      const entries = this.replay.splice(0)
+      this.replayBytes = 0
+      for (const entry of entries)
+        this.dispatchMessage(entry.data, entry.receivedAt, true)
+    }
+  }
+
+  private async recreateTransport(): Promise<void> {
+    if (this.clientTransport.kind !== 'shared-worker' || this.recreateSharedTransport === undefined)
+      return
+    const oldTransport = this.clientTransport
+    oldTransport.dispose()
+    const replacement = this.recreateSharedTransport()
+    this.clientTransport = replacement
+    this.currentTransport = replacement.kind
+    this.currentWorkerMode = replacement.workerMode
+    replacement.attach(this.createSink())
+    this.attached = true
+    if (this.latestEndpoint !== undefined)
+      await replacement.updateUrl(this.latestEndpoint.url, this.latestEndpoint.revision)
+    if (this.latestAuth !== undefined) {
+      if (this.latestAuth.value === undefined)
+        await replacement.clearAuth(this.latestAuth.revision)
+      else
+        await replacement.updateAuth(this.latestAuth.value, this.latestAuth.revision)
+    }
+    if (this.hadDemand)
+      await this.sanitizePublicPromise(replacement.open())
+  }
+
+  private async sanitizePublicPromise<Value>(promise: Promise<Value>): Promise<Value> {
+    try {
+      return await promise
+    }
+    catch (error) {
+      const value = error instanceof WwsError
+        ? error
+        : toWwsError(error, 'INTERNAL_STATE_ERROR', 'WebSocket operation failed')
+      throw sanitizeError(value)
+    }
   }
 
   private pushReplay(data: Incoming, receivedAt: number): void {
@@ -424,6 +521,17 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       strategy: { value: strategy },
     })
     this.dispatchEvent(event)
+  }
+
+  private dispatchRemoteOverflow(event: { readonly direction: 'inbound' | 'replay', readonly strategy: 'drop-newest' | 'drop-oldest', readonly droppedMessages: number, readonly droppedBytes: number }): void {
+    const overflow = new Event('overflow') as WwsOverflowEvent
+    Object.defineProperties(overflow, {
+      direction: { value: event.direction },
+      droppedBytes: { value: event.droppedBytes },
+      droppedMessages: { value: event.droppedMessages },
+      strategy: { value: event.strategy },
+    })
+    this.dispatchEvent(overflow)
   }
 
   private assertUsable(): void {

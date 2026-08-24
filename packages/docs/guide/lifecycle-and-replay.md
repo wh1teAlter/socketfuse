@@ -16,9 +16,12 @@ const ws = createWebSocket(url, {
 ## How it works
 
 With restore enabled, WWS observes visibility, pagehide/pageshow and browser
-freeze/resume signals. While the page is suspended, incoming messages are
-buffered locally. On restore, they reach normal `onMessage` listeners in FIFO
-order with `event.replayed === true`.
+freeze/resume signals. A BFCache `pagehide` suspends the current page rather
+than detaching it; an ordinary `pagehide` detaches automatically unless
+`autoClose: false` is set. While suspended, neither direct nor SharedWorker
+transport dispatches live messages. With replay enabled, they are buffered
+locally/per-port and later reach normal `onMessage` listeners in FIFO order
+with `event.replayed === true`.
 
 The Worker only dispatches events; it never waits for page handlers. This
 preserves the physical connection's throughput even if a tab is busy.
@@ -26,7 +29,9 @@ preserves the physical connection's throughput even if a tab is busy.
 ## Boundaries
 
 Replay is disabled by default and bounded. On overflow, the oldest buffered
-entry is discarded and an `overflow` event is emitted. Worker restart, a missed
-lease, page termination and a server-side reconnect are not reliable recovery
-boundaries. Use application-level cursors or durable delivery when messages
-must not be lost.
+entry is discarded and an `overflow` event is emitted. On restore, WWS probes a
+selected SharedWorker and recreates only that shared transport when the Worker
+is gone, then reapplies the newest endpoint/auth revisions. Worker restart, a
+missed lease, page termination and a server-side reconnect are still not
+reliable message recovery boundaries. Use application-level cursors or durable
+delivery when messages must not be lost.

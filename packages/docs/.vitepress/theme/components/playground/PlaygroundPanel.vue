@@ -16,6 +16,7 @@ const {
   messages,
   openAnotherTab,
   replayWhileHidden,
+  sendBinaryMessage,
   sendMessage,
   simulateWorkerFailure,
   status,
@@ -37,6 +38,7 @@ const {
       @disconnect="disconnect"
       @open-another-tab="openAnotherTab"
       @send="sendMessage"
+      @send-binary="sendBinaryMessage($event)"
       @update:connection-id="connectionId = $event"
       @update:fallback="fallback = $event"
       @update:replay-while-hidden="replayWhileHidden = $event"

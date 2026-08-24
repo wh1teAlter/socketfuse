@@ -1,6 +1,6 @@
 # Interface: ConnectionSnapshot
 
-Defined in: [core/src/types.ts:135](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L135)
+Defined in: [core/src/types.ts:139](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L139)
 
 Immutable connection state returned when `open()` resolves.
 
@@ -10,7 +10,7 @@ Immutable connection state returned when `open()` resolves.
 
 > `readonly` **state**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/types.ts:136](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L136)
+Defined in: [core/src/types.ts:140](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L140)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [core/src/types.ts:136](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **status**: [`WebSocketStatus`](../type-aliases/WebSocketStatus.md)
 
-Defined in: [core/src/types.ts:137](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L137)
+Defined in: [core/src/types.ts:141](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L141)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [core/src/types.ts:137](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **readyState**: [`ReadyState`](../type-aliases/ReadyState.md)
 
-Defined in: [core/src/types.ts:138](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L138)
+Defined in: [core/src/types.ts:142](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L142)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [core/src/types.ts:138](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-Defined in: [core/src/types.ts:139](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L139)
+Defined in: [core/src/types.ts:143](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L143)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [core/src/types.ts:139](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **attempt**: `number`
 
-Defined in: [core/src/types.ts:140](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L140)
+Defined in: [core/src/types.ts:144](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L144)
 
 ***
 
@@ -50,4 +50,4 @@ Defined in: [core/src/types.ts:140](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **connectedAt**: `number`
 
-Defined in: [core/src/types.ts:141](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L141)
+Defined in: [core/src/types.ts:145](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L145)

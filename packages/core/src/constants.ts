@@ -1,4 +1,4 @@
-import type { BackpressureOptions, HeartbeatOptions, LeaseOptions, QueueOptions, ReconnectOptions, ResourceLimits } from './types'
+import type { BackpressureOptions, ConnectionLimits, HeartbeatOptions, LeaseOptions, QueueOptions, ReconnectOptions, WorkerResourceLimits } from './types'
 
 export const CONTROL_PROTOCOL_MAJOR: number = 1
 export const MIB: number = 1024 * 1024
@@ -42,10 +42,13 @@ export const DEFAULT_LEASE_OPTIONS: Readonly<LeaseOptions> = Object.freeze({
   timeout: 60_000,
 })
 
-export const DEFAULT_RESOURCE_LIMITS: Readonly<ResourceLimits> = Object.freeze({
+export const DEFAULT_CONNECTION_LIMITS: Readonly<ConnectionLimits> = Object.freeze({
   maxClientsPerConnection: 64,
-  maxControlEnvelopeBytes: 2 * MIB,
   maxEncodedMessageBytes: MIB,
-  maxPortsPerWorker: 256,
+})
+
+export const DEFAULT_WORKER_RESOURCE_LIMITS: Readonly<WorkerResourceLimits> = Object.freeze({
+  maxControlEnvelopeBytes: 2 * MIB,
+  maxPorts: 256,
   unattachedPortTimeoutMs: 5_000,
 })

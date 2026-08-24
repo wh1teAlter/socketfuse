@@ -1,13 +1,24 @@
-import { createWebSocket, type WebSocketClient, type WwsError, WwsError as WwsErrorClass } from 'wws'
+import { createWebSocket, type JsonValue, type WebSocketClient, type WwsError, WwsError as WwsErrorClass } from 'wws'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
 export interface PlaygroundMessage {
   readonly id: number
   readonly replayed: boolean
+  readonly type: 'binary' | 'text'
   readonly value: string
 }
 
-type PlaygroundClient = WebSocketClient<unknown, string, unknown>
+type BinaryMessageKind = 'array-buffer' | 'blob' | 'typed-array'
+type PlaygroundAuth = { readonly token: string }
+type PlaygroundClient = WebSocketClient<unknown, string | Blob | ArrayBuffer | Uint8Array, PlaygroundAuth>
+
+interface WorkerTerminationPort {
+  postMessage: (message: unknown) => void
+}
+
+interface WorkerTerminationHandle {
+  readonly port: WorkerTerminationPort
+}
 
 function formatError(value: unknown): string {
   if (value instanceof WwsErrorClass)
@@ -18,6 +29,10 @@ function formatError(value: unknown): string {
 }
 
 function formatMessage(value: unknown): string {
+  if (value instanceof ArrayBuffer)
+    return Array.from(new Uint8Array(value)).join(',')
+  if (ArrayBuffer.isView(value))
+    return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)).join(',')
   try {
     return JSON.stringify(value)
   }
@@ -38,8 +53,9 @@ export function usePlaygroundConnection() {
   const simulateWorkerFailure = shallowRef(false)
   const status = shallowRef('CLOSED')
   const transport = shallowRef('pending')
-  const url = shallowRef('ws://localhost:8787')
+  const url = shallowRef('ws://localhost:8787/socket')
   let nextMessageId = 0
+  let restartableWorker: WorkerTerminationHandle | undefined
 
   const messageCount = computed(() => messages.value.length)
 
@@ -59,6 +75,7 @@ export function usePlaygroundConnection() {
     messages.value = [...messages.value, {
       id: nextMessageId++,
       replayed,
+      type: value instanceof ArrayBuffer || ArrayBuffer.isView(value) ? 'binary' : 'text',
       value: formatMessage(value),
     }]
   }
@@ -87,14 +104,44 @@ export function usePlaygroundConnection() {
     refreshMetrics()
 
     try {
-      const current = createWebSocket<unknown, string>(url.value, {
-        fallback: fallback.value,
-        id: connectionId.value,
-        immediate: false,
-        onError: (_client, value) => handleClientError(value),
-        ...(replayWhileHidden.value ? { lifecycle: { restore: { replay: true } } } : {}),
-        ...(simulateWorkerFailure.value ? { worker: () => { throw new Error('Simulated Worker construction failure') } } : {}),
-      })
+      const parameters = new URLSearchParams(window.location.search)
+      const useRestartableWorker = parameters.has('e2eWorkerRestart')
+      const useRevisionReplay = parameters.has('e2eRevisionReplay')
+      const current = (useRevisionReplay
+        ? createWebSocket<JsonValue, JsonValue, PlaygroundAuth>(url.value, {
+            fallback: fallback.value,
+            id: connectionId.value,
+            immediate: false,
+            onError: (_client, value) => handleClientError(value),
+            protocol: { auth: { template: { token: '$auth.token', type: 'auth' } }, type: 'json' },
+            ...(replayWhileHidden.value ? { lifecycle: { restore: { replay: true } } } : {}),
+            ...(useRestartableWorker
+              ? { worker: () => {
+                  const worker = new SharedWorker(new URL('./restartable-shared-worker.ts', import.meta.url), { type: 'module' })
+                  restartableWorker = worker as unknown as WorkerTerminationHandle
+                  return worker
+                } }
+              : {}),
+          })
+        : createWebSocket<unknown, string | Blob | ArrayBuffer | Uint8Array, unknown>(url.value, {
+            fallback: fallback.value,
+            id: connectionId.value,
+            immediate: false,
+            onError: (_client, value) => handleClientError(value),
+            ...(replayWhileHidden.value ? { lifecycle: { restore: { replay: true } } } : {}),
+            ...(useRestartableWorker
+              ? {
+                  worker: () => {
+                    const worker = new SharedWorker(new URL('./restartable-shared-worker.ts', import.meta.url), { type: 'module' })
+                    restartableWorker = worker as unknown as WorkerTerminationHandle
+                    return worker
+                  },
+                }
+              : {}),
+            ...(simulateWorkerFailure.value
+              ? { worker: () => { throw new Error('Simulated Worker construction failure') } }
+              : {}),
+          })) as unknown as PlaygroundClient
       current.onMessage(event => appendMessage(event.data, event.replayed))
       current.addEventListener('close', () => refreshMetrics(current))
       current.addEventListener('open', () => refreshMetrics(current))
@@ -131,6 +178,38 @@ export function usePlaygroundConnection() {
     })
   }
 
+  async function sendBinaryMessage(kind: BinaryMessageKind): Promise<void> {
+    const current = client.value
+    if (current === undefined)
+      return
+    const data = kind === 'array-buffer'
+      ? new Uint8Array([4, 5, 6]).buffer
+      : kind === 'blob'
+        ? new Blob([new Uint8Array([7, 8, 9])])
+        : new Uint8Array([1, 2, 3])
+    await current.sendMessage(data).catch((value) => {
+      error.value = formatError(value)
+    })
+  }
+
+  function terminateWorkerForE2E(): void {
+    restartableWorker?.port.postMessage({ type: '__wws_test_terminate__' })
+  }
+
+  async function applyRevisionsForE2E(nextUrl: string): Promise<void> {
+    const current = client.value
+    if (current === undefined)
+      throw new Error('Connect before applying test revisions')
+    await current.updateUrl(nextUrl, { revision: 1 })
+    await current.updateAuth({ token: 'e2e-revision-auth' }, { revision: 1 })
+  }
+
+  if (typeof window !== 'undefined')
+    Object.assign(window, {
+      __wwsPlaygroundApplyRevisions: applyRevisionsForE2E,
+      __wwsPlaygroundTerminateWorker: terminateWorkerForE2E,
+    })
+
   function openAnotherTab(): void {
     window.open(window.location.href, '_blank', 'noopener')
   }
@@ -152,9 +231,12 @@ export function usePlaygroundConnection() {
     messages,
     openAnotherTab,
     replayWhileHidden,
+    applyRevisionsForE2E,
+    sendBinaryMessage,
     sendMessage,
     simulateWorkerFailure,
     status,
+    terminateWorkerForE2E,
     transport,
     url,
   }

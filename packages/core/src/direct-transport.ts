@@ -24,6 +24,8 @@ export interface ClientTransport<Incoming, Outgoing, Auth> {
   clearAuth: (revision: number) => Promise<RevisionReceipt>
   updateUrl: (url: string, revision: number) => Promise<RevisionReceipt>
   reconnect: (reason?: string) => Promise<void>
+  /** Verify a selected SharedWorker transport during lifecycle recovery. */
+  probe?: () => Promise<string>
   suspend?: () => void
   restore?: () => void
   detach: (clientId: string) => void

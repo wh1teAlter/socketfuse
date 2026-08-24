@@ -19,5 +19,12 @@ configuration fingerprint.
 `onDisconnected`, `onError` and `onMessage` belong only to the creating tab.
 This lets a tab opt into restore replay without affecting other tabs.
 
+`limits` contains connection limits only: `maxClientsPerConnection` and
+`maxEncodedMessageBytes`; both participate in the shared fingerprint. Custom
+Worker authors configure Worker-wide control-plane limits once through
+`createSharedWebSocketRuntime({ workerLimits })`: `maxPorts`,
+`maxControlEnvelopeBytes`, and `unattachedPortTimeoutMs`. These static Worker
+limits are never accepted from a page and do not create connection conflicts.
+
 Read the generated [CreateWebSocketOptions](../api/generated/index/interfaces/CreateWebSocketOptions.md)
 for defaults and all exact option fields.

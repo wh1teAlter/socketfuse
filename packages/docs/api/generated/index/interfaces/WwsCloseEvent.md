@@ -1,6 +1,6 @@
 # Interface: WwsCloseEvent
 
-Defined in: [core/src/types.ts:157](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L157)
+Defined in: [core/src/types.ts:161](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L161)
 
 Logical close notification for this page client.
 
@@ -14,7 +14,7 @@ Logical close notification for this page client.
 
 > `readonly` **code**: `number`
 
-Defined in: [core/src/types.ts:158](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L158)
+Defined in: [core/src/types.ts:162](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L162)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [core/src/types.ts:158](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **wasClean**: `boolean`
 
-Defined in: [core/src/types.ts:159](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L159)
+Defined in: [core/src/types.ts:163](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L163)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [core/src/types.ts:159](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **terminal**: `boolean`
 
-Defined in: [core/src/types.ts:160](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L160)
+Defined in: [core/src/types.ts:164](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L164)
 
 ***
 
@@ -38,4 +38,4 @@ Defined in: [core/src/types.ts:160](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **willReconnect**: `boolean`
 
-Defined in: [core/src/types.ts:161](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L161)
+Defined in: [core/src/types.ts:165](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L165)

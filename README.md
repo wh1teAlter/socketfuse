@@ -15,7 +15,7 @@ const ws = createWebSocket('wss://api.example.com/realtime', {
 })
 
 await ws.open()
-await ws.sendMessage({ type: 'presence', online: true })
+await ws.sendMessage(JSON.stringify({ type: 'presence', online: true }))
 ```
 
 The default is zero-config inline SharedWorker with `fallback: 'direct'` when
@@ -23,6 +23,10 @@ Worker construction or the initialization handshake fails. Use
 `fallback: 'error'` when a second physical connection is unacceptable. A
 connection id is not an authorization boundary; authentication still belongs
 to the server and an application protocol adapter.
+
+Raw mode accepts only native WebSocket data (`string`, `Blob`, `ArrayBuffer` or
+a typed-array view). Choose `protocol: { type: 'json' }` before sending JSON
+objects. Raw mode intentionally has no WWS heartbeat support.
 
 See the [documentation](packages/docs/index.md), [Playground](packages/docs/playground.md),
 [technical specification](docs/specs/wws-v1-spec.md), and

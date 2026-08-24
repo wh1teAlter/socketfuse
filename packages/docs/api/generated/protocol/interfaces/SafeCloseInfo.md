@@ -1,6 +1,6 @@
 # Interface: SafeCloseInfo
 
-Defined in: [core/src/types.ts:271](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L271)
+Defined in: [core/src/types.ts:275](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L275)
 
 Sanitized close data supplied to adapter retry decisions.
 
@@ -10,7 +10,7 @@ Sanitized close data supplied to adapter retry decisions.
 
 > `readonly` **code**: `number`
 
-Defined in: [core/src/types.ts:272](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L272)
+Defined in: [core/src/types.ts:276](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L276)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [core/src/types.ts:272](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **wasClean**: `boolean`
 
-Defined in: [core/src/types.ts:273](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L273)
+Defined in: [core/src/types.ts:277](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L277)
 
 ***
 
@@ -26,4 +26,4 @@ Defined in: [core/src/types.ts:273](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **terminal**: `boolean`
 
-Defined in: [core/src/types.ts:274](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L274)
+Defined in: [core/src/types.ts:278](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L278)

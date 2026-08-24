@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'disconnect': []
   'openAnotherTab': []
   'send': [payload: string]
+  'sendBinary': [kind: 'array-buffer' | 'blob' | 'typed-array']
   'update:connectionId': [value: string]
   'update:fallback': [value: 'direct' | 'error']
   'update:replayWhileHidden': [value: boolean]
@@ -128,6 +129,27 @@ function send(): void {
         type="submit"
       >
         Send
+      </button>
+      <button
+        class="playground-button playground-button-secondary"
+        type="button"
+        @click="emit('sendBinary', 'typed-array')"
+      >
+        Send typed array
+      </button>
+      <button
+        class="playground-button playground-button-secondary"
+        type="button"
+        @click="emit('sendBinary', 'array-buffer')"
+      >
+        Send ArrayBuffer
+      </button>
+      <button
+        class="playground-button playground-button-secondary"
+        type="button"
+        @click="emit('sendBinary', 'blob')"
+      >
+        Send Blob
       </button>
     </form>
   </div>

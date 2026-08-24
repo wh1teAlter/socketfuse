@@ -1,6 +1,6 @@
 # Interface: LifecycleOptions
 
-Defined in: [core/src/types.ts:104](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L104)
+Defined in: [core/src/types.ts:108](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L108)
 
 Page-local browser lifecycle integration. Disabled by default.
 
@@ -10,4 +10,4 @@ Page-local browser lifecycle integration. Disabled by default.
 
 > `optional` **restore?**: `boolean` \| [`RestoreOptions`](RestoreOptions.md)
 
-Defined in: [core/src/types.ts:105](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L105)
+Defined in: [core/src/types.ts:109](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L109)

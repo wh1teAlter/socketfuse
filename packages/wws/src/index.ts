@@ -1,4 +1,6 @@
-import { type CreateWebSocketOptions, DirectTransport, normalizeWebSocketOptions, PageWebSocketClient,
+import { type CreateWebSocketOptions, DirectTransport, type JsonProtocolOptions, type JsonValue,
+  normalizeWebSocketOptions,
+  PageWebSocketClient,
   type SharedWorkerLike,
   SharedWorkerTransport,
   type SocketData,
@@ -10,6 +12,7 @@ export { isWwsError, WWS_ERROR_CODES, WwsError } from '@wws/core'
 export type {
   BackpressureOptions,
   ConnectionDiagnostics,
+  ConnectionLimits,
   ConnectionSnapshot,
   ConnectionState,
   CreateWebSocketOptions,
@@ -25,7 +28,6 @@ export type {
   QueueOptions,
   ReadyState,
   ReconnectOptions,
-  ResourceLimits,
   RestoreOptions,
   RevisionReceipt,
   SendOptions,
@@ -57,6 +59,30 @@ function createInlineWorkerUrl(): string {
   return `data:text/javascript;charset=utf-8,${encodeURIComponent(INLINE_WORKER_SOURCE)}`
 }
 
+function createSharedTransport<Incoming, Outgoing, Auth>(
+  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
+  clientId: string,
+  options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
+  allowFallback = true,
+): SharedWorkerTransport<Incoming, Outgoing, Auth> {
+  const worker = options.worker === undefined
+    ? new SharedWorker(createInlineWorkerUrl())
+    : options.worker()
+  const createFallback = (): DirectTransport<Incoming, Outgoing, Auth> => {
+    const fallback = createDirectFallback(config, clientId)
+    if (fallback === undefined)
+      throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
+    return fallback
+  }
+  return new SharedWorkerTransport({
+    clientId,
+    config,
+    ...(allowFallback && config.local.fallback === 'direct' ? { createFallback } : {}),
+    mode: config.local.workerMode,
+    worker: worker as unknown as SharedWorkerLike,
+  })
+}
+
 function createClientId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
@@ -78,45 +104,56 @@ function createClientId(): string {
  * @param url Initial absolute `ws:` or `wss:` endpoint.
  * @param options Shared connection and page-local behavior.
  */
+export function createWebSocket(
+  url: string | URL,
+  options: CreateWebSocketOptions<JsonValue, JsonValue, unknown> & { readonly protocol: JsonProtocolOptions },
+): WebSocketClient<JsonValue, JsonValue, unknown>
+export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
+  url: string | URL,
+  options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
+): WebSocketClient<Incoming, Outgoing, Auth>
 export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
   url: string | URL,
   options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
 ): WebSocketClient<Incoming, Outgoing, Auth> {
+  if (typeof window === 'undefined' || typeof document === 'undefined')
+    throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WWS clients require a browser page environment')
   const config = normalizeWebSocketOptions(url, options)
   const clientId = createClientId()
-  const fallback = createDirectFallback(config, clientId)
   let transport: DirectTransport<Incoming, Outgoing, Auth> | SharedWorkerTransport<Incoming, Outgoing, Auth>
+
+  const createFallback = (): DirectTransport<Incoming, Outgoing, Auth> => {
+    const fallback = createDirectFallback(config, clientId)
+    if (fallback === undefined)
+      throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
+    return fallback
+  }
 
   if (typeof SharedWorker === 'undefined') {
     if (config.local.fallback === 'error')
       throw new WwsError('WORKER_UNSUPPORTED', 'SharedWorker is not available in this environment')
-    if (fallback === undefined)
-      throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'Neither SharedWorker nor WebSocket is available')
-    transport = fallback
+    transport = createFallback()
   }
   else {
     try {
-      const worker = options.worker === undefined
-        ? new SharedWorker(createInlineWorkerUrl())
-        : options.worker()
-      transport = new SharedWorkerTransport({
-        clientId,
-        config,
-        ...(config.local.fallback === 'direct' && fallback !== undefined ? { fallback } : {}),
-        mode: config.local.workerMode,
-        worker: worker as unknown as SharedWorkerLike,
-      })
+      transport = createSharedTransport(config, clientId, options)
     }
     catch (cause) {
       if (config.local.fallback === 'error')
         throw new WwsError('WORKER_CONSTRUCTION_FAILED', 'Unable to construct SharedWorker', { cause })
-      if (fallback === undefined)
-        throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback', { cause })
-      transport = fallback
+      try {
+        transport = createFallback()
+      }
+      catch (fallbackCause) {
+        throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback', { cause: fallbackCause })
+      }
     }
   }
 
-  const client = new PageWebSocketClient(config, transport, options, clientId)
+  const recreateSharedTransport = transport.kind === 'shared-worker'
+    ? () => createSharedTransport(config, clientId, options, false)
+    : undefined
+  const client = new PageWebSocketClient(config, transport, options, clientId, recreateSharedTransport)
   if (config.local.immediate)
     void client.open().catch(() => undefined)
   return client

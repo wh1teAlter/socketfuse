@@ -1,6 +1,6 @@
 # Interface: WwsStateChangeEvent
 
-Defined in: [core/src/types.ts:165](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L165)
+Defined in: [core/src/types.ts:169](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L169)
 
 Detailed logical state transition notification.
 
@@ -14,7 +14,7 @@ Detailed logical state transition notification.
 
 > `readonly` **previous**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/types.ts:166](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L166)
+Defined in: [core/src/types.ts:170](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L170)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [core/src/types.ts:166](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **state**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/types.ts:167](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L167)
+Defined in: [core/src/types.ts:171](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L171)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [core/src/types.ts:167](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-Defined in: [core/src/types.ts:168](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L168)
+Defined in: [core/src/types.ts:172](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L172)
 
 ***
 
@@ -38,7 +38,7 @@ Defined in: [core/src/types.ts:168](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **attempt**: `number`
 
-Defined in: [core/src/types.ts:169](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L169)
+Defined in: [core/src/types.ts:173](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L173)
 
 ***
 
@@ -46,4 +46,4 @@ Defined in: [core/src/types.ts:169](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **reasonCode?**: `string`
 
-Defined in: [core/src/types.ts:170](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L170)
+Defined in: [core/src/types.ts:174](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L174)

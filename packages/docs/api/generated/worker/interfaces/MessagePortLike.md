@@ -1,6 +1,6 @@
 # Interface: MessagePortLike
 
-Defined in: [core/src/worker-runtime.ts:12](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L12)
+Defined in: [core/src/worker-runtime.ts:12](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L12)
 
 Minimal MessagePort surface used by the custom Worker runtime.
 
@@ -10,7 +10,7 @@ Minimal MessagePort surface used by the custom Worker runtime.
 
 > **postMessage**: (`message`) => `void`
 
-Defined in: [core/src/worker-runtime.ts:13](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L13)
+Defined in: [core/src/worker-runtime.ts:13](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L13)
 
 #### Parameters
 
@@ -28,7 +28,7 @@ Defined in: [core/src/worker-runtime.ts:13](https://github.com/wh1teAlter/wws/bl
 
 > `optional` **start?**: () => `void`
 
-Defined in: [core/src/worker-runtime.ts:14](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L14)
+Defined in: [core/src/worker-runtime.ts:14](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L14)
 
 #### Returns
 
@@ -40,7 +40,7 @@ Defined in: [core/src/worker-runtime.ts:14](https://github.com/wh1teAlter/wws/bl
 
 > `optional` **close?**: () => `void`
 
-Defined in: [core/src/worker-runtime.ts:15](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L15)
+Defined in: [core/src/worker-runtime.ts:15](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L15)
 
 #### Returns
 
@@ -52,7 +52,7 @@ Defined in: [core/src/worker-runtime.ts:15](https://github.com/wh1teAlter/wws/bl
 
 > `optional` **addEventListener?**: (`type`, `listener`) => `void`
 
-Defined in: [core/src/worker-runtime.ts:16](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L16)
+Defined in: [core/src/worker-runtime.ts:16](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L16)
 
 #### Parameters
 
@@ -74,7 +74,7 @@ Defined in: [core/src/worker-runtime.ts:16](https://github.com/wh1teAlter/wws/bl
 
 > `optional` **removeEventListener?**: (`type`, `listener`) => `void`
 
-Defined in: [core/src/worker-runtime.ts:17](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L17)
+Defined in: [core/src/worker-runtime.ts:17](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L17)
 
 #### Parameters
 
@@ -96,7 +96,7 @@ Defined in: [core/src/worker-runtime.ts:17](https://github.com/wh1teAlter/wws/bl
 
 > `optional` **onmessage?**: ((`event`) => `void`) \| `null`
 
-Defined in: [core/src/worker-runtime.ts:18](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L18)
+Defined in: [core/src/worker-runtime.ts:18](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L18)
 
 ***
 
@@ -104,4 +104,4 @@ Defined in: [core/src/worker-runtime.ts:18](https://github.com/wh1teAlter/wws/bl
 
 > `optional` **onmessageerror?**: ((`event`) => `void`) \| `null`
 
-Defined in: [core/src/worker-runtime.ts:19](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L19)
+Defined in: [core/src/worker-runtime.ts:19](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L19)

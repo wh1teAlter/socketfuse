@@ -1,6 +1,6 @@
 # Interface: JsonProtocolOptions
 
-Defined in: [core/src/types.ts:235](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L235)
+Defined in: [core/src/types.ts:239](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L239)
 
 Declarative JSON protocol definition shared by every tab using an `id`.
 
@@ -10,7 +10,7 @@ Declarative JSON protocol definition shared by every tab using an `id`.
 
 > `readonly` **type**: `"json"`
 
-Defined in: [core/src/types.ts:236](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L236)
+Defined in: [core/src/types.ts:240](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L240)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [core/src/types.ts:236](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **id?**: `string`
 
-Defined in: [core/src/types.ts:237](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L237)
+Defined in: [core/src/types.ts:241](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L241)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [core/src/types.ts:237](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **version?**: `number`
 
-Defined in: [core/src/types.ts:238](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L238)
+Defined in: [core/src/types.ts:242](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L242)
 
 ***
 
@@ -34,7 +34,7 @@ Defined in: [core/src/types.ts:238](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **ready?**: `Readonly`\<`Record`\<`string`, [`JsonValue`](../type-aliases/JsonValue.md)\>\>
 
-Defined in: [core/src/types.ts:239](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L239)
+Defined in: [core/src/types.ts:243](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L243)
 
 ***
 
@@ -42,7 +42,7 @@ Defined in: [core/src/types.ts:239](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **auth?**: [`JsonAuthTemplate`](JsonAuthTemplate.md)
 
-Defined in: [core/src/types.ts:240](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L240)
+Defined in: [core/src/types.ts:244](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L244)
 
 ***
 
@@ -50,7 +50,7 @@ Defined in: [core/src/types.ts:240](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **heartbeat?**: [`JsonHeartbeatTemplate`](JsonHeartbeatTemplate.md)
 
-Defined in: [core/src/types.ts:241](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L241)
+Defined in: [core/src/types.ts:245](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L245)
 
 ***
 
@@ -58,4 +58,4 @@ Defined in: [core/src/types.ts:241](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **ignore?**: readonly `Readonly`\<`Record`\<`string`, [`JsonValue`](../type-aliases/JsonValue.md)\>\>[]
 
-Defined in: [core/src/types.ts:242](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L242)
+Defined in: [core/src/types.ts:246](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L246)

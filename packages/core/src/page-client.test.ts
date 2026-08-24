@@ -92,4 +92,56 @@ describe('pageWebSocketClient', () => {
     expect(received).toEqual(['one', 'one', 'two'])
     await client.dispose()
   })
+
+  it('updates data and runs onMessage handlers before EventTarget listeners', async () => {
+    const socket = new FakeSocket()
+    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-message-order' })
+    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
+    const client = new PageWebSocketClient(config, transport, { id: 'page-client-message-order' }, 'client')
+    const calls: string[] = []
+    client.onMessage(() => calls.push(`handler:${client.data}`))
+    client.onMessage(() => {
+      calls.push('throwing-handler')
+      throw new Error('handler secret')
+    })
+    client.addEventListener('message', () => calls.push(`event:${client.data}`))
+    const opening = client.open()
+    socket.open()
+    await opening
+    socket.message('ordered')
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(calls).toEqual(['handler:ordered', 'throwing-handler', 'event:ordered'])
+    await client.dispose()
+  })
+
+  it('sanitizes rejected direct-path promises before they reach callers', async () => {
+    const config = normalizeWebSocketOptions('wss://example.test/socket', {
+      id: 'page-client-safe-promise',
+      protocol: {
+        capabilities: { auth: false, binary: false, heartbeat: false },
+        classify: data => ({ data, type: 'data' }),
+        decode: data => data,
+        encode: () => {
+          throw new Error('adapter-secret')
+        },
+        id: 'secret-encoder',
+        version: 1,
+      },
+      worker: () => null as unknown as SharedWorker,
+    })
+    const socket = new FakeSocket()
+    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
+    const client = new PageWebSocketClient(config, transport, { id: 'page-client-safe-promise', protocol: config.adapter }, 'client')
+    const opening = client.open()
+    socket.open()
+    await opening
+
+    await expect(client.sendMessage('message')).rejects.toMatchObject({
+      cause: undefined,
+      code: 'ENCODE_FAILED',
+      message: 'Protocol message encoding failed',
+    })
+    await client.dispose()
+  })
 })

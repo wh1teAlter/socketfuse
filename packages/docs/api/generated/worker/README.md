@@ -2,6 +2,7 @@
 
 ## Interfaces
 
+- [WorkerResourceLimits](interfaces/WorkerResourceLimits.md)
 - [MessagePortLike](interfaces/MessagePortLike.md)
 - [SharedWebSocketRuntimeOptions](interfaces/SharedWebSocketRuntimeOptions.md)
 - [SharedWebSocketRuntime](interfaces/SharedWebSocketRuntime.md)

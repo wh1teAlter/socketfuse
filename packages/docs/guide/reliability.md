@@ -32,8 +32,19 @@ a bound.
 
 ## Heartbeats
 
-The raw protocol can use activity mode, while the JSON protocol can describe
-ping/pong frames. Heartbeats are shared connection behavior, so all tabs see
-the same resulting reconnect. Select `heartbeat: false` when the server owns
-liveness, or configure interval/pong timeout only after confirming the server
-protocol.
+WWS heartbeats are adapter-defined application messages. Raw protocol has no
+heartbeat capability, so `heartbeat` with `protocol: 'raw'` is rejected during
+configuration. Declarative JSON and custom adapters can describe ping/pong
+frames. Heartbeats are shared connection behavior, so all tabs see the same
+resulting reconnect. Select `heartbeat: false` when the server owns liveness,
+or configure interval/pong timeout only after confirming the server protocol.
+
+## Slow pages and overflow
+
+Worker-to-page delivery is bounded independently for every tab: at most 256
+unreceived messages or 4 MiB. The page runtime sends its receipt before it runs
+your `onMessage` handler, so a slow handler never holds the Worker hostage.
+When a tab exhausts that credit, only its newest inbound messages are dropped;
+healthy tabs continue receiving the broadcast and the affected tab receives an
+`overflow` event once delivery resumes. This is intentionally not application
+delivery acknowledgement.

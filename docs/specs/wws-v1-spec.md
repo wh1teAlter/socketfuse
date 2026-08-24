@@ -1,6 +1,6 @@
 # WWS v1 技术与产品规格
 
-- 状态：Draft / to-spec 已完成，待进入 to-tickets
+- 状态：Draft / 以《Review Remediation Specification》为准，待进入 to-tickets
 - 版本：v1 draft 1
 - 日期：2026-08-19
 - 前置调研：[SharedWorker WebSocket 方案调研与决策清单](../planning/01-sharedworker-websocket-grill.md)
@@ -73,8 +73,7 @@ direct transport 必须使用原生 WebSocket，并复用与 SharedWorker transp
     ├── wws/          # 唯一 v1 公开包
     ├── core/         # 私有状态机、控制协议、队列与连接池
     ├── test/         # 私有跨包、E2E 辅助和 tarball consumer 测试
-    ├── docs/         # 私有 VitePress/TypeDoc 工程
-    └── playground/   # 私有多 tab 交互与性能示例
+    └── docs/         # 私有 VitePress/TypeDoc 工程与 /playground
 
 ### 4.1 pnpm 约束
 
@@ -85,7 +84,7 @@ direct transport 必须使用原生 WebSocket，并复用与 SharedWorker transp
 - 内部依赖必须使用 workspace 协议。
 - CI 安装必须使用 pnpm install --frozen-lockfile。
 - 根脚本必须至少提供 lint、typecheck、test、test:e2e、build、docs:check、release:verify 和 check。
-- TypeScript 使用 catalog 中的 @typescript/native；所有正式源码开启 strict、noUncheckedIndexedAccess、exactOptionalPropertyTypes、verbatimModuleSyntax 和 isolatedModules。
+- TypeScript 使用 catalog 中的标准 `typescript` 包；所有正式源码开启 strict、noUncheckedIndexedAccess、exactOptionalPropertyTypes、verbatimModuleSyntax 和 isolatedModules。
 
 ### 4.2 公开入口
 
@@ -106,8 +105,7 @@ wws 必须为 ESM-only，并提供：
 ### 4.3 构建与发行验证
 
 - tsdown 必须以 browser platform、ESM、ES2022 target 构建多入口和声明文件。
-- tsdown 必须执行 publint 与 arethetypeswrong 验证，profile 使用 ESM-only。
-- release:verify 必须 pack 真实 tarball，在临时 Vite consumer 中安装并验证 import、类型、构建和 Worker 加载。
+- 发布验证以《文档站与工具链收敛规格》4.2 为准：保留 publint、真实 tarball、NodeNext 类型 consumer 和 Node ESM import，不使用 ATTW 或额外 Vite consumer。
 - Changesets 管理公开包版本；提交信息使用 Conventional Commits。
 - 未经明确授权不得自动 publish、创建 tag 或 GitHub Release。
 
@@ -172,7 +170,7 @@ Worker 必须对以下规范化静态配置计算稳定指纹：
 - adapter id、major version 和 sharedConfig。
 - binaryType。
 - reconnect、heartbeat、queue、backpressure 和 idle/lease 中影响共享行为的选项。
-- resource limits 和 idle grace。
+- connection limits 和 idle grace；Worker control-plane limits 由 Worker 静态配置，不进入页面共享配置。
 
 endpoint 使用独立的 revisioned register；当前 endpoint hash 可以进入有效配置诊断，但不进入静态指纹。auth 值、auth revision、client id 和本地 listener 也不进入静态指纹。
 
@@ -226,7 +224,7 @@ endpoint 使用独立的 revisioned register；当前 endpoint hash 可以进入
       backpressure?: Partial<BackpressureOptions>
       lease?: Partial<LeaseOptions>
       lifecycle?: LifecycleOptions
-      limits?: Partial<ResourceLimits>
+      limits?: Partial<ConnectionLimits>
       idleGraceMs?: number
       logger?: WwsLogger
       onConnected?: (
@@ -729,7 +727,7 @@ sendMessage 返回的是本地 transport receipt：
 
 WebSocket 浏览器 API 不暴露 RFC ping frame，v1 心跳只能是 adapter 定义的应用层消息。
 
-- raw 协议默认不启用心跳。
+- raw 协议不具备 heartbeat 能力；为 raw 提供 heartbeat 必须在 options 规范化时拒绝。
 - heartbeat: false 是默认值。
 - heartbeat: true 等价于 message: 'ping'、responseMessage: 'pong'、interval: 25,000 ms、pongTimeout: 10,000 ms。
 - adapter 提供 createPing 且调用方启用后，默认 interval 为 25,000 ms、timeout 为 10,000 ms。
@@ -864,16 +862,19 @@ ConnectionDiagnostics 至少包含：
 
 ### 21.1 默认资源限制
 
-以下默认值必须可通过静态共享配置收紧或放宽，并参与配置指纹：
+以下限制分为 Worker 静态限制与 connection 共享限制：
 
-    maxPortsPerWorker:              256
     maxClientsPerConnection:         64
     maxEncodedMessageBytes:        1 MiB
+    # Worker static limits
+    maxPorts:                       256
     maxControlEnvelopeBytes:       2 MiB
     unattachedPortTimeoutMs:       5,000
 
+- maxClientsPerConnection 与 maxEncodedMessageBytes 可以通过共享连接配置设置，并参与配置指纹。
+- maxPorts、maxControlEnvelopeBytes 与 unattachedPortTimeoutMs 由 `createSharedWebSocketRuntime({ workerLimits })` 静态设置，不在 hello 中传递或参与连接指纹；inline Worker 使用默认值。
 - 超限必须返回稳定错误或关闭违规 port，不得影响既有健康 client。
-- maxPortsPerWorker 在 hello 前也生效；未完成 attach 的 port 必须在超时后清理。
+- maxPorts 在 hello 前也生效；未完成 attach 的 port 必须在超时后清理。
 - Blob、buffer 和 string 按第 13 节统一计算字节数。
 - maxEncodedMessageBytes 的拒绝不得先把消息加入 socket 或离线队列。
 

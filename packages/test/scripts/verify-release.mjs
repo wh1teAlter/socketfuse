@@ -16,10 +16,13 @@ const archiveDir = resolve(temporary, 'archive')
 const requiredEntries = [
   'package/dist/index.js',
   'package/dist/index.d.ts',
+  'package/dist/index.js.map',
   'package/dist/protocol.js',
   'package/dist/protocol.d.ts',
+  'package/dist/protocol.js.map',
   'package/dist/worker.js',
   'package/dist/worker.d.ts',
+  'package/dist/worker.js.map',
 ]
 const rootEntries = new Set(['package/LICENSE', 'package/README.md', 'package/package.json'])
 const distEntryPattern = /^package\/dist\/[A-Za-z0-9_-]+\.(?:js|d\.ts)(?:\.map)?$/
@@ -71,6 +74,7 @@ async function verifyConsumer(tarball) {
     private: true,
     type: 'module',
     dependencies: { wws: `file:${tarball}` },
+    devDependencies: { vite: '8.2.1' },
   }, null, 2))
   await writeFile(resolve(consumerDir, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
@@ -83,7 +87,7 @@ async function verifyConsumer(tarball) {
     include: ['index.ts'],
   }, null, 2))
   await writeFile(resolve(consumerDir, 'index.ts'), `
-import { createWebSocket, type WebSocketClient } from 'wws'
+import { createWebSocket, type JsonValue, type WebSocketClient } from 'wws'
 import { rawProtocol, type ProtocolAdapter } from 'wws/protocol'
 import type { SocketData } from 'wws'
 import { exposeSharedWebSocketWorker, type SharedWebSocketRuntime } from 'wws/worker'
@@ -92,15 +96,52 @@ const client: WebSocketClient = createWebSocket('wss://example.test/socket', { i
 const protocol: ProtocolAdapter<SocketData, SocketData> = rawProtocol
 const worker: typeof exposeSharedWebSocketWorker = exposeSharedWebSocketWorker
 const runtime: SharedWebSocketRuntime | undefined = undefined
+const jsonClient = createWebSocket('wss://example.test/json', {
+  id: 'tarball-json',
+  protocol: { type: 'json' },
+})
+const jsonMessage: JsonValue = { type: 'json' }
+
+void jsonClient.sendMessage(jsonMessage)
 
 void client
 void protocol
 void worker
 void runtime
 `, 'utf8')
+  await writeFile(resolve(consumerDir, 'vite.config.ts'), `
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  build: { emptyOutDir: true, lib: { entry: 'src/main.ts', formats: ['es'], fileName: 'consumer' } },
+})
+`, 'utf8')
+  await mkdir(resolve(consumerDir, 'src'), { recursive: true })
+  await writeFile(resolve(consumerDir, 'src/main.ts'), `
+import { createWebSocket } from 'wws'
+import { rawProtocol } from 'wws/protocol'
+import { exposeSharedWebSocketWorker } from 'wws/worker'
+
+void createWebSocket
+void rawProtocol
+void exposeSharedWebSocketWorker
+`, 'utf8')
   await run('pnpm', ['install', '--ignore-workspace', '--no-frozen-lockfile'], { cwd: consumerDir })
   await run(execPath, [resolve(testDir, 'node_modules/typescript/bin/tsc'), '--project', resolve(consumerDir, 'tsconfig.json')])
-  await run(execPath, ['--input-type=module', '--eval', 'import \'wws\''], { cwd: consumerDir })
+  await run('pnpm', ['exec', 'vite', 'build'], { cwd: consumerDir })
+  await run(execPath, ['--input-type=module', '--eval', `
+    const root = await import('wws')
+    const protocol = await import('wws/protocol')
+    const worker = await import('wws/worker')
+    if (!root.createWebSocket || !protocol.rawProtocol || !worker.exposeSharedWebSocketWorker)
+      throw new Error('A public WWS entry did not evaluate')
+    globalThis.WebSocket = class { constructor() { throw new Error('must not connect') } }
+    let code
+    try { root.createWebSocket('wss://example.test/socket', { id: 'ssr-check', immediate: false }) }
+    catch (error) { code = error?.code }
+    if (code !== 'ENVIRONMENT_UNSUPPORTED')
+      throw new Error('SSR createWebSocket guard was not enforced')
+  `], { cwd: consumerDir })
 }
 
 try {

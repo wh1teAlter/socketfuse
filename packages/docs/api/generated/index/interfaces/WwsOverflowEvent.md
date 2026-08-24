@@ -1,6 +1,6 @@
 # Interface: WwsOverflowEvent
 
-Defined in: [core/src/types.ts:174](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L174)
+Defined in: [core/src/types.ts:178](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L178)
 
 Bounded queue or replay overflow notification.
 
@@ -14,7 +14,7 @@ Bounded queue or replay overflow notification.
 
 > `readonly` **direction**: `"outbound"` \| `"inbound"` \| `"replay"`
 
-Defined in: [core/src/types.ts:175](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L175)
+Defined in: [core/src/types.ts:179](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L179)
 
 ***
 
@@ -22,7 +22,7 @@ Defined in: [core/src/types.ts:175](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **strategy**: `"reject-newest"` \| `"drop-newest"` \| `"drop-oldest"`
 
-Defined in: [core/src/types.ts:176](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L176)
+Defined in: [core/src/types.ts:180](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L180)
 
 ***
 
@@ -30,7 +30,7 @@ Defined in: [core/src/types.ts:176](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **droppedMessages**: `number`
 
-Defined in: [core/src/types.ts:177](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L177)
+Defined in: [core/src/types.ts:181](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L181)
 
 ***
 
@@ -38,4 +38,4 @@ Defined in: [core/src/types.ts:177](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **droppedBytes**: `number`
 
-Defined in: [core/src/types.ts:178](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L178)
+Defined in: [core/src/types.ts:182](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L182)

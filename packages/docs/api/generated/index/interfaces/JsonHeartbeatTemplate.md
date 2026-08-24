@@ -1,6 +1,6 @@
 # Interface: JsonHeartbeatTemplate
 
-Defined in: [core/src/types.ts:227](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L227)
+Defined in: [core/src/types.ts:231](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L231)
 
 Declarative JSON ping/pong templates and matchers.
 
@@ -10,7 +10,7 @@ Declarative JSON ping/pong templates and matchers.
 
 > `readonly` **ping**: [`JsonValue`](../type-aliases/JsonValue.md)
 
-Defined in: [core/src/types.ts:228](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L228)
+Defined in: [core/src/types.ts:232](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L232)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [core/src/types.ts:228](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` **pong**: [`JsonMatcher`](../type-aliases/JsonMatcher.md)
 
-Defined in: [core/src/types.ts:229](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L229)
+Defined in: [core/src/types.ts:233](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L233)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [core/src/types.ts:229](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **serverPing?**: `Readonly`\<`Record`\<`string`, [`JsonValue`](../type-aliases/JsonValue.md)\>\>
 
-Defined in: [core/src/types.ts:230](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L230)
+Defined in: [core/src/types.ts:234](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L234)
 
 ***
 
@@ -34,4 +34,4 @@ Defined in: [core/src/types.ts:230](https://github.com/wh1teAlter/wws/blob/67c6c
 
 > `readonly` `optional` **serverPong?**: [`JsonValue`](../type-aliases/JsonValue.md)
 
-Defined in: [core/src/types.ts:231](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L231)
+Defined in: [core/src/types.ts:235](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L235)

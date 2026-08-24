@@ -12,8 +12,8 @@ import type { NormalizedWebSocketConfig } from './config'
 import type { ClientTransport } from './direct-transport'
 import type { MessagePortLike } from './worker-runtime'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, isWorkerControlMessage } from './control'
+import { createSafePublicError, WwsError } from './errors'
 import { CONTROL_PROTOCOL_MAJOR } from './constants'
-import { WwsError } from './errors'
 
 export interface SharedWorkerLike {
   readonly port: MessagePortLike
@@ -24,7 +24,8 @@ export interface SharedWorkerTransportOptions<Incoming, Outgoing, Auth> {
   readonly config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>
   readonly clientId: string
   readonly mode: 'inline' | 'custom'
-  readonly fallback?: ClientTransport<Incoming, Outgoing, Auth>
+  /** Lazily construct direct fallback only after an allowlisted init failure. */
+  readonly createFallback?: () => ClientTransport<Incoming, Outgoing, Auth>
   readonly initTimeout?: number
 }
 
@@ -41,7 +42,6 @@ function canFallbackFromWorkerError(error: unknown, workerInstanceId: string | n
     return true
   return [
     'ADAPTER_NOT_REGISTERED',
-    'INVALID_CONTROL_MESSAGE',
     'PROTOCOL_VERSION_MISMATCH',
     'WORKER_CONSTRUCTION_FAILED',
     'WORKER_DISCONNECTED',
@@ -58,7 +58,7 @@ function createId(): string {
 }
 
 function deserializeError(value: ControlError): WwsError {
-  return new WwsError(value.code, value.message, { fatal: value.fatal, retryable: value.retryable })
+  return createSafePublicError(value.code, { fatal: value.fatal, retryable: value.retryable })
 }
 
 function toInitError(error: unknown): WwsError {
@@ -102,6 +102,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   private workerInstanceId: string | null = null
   private leaseTimer: TimerHandle | undefined
   private diagnosticsSnapshot: Readonly<ConnectionDiagnostics> | undefined
+  private fallback: ClientTransport<Incoming, Outgoing, Auth> | undefined
 
   constructor(readonly options: SharedWorkerTransportOptions<Incoming, Outgoing, Auth>) {
     this.port = options.worker.port
@@ -127,19 +128,19 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   }
 
   get capabilities(): ProtocolCapabilities {
-    return this.fallbackActive && this.options.fallback !== undefined
-      ? this.options.fallback.capabilities
+    return this.fallbackActive && this.fallback !== undefined
+      ? this.fallback.capabilities
       : this.options.config.adapter.capabilities
   }
 
   attach(sink: ConnectionSink<Incoming>): void {
     this.sink = sink
     if (this.fallbackActive) {
-      this.options.fallback?.attach(sink)
+      this.fallback?.attach(sink)
       return
     }
     void this.ensureHello().catch((error) => {
-      if (this.options.fallback !== undefined)
+      if (this.options.createFallback !== undefined)
         void this.activateFallback(error).catch(value => this.sink?.onError?.(toInitError(value)))
       else
         this.sink?.onError?.(toInitError(error))
@@ -158,21 +159,26 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
     }
     if (this.fallbackActive) {
       if (this.sink !== undefined)
-        this.options.fallback?.attach(this.sink)
-      if (this.options.fallback === undefined)
+        this.fallback?.attach(this.sink)
+      if (this.fallback === undefined)
         throw toInitError(new WwsError('WORKER_DISCONNECTED', 'SharedWorker initialization failed'))
-      return this.options.fallback.open(signal)
+      return this.fallback.open(signal)
     }
     return await this.request({ requestId: createId(), type: 'open' }) as ConnectionSnapshot
   }
 
   close(): void {
     if (this.fallbackActive) {
-      this.options.fallback?.close()
+      this.fallback?.close()
       return
     }
-    if (this.helloPromise !== undefined)
+    if (this.helloPromise !== undefined) {
       void this.request({ requestId: createId(), type: 'close' }).catch(() => undefined)
+      // A following open must issue a fresh hello even when it races the
+      // best-effort close request. MessagePort ordering keeps close before
+      // that new hello in the Worker.
+      this.resetHello()
+    }
   }
 
   async send(data: Outgoing, options?: SendOptions): Promise<SendReceipt> {
@@ -219,9 +225,22 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
     await this.request(message)
   }
 
+  async probe(): Promise<string> {
+    this.assertUsable()
+    await this.ensureHello()
+    if (this.fallbackActive)
+      throw new WwsError('WORKER_DISCONNECTED', 'SharedWorker transport is no longer selected')
+    const value = await this.request({ requestId: createId(), type: 'probe' }, 1_000)
+    if (value === null || typeof value !== 'object' || !('workerInstanceId' in value) || typeof value.workerInstanceId !== 'string')
+      throw new WwsError('INVALID_CONTROL_MESSAGE', 'SharedWorker probe returned an invalid response')
+    if (this.workerInstanceId !== null && this.workerInstanceId !== value.workerInstanceId)
+      throw new WwsError('WORKER_DISCONNECTED', 'SharedWorker instance changed', { retryable: true })
+    return value.workerInstanceId
+  }
+
   suspend(): void {
     if (this.fallbackActive) {
-      this.options.fallback?.suspend?.()
+      this.fallback?.suspend?.()
       return
     }
     this.post({ type: 'suspend' })
@@ -229,7 +248,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
 
   restore(): void {
     if (this.fallbackActive) {
-      this.options.fallback?.restore?.()
+      this.fallback?.restore?.()
       return
     }
     this.post({ type: 'restore' })
@@ -237,7 +256,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
 
   detach(clientId: string): void {
     if (this.fallbackActive) {
-      this.options.fallback?.detach(clientId)
+      this.fallback?.detach(clientId)
       return
     }
     this.close()
@@ -245,7 +264,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
 
   diagnostics(): Readonly<Record<string, unknown>> {
     if (this.fallbackActive)
-      return this.options.fallback?.diagnostics() ?? {}
+      return this.fallback?.diagnostics() ?? {}
     if (this.helloPromise !== undefined)
       void this.request({ requestId: createId(), type: 'diagnostics' }).then(value => this.setDiagnostics(value)).catch(() => undefined)
     return this.diagnosticsSnapshot ?? emptyDiagnostics(this.options.config, this.workerInstanceId)
@@ -254,19 +273,26 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   dispose(): void {
     if (this.disposed)
       return
-    this.disposed = true
     if (this.fallbackActive) {
-      this.options.fallback?.dispose()
+      this.disposed = true
+      this.fallback?.dispose()
       return
     }
     if (this.leaseTimer !== undefined)
       globalThis.clearInterval(this.leaseTimer)
     this.leaseTimer = undefined
-    if (this.helloPromise !== undefined)
-      void this.request({ requestId: createId(), type: 'dispose' }).catch(() => undefined)
+    // This also releases a newly-created but never-attached port without
+    // waiting for the Worker's unattached-port timeout.
+    try {
+      this.port.postMessage({ requestId: createId(), type: 'dispose' })
+    }
+    catch {
+      // A failed port still gets closed below.
+    }
     this.port.close?.()
     this.rejectAll(new WwsError('CLIENT_DISPOSED', 'SharedWorker transport was disposed'))
-    this.options.fallback?.dispose()
+    this.disposed = true
+    this.fallback?.dispose()
   }
 
   private ensureHello(): Promise<void> {
@@ -294,6 +320,14 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
       this.leaseTimer = globalThis.setInterval(() => this.post({ type: 'lease' }), this.options.config.shared.lease.interval)
     })
     return this.helloPromise
+  }
+
+  private resetHello(): void {
+    if (this.leaseTimer !== undefined)
+      globalThis.clearInterval(this.leaseTimer)
+    this.leaseTimer = undefined
+    this.helloPromise = undefined
+    this.workerInstanceId = null
   }
 
   private async ensureReady(): Promise<void> {
@@ -350,11 +384,20 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
     else if (value.type === 'open')
       this.sink?.onOpen?.(value.snapshot)
     else if (value.type === 'message')
+      this.post({ deliveryId: value.deliveryId, type: 'receipt' })
+    if (value.type === 'message')
       this.sink?.onMessage?.(value.data as Incoming, value.receivedAt, value.replayed)
     else if (value.type === 'close')
       this.sink?.onClose?.(value)
     else if (value.type === 'error')
       this.sink?.onError?.(deserializeError(value.error))
+    else if (value.type === 'overflow')
+      this.sink?.onOverflow?.({
+        direction: value.direction,
+        droppedBytes: value.droppedBytes,
+        droppedMessages: value.droppedMessages,
+        strategy: value.direction === 'replay' ? 'drop-oldest' : 'drop-newest',
+      })
   }
 
   private setDiagnostics(value: ControlResponseValue): void {
@@ -381,19 +424,20 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
       return
     if (!canFallbackFromWorkerError(error, this.workerInstanceId))
       throw error
-    if (this.options.fallback === undefined)
+    if (this.options.createFallback === undefined)
       throw toInitError(error)
+    this.fallback = this.options.createFallback()
     this.fallbackActive = true
     this.rejectAll(toInitError(error))
     this.port.close?.()
     if (this.sink !== undefined)
-      this.options.fallback.attach(this.sink)
+      this.fallback.attach(this.sink)
   }
 
   private requireFallback(): ClientTransport<Incoming, Outgoing, Auth> {
-    if (this.options.fallback === undefined)
+    if (this.fallback === undefined)
       throw new WwsError('WORKER_DISCONNECTED', 'Direct fallback is not configured')
-    return this.options.fallback
+    return this.fallback
   }
 
   private assertUsable(): void {

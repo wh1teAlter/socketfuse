@@ -12,7 +12,7 @@
 - [QueueOptions](interfaces/QueueOptions.md)
 - [BackpressureOptions](interfaces/BackpressureOptions.md)
 - [LeaseOptions](interfaces/LeaseOptions.md)
-- [ResourceLimits](interfaces/ResourceLimits.md)
+- [ConnectionLimits](interfaces/ConnectionLimits.md)
 - [RestoreOptions](interfaces/RestoreOptions.md)
 - [LifecycleOptions](interfaces/LifecycleOptions.md)
 - [SendOptions](interfaces/SendOptions.md)

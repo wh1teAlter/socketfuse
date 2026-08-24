@@ -1,6 +1,6 @@
 # Interface: ReconnectOptions
 
-Defined in: [core/src/types.ts:36](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L36)
+Defined in: [core/src/types.ts:36](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L36)
 
 Shared reconnect policy. Delays are expressed in milliseconds.
 
@@ -10,7 +10,7 @@ Shared reconnect policy. Delays are expressed in milliseconds.
 
 > **retries**: `number`
 
-Defined in: [core/src/types.ts:38](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L38)
+Defined in: [core/src/types.ts:38](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L38)
 
 Maximum retries, or `Infinity`. Defaults to `Infinity`.
 
@@ -20,7 +20,7 @@ Maximum retries, or `Infinity`. Defaults to `Infinity`.
 
 > **initialDelay**: `number`
 
-Defined in: [core/src/types.ts:40](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L40)
+Defined in: [core/src/types.ts:40](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L40)
 
 Base retry delay. Defaults to `1000`.
 
@@ -30,7 +30,7 @@ Base retry delay. Defaults to `1000`.
 
 > **maxDelay**: `number`
 
-Defined in: [core/src/types.ts:42](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L42)
+Defined in: [core/src/types.ts:42](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L42)
 
 Maximum retry delay. Defaults to `30000`.
 
@@ -40,7 +40,7 @@ Maximum retry delay. Defaults to `30000`.
 
 > **factor**: `number`
 
-Defined in: [core/src/types.ts:44](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L44)
+Defined in: [core/src/types.ts:44](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L44)
 
 Exponential multiplier. Defaults to `2`.
 
@@ -50,7 +50,7 @@ Exponential multiplier. Defaults to `2`.
 
 > **jitter**: `number`
 
-Defined in: [core/src/types.ts:46](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L46)
+Defined in: [core/src/types.ts:46](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L46)
 
 Random delay ratio from `0` to `1`. Defaults to `0.2`.
 
@@ -60,6 +60,6 @@ Random delay ratio from `0` to `1`. Defaults to `0.2`.
 
 > **stableThreshold**: `number`
 
-Defined in: [core/src/types.ts:48](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L48)
+Defined in: [core/src/types.ts:48](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L48)
 
 Open duration after which the retry counter resets. Defaults to `30000`.

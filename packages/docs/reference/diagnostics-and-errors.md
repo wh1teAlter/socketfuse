@@ -8,6 +8,11 @@ It intentionally excludes auth values, URL query strings, message payloads and
 internal error stacks. This makes diagnostics suitable for application metrics
 without turning it into a data-exfiltration channel.
 
+The same boundary applies to Worker errors: another tab receives only a stable
+WWS error code with WWS-owned public text plus explicitly safe primitive
+details. Adapter exceptions, server payloads, endpoint paths, auth and causes
+are not propagated across a `MessagePort`.
+
 ## Errors
 
 Errors are `WwsError` values with a stable `code`, human message, retryability

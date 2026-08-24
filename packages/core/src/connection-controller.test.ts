@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { WebSocketLike } from './socket'
 import type { SocketData } from './types'
 import { ConnectionController } from './connection-controller'
@@ -107,6 +107,134 @@ describe('connectionController', () => {
       idHash: expect.stringMatching(/^wws1-/),
       transport: 'direct',
     })
+  })
+
+  it('keeps the attempt deadline through adapter handshake and rejects fatal frames', async () => {
+    vi.useFakeTimers()
+    try {
+      const socket = new FakeSocket()
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        id: 'handshake-deadline',
+        protocol: {
+          capabilities: { auth: false, binary: false, heartbeat: false },
+          classify: () => ({ type: 'fatal' }),
+          decode: data => data,
+          encode: data => String(data),
+          id: 'fatal-protocol',
+          readyWhen: 'adapter-frame',
+          version: 1,
+        },
+        worker: () => null as unknown as SharedWorker,
+      })
+      const controller = new ConnectionController({ config, socketFactory: () => socket })
+      controller.attach({ id: 'client' })
+      const opening = controller.open()
+      socket.open()
+      await vi.advanceTimersByTimeAsync(1)
+      socket.message('fatal')
+      await expect(opening).rejects.toMatchObject({ code: 'PROTOCOL_ERROR' })
+      expect(socket.readyState).toBe(3)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends latest auth before becoming open for a socket-open protocol', async () => {
+    const socket = new FakeSocket()
+    const config = normalizeWebSocketOptions('wss://example.test/socket', {
+      id: 'auth-first-frame',
+      protocol: { auth: { template: { token: '$auth.token' } }, type: 'json' },
+    })
+    const controller = new ConnectionController({ config, socketFactory: () => socket })
+    controller.attach({ id: 'client' })
+    await controller.updateAuth({ token: 'secret' }, 1)
+    const opening = controller.open()
+    socket.open()
+    await opening
+    expect(socket.sent).toEqual(['{"token":"secret"}'])
+  })
+
+  it('waits for asynchronous auth before accepting an adapter ready frame', async () => {
+    let resolveAuth: ((value: string) => void) | undefined
+    const socket = new FakeSocket()
+    const config = normalizeWebSocketOptions('wss://example.test/socket', {
+      id: 'adapter-frame-auth-order',
+      protocol: {
+        capabilities: { auth: true, binary: false, heartbeat: false },
+        classify: data => data === 'ready' ? { type: 'ready' } : { data, type: 'data' },
+        createAuth: () => new Promise<string>((resolve) => {
+          resolveAuth = resolve
+        }),
+        decode: data => data,
+        encode: data => data,
+        id: 'async-auth',
+        readyWhen: 'adapter-frame',
+        version: 1,
+      },
+      worker: () => null as unknown as SharedWorker,
+    })
+    const controller = new ConnectionController({ config, socketFactory: () => socket })
+    controller.attach({ id: 'client' })
+    await controller.updateAuth('current-auth', 1)
+    const opening = controller.open()
+    socket.open()
+    socket.message('ready')
+    await Promise.resolve()
+    expect(controller.state).toBe('handshaking')
+    expect(socket.sent).toEqual([])
+    resolveAuth?.('auth-frame')
+    await expect(opening).resolves.toMatchObject({ state: 'open' })
+    expect(socket.sent).toEqual(['auth-frame'])
+  })
+
+  it('restarts a connecting attempt when URL revision changes', async () => {
+    const sockets: FakeSocket[] = []
+    const config = normalizeWebSocketOptions('wss://example.test/old', { id: 'url-revision' })
+    const controller = new ConnectionController({ config, socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    controller.attach({ id: 'client' })
+    const opening = controller.open()
+    await controller.updateUrl('wss://example.test/new', 1)
+    expect(sockets[0]?.readyState).toBe(3)
+    sockets[1]?.open()
+    await opening
+    expect(sockets).toHaveLength(2)
+  })
+
+  it('routes an explicit reconnect during backoff through connecting', async () => {
+    vi.useFakeTimers()
+    try {
+      const sockets: FakeSocket[] = []
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        autoReconnect: { initialDelay: 1_000, jitter: 0, retries: 1 },
+        id: 'explicit-backoff-reconnect',
+      })
+      const controller = new ConnectionController({ config, socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      } })
+      controller.attach({ id: 'client' })
+      const opening = controller.open()
+      sockets[0]?.open()
+      await opening
+      sockets[0]?.close(1006)
+      expect(controller.state).toBe('reconnecting')
+
+      await controller.reconnect()
+      expect(controller.state).toBe('connecting')
+      sockets[1]?.open()
+      await Promise.resolve()
+      expect(controller.state).toBe('open')
+      expect(sockets).toHaveLength(2)
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })
 

@@ -1,6 +1,6 @@
 # Interface: SharedWebSocketRuntimeOptions
 
-Defined in: [core/src/worker-runtime.ts:23](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L23)
+Defined in: [core/src/worker-runtime.ts:23](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L23)
 
 Custom Worker runtime dependencies and statically registered protocols.
 
@@ -10,7 +10,7 @@ Custom Worker runtime dependencies and statically registered protocols.
 
 > `readonly` `optional` **protocols?**: readonly [`ProtocolAdapter`](../../protocol/interfaces/ProtocolAdapter.md)\<`unknown`, `unknown`, `unknown`\>[]
 
-Defined in: [core/src/worker-runtime.ts:24](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L24)
+Defined in: [core/src/worker-runtime.ts:24](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L24)
 
 ***
 
@@ -18,7 +18,7 @@ Defined in: [core/src/worker-runtime.ts:24](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **socketFactory?**: `WebSocketFactory`
 
-Defined in: [core/src/worker-runtime.ts:25](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L25)
+Defined in: [core/src/worker-runtime.ts:25](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L25)
 
 ***
 
@@ -26,7 +26,7 @@ Defined in: [core/src/worker-runtime.ts:25](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **now?**: () => `number`
 
-Defined in: [core/src/worker-runtime.ts:26](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L26)
+Defined in: [core/src/worker-runtime.ts:26](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L26)
 
 #### Returns
 
@@ -38,7 +38,7 @@ Defined in: [core/src/worker-runtime.ts:26](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **setTimeout?**: (`callback`, `delay`) => `number`
 
-Defined in: [core/src/worker-runtime.ts:27](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L27)
+Defined in: [core/src/worker-runtime.ts:27](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L27)
 
 #### Parameters
 
@@ -60,7 +60,7 @@ Defined in: [core/src/worker-runtime.ts:27](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **clearTimeout?**: (`handle`) => `void`
 
-Defined in: [core/src/worker-runtime.ts:28](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L28)
+Defined in: [core/src/worker-runtime.ts:28](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L28)
 
 #### Parameters
 
@@ -71,3 +71,13 @@ Defined in: [core/src/worker-runtime.ts:28](https://github.com/wh1teAlter/wws/bl
 #### Returns
 
 `void`
+
+***
+
+### workerLimits?
+
+> `readonly` `optional` **workerLimits?**: `Partial`\<[`WorkerResourceLimits`](WorkerResourceLimits.md)\>
+
+Defined in: [core/src/worker-runtime.ts:30](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L30)
+
+Static limits for this Worker runtime, set once before any page connects.

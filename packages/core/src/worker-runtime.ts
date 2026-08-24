@@ -1,12 +1,12 @@
-import type { NormalizedRestoreOptions, ProtocolAdapter, TimerHandle } from './types'
-import type { NormalizedWebSocketConfig, SharedConnectionConfig } from './config'
+import type { JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, TimerHandle, WorkerResourceLimits } from './types'
 import type { WebSocketFactory } from './socket'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, type HelloRequest, isClientControlMessage, type WorkerControlMessage } from './control'
+import { type NormalizedWebSocketConfig, normalizeRestoreOptions, normalizeWebSocketOptions, type SharedConnectionConfig } from './config'
 import { createJsonProtocolAdapter, rawProtocol, validateProtocolAdapter } from './protocol'
+import { CONTROL_PROTOCOL_MAJOR, DEFAULT_WORKER_RESOURCE_LIMITS } from './constants'
 import { ConnectionController, type ConnectionSink } from './connection-controller'
-import { CONTROL_PROTOCOL_MAJOR, DEFAULT_RESOURCE_LIMITS } from './constants'
-import { isWwsError, toWwsError, WwsError } from './errors'
-import { stableHash } from './structured'
+import { isWwsError, toSafePublicError, toWwsError, WwsError } from './errors'
+import { estimateStructuredCloneBytes, stableHash } from './structured'
 
 /** Minimal MessagePort surface used by the custom Worker runtime. */
 export interface MessagePortLike {
@@ -26,6 +26,8 @@ export interface SharedWebSocketRuntimeOptions {
   readonly now?: () => number
   readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
   readonly clearTimeout?: (handle: TimerHandle) => void
+  /** Static limits for this Worker runtime, set once before any page connects. */
+  readonly workerLimits?: Partial<WorkerResourceLimits>
 }
 
 interface RuntimeClient {
@@ -40,6 +42,11 @@ interface RuntimeClient {
   replayDroppedMessages: number
   replayDroppedBytes: number
   readonly restore: Readonly<NormalizedRestoreOptions>
+  nextDeliveryId: number
+  readonly outstandingDeliveries: Map<number, number>
+  outstandingBytes: number
+  inboundDroppedMessages: number
+  inboundDroppedBytes: number
 }
 
 interface ConnectionEntry {
@@ -65,25 +72,30 @@ function createId(): string {
   return `worker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-function estimateBytes(value: unknown): number {
-  if (typeof value === 'string')
-    return new TextEncoder().encode(value).byteLength
-  if (typeof Blob !== 'undefined' && value instanceof Blob)
-    return value.size
-  if (value instanceof ArrayBuffer)
-    return value.byteLength
-  if (ArrayBuffer.isView(value))
-    return value.byteLength
-  try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength
-  }
-  catch {
-    return 0
-  }
+function positiveInteger(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
+    throw new WwsError('INVALID_OPTIONS', `${field} must be a positive safe integer`)
+  return value
+}
+
+function positiveNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    throw new WwsError('INVALID_OPTIONS', `${field} must be a positive finite number`)
+  return value
+}
+
+function normalizeWorkerLimits(value: Partial<WorkerResourceLimits> | undefined): Readonly<WorkerResourceLimits> {
+  if (value !== undefined && (value === null || typeof value !== 'object'))
+    throw new WwsError('INVALID_OPTIONS', 'workerLimits must be an options object')
+  return Object.freeze({
+    maxControlEnvelopeBytes: positiveInteger(value?.maxControlEnvelopeBytes ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxControlEnvelopeBytes, 'workerLimits.maxControlEnvelopeBytes'),
+    maxPorts: positiveInteger(value?.maxPorts ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxPorts, 'workerLimits.maxPorts'),
+    unattachedPortTimeoutMs: positiveNumber(value?.unattachedPortTimeoutMs ?? DEFAULT_WORKER_RESOURCE_LIMITS.unattachedPortTimeoutMs, 'workerLimits.unattachedPortTimeoutMs'),
+  })
 }
 
 function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, maxMessages: number, maxBytes: number): void {
-  const bytes = estimateBytes(data)
+  const bytes = estimateStructuredCloneBytes(data, maxBytes)
   while (client.replay.length >= maxMessages || client.replayBytes + bytes > maxBytes) {
     const removed = client.replay.shift()
     if (removed === undefined)
@@ -100,6 +112,9 @@ function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, ma
   client.replay.push({ bytes, data, receivedAt })
   client.replayBytes += bytes
 }
+
+const MAX_OUTSTANDING_DELIVERIES = 256
+const MAX_OUTSTANDING_DELIVERY_BYTES = 4 * 1024 * 1024
 
 function resolveAdapter(
   shared: SharedConnectionConfig,
@@ -118,33 +133,44 @@ function resolveAdapter(
 function createWorkerConfig(
   message: HelloRequest,
   adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
-): NormalizedWebSocketConfig<unknown, unknown, unknown> {
+): { readonly config: NormalizedWebSocketConfig<unknown, unknown, unknown>, readonly restore: Readonly<NormalizedRestoreOptions> } {
   const adapter = resolveAdapter(message.shared, adapters)
-  return Object.freeze({
-    adapter,
-    configCanonical: message.configCanonical,
-    configFingerprint: message.configFingerprint,
+  const protocol = message.shared.protocol.kind === 'raw'
+    ? 'raw'
+    : message.shared.protocol.kind === 'json'
+      ? message.shared.protocol.sharedConfig as unknown as JsonProtocolOptions
+      : adapter
+  const normalized = normalizeWebSocketOptions(message.url, {
+    autoReconnect: message.shared.reconnect === false ? false : message.shared.reconnect,
+    backpressure: message.shared.backpressure,
+    binaryType: message.shared.binaryType,
+    connectionTimeout: message.shared.connectionTimeout,
+    heartbeat: message.shared.heartbeat,
     id: message.id,
-    local: Object.freeze({
-      autoClose: true,
-      fallback: 'error' as const,
-      immediate: true,
-      lifecycle: Object.freeze({ enabled: false, maxBytes: 0, maxMessages: 0, replay: false }),
-      logger: undefined,
-      workerMode: 'custom' as const,
-    }),
-    shared: message.shared,
-    url: message.url,
-  })
+    idleGraceMs: message.shared.idleGraceMs,
+    lease: message.shared.lease,
+    limits: message.shared.limits,
+    protocol,
+    protocols: message.shared.protocols,
+    queue: message.shared.queue,
+    worker: () => null as unknown as SharedWorker,
+  }) as NormalizedWebSocketConfig<unknown, unknown, unknown>
+  if (normalized.configCanonical !== message.configCanonical || normalized.configFingerprint !== message.configFingerprint)
+    throw new WwsError('INVALID_CONTROL_MESSAGE', 'Hello configuration does not match its canonical fingerprint')
+  return { config: normalized, restore: normalizeRestoreOptions({ restore: message.restore.enabled
+    ? { maxBytes: message.restore.maxBytes, maxMessages: message.restore.maxMessages, replay: message.restore.replay }
+    : false }) }
 }
 
 function serializeError(error: unknown): ControlError {
   const value = isWwsError(error) ? error : toWwsError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
-  return { code: value.code, fatal: value.fatal, message: value.message, retryable: value.retryable }
+  const safe = toSafePublicError(value)
+  return { code: safe.code, fatal: safe.fatal, retryable: safe.retryable }
 }
 
 /** Create a Worker-side runtime without installing a global `onconnect` hook. */
 export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOptions = {}): SharedWebSocketRuntime {
+  const workerLimits = normalizeWorkerLimits(options.workerLimits)
   const adapters = new Map<string, ProtocolAdapter<unknown, unknown, unknown>>()
   for (const adapter of options.protocols ?? []) {
     validateProtocolAdapter(adapter)
@@ -159,21 +185,30 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   let leaseTimer: TimerHandle | undefined
   let disposed = false
 
-  const detach = (port: MessagePortLike, closePort: boolean): void => {
+  const detach = (port: MessagePortLike, closePort: boolean, releasePort = closePort): void => {
     const client = clients.get(port)
-    if (client === undefined)
-      return
-    const entry = connections.get(client.connectionId)
-    entry?.controller.detach(client.clientId)
-    clients.delete(port)
-    if (closePort) {
+    if (client !== undefined) {
+      const entry = connections.get(client.connectionId)
+      entry?.controller.detach(client.clientId)
+      clients.delete(port)
+    }
+    if (releasePort) {
       connectedPorts.delete(port)
       const timer = unattachedTimers.get(port)
       if (timer !== undefined)
         (options.clearTimeout ?? globalThis.clearTimeout)(timer)
       unattachedTimers.delete(port)
-      port.close?.()
     }
+    if (closePort)
+      port.close?.()
+  }
+
+  const removeIdleConnection = (id: string, controller: ConnectionController<unknown, unknown, unknown>): void => {
+    const entry = connections.get(id)
+    if (entry?.controller !== controller || controller.attachedClientCount !== 0)
+      return
+    connections.delete(id)
+    controller.dispose()
   }
 
   const scheduleLeaseSweep = (): void => {
@@ -198,6 +233,42 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     catch {
       detach(port, true)
     }
+  }
+
+  const flushInboundOverflow = (client: RuntimeClient): void => {
+    if (client.inboundDroppedMessages === 0)
+      return
+    post(client.port, {
+      direction: 'inbound',
+      droppedBytes: client.inboundDroppedBytes,
+      droppedMessages: client.inboundDroppedMessages,
+      type: 'overflow',
+    })
+    client.inboundDroppedBytes = 0
+    client.inboundDroppedMessages = 0
+  }
+
+  const deliver = (client: RuntimeClient, data: unknown, receivedAt: number, replayed: boolean): boolean => {
+    const bytes = estimateStructuredCloneBytes(data, MAX_OUTSTANDING_DELIVERY_BYTES)
+    if (client.outstandingDeliveries.size >= MAX_OUTSTANDING_DELIVERIES
+      || client.outstandingBytes + bytes > MAX_OUTSTANDING_DELIVERY_BYTES) {
+      if (replayed) {
+        client.replayDroppedMessages++
+        client.replayDroppedBytes += bytes
+      }
+      else {
+        client.inboundDroppedMessages++
+        client.inboundDroppedBytes += bytes
+        if (client.outstandingDeliveries.size === 0)
+          flushInboundOverflow(client)
+      }
+      return false
+    }
+    const deliveryId = ++client.nextDeliveryId
+    client.outstandingDeliveries.set(deliveryId, bytes)
+    client.outstandingBytes += bytes
+    post(client.port, { data, deliveryId, receivedAt, replayed, type: 'message' })
+    return true
   }
 
   const respond = (port: MessagePortLike, requestId: string, value: ControlResponseValue): void => {
@@ -227,7 +298,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       if (client === undefined)
         return
       if (!client.suspended) {
-        post(port, { data, receivedAt, replayed: false, type: 'message' })
+        deliver(client, data, receivedAt, false)
         return
       }
       const restore = client.restore
@@ -247,28 +318,40 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   const handleHello = (port: MessagePortLike, message: HelloRequest): void => {
     if (message.protocolMajor !== CONTROL_PROTOCOL_MAJOR) {
       reject(port, message.requestId, new WwsError('PROTOCOL_VERSION_MISMATCH', 'Control protocol version mismatch', { fatal: true }))
+      detach(port, true)
       return
     }
+    let createdEntry: ConnectionEntry | undefined
     try {
+      if (!connectedPorts.has(port)) {
+        if (connectedPorts.size >= workerLimits.maxPorts) {
+          detach(port, true)
+          throw new WwsError('RESOURCE_LIMIT_EXCEEDED', 'Maximum Worker ports has been reached')
+        }
+        connectedPorts.add(port)
+      }
+      const workerConfig = createWorkerConfig(message, adapters)
       let entry = connections.get(message.id)
       if (entry !== undefined && entry.canonical !== message.configCanonical)
         throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
       if (entry === undefined) {
-        const config = createWorkerConfig(message, adapters)
+        const config = workerConfig.config
         const controller = new ConnectionController({
           ...(options.clearTimeout === undefined ? {} : { clearTimeout: options.clearTimeout }),
           config,
           ...(options.now === undefined ? {} : { now: options.now }),
           ...(options.setTimeout === undefined ? {} : { setTimeout: options.setTimeout }),
           ...(options.socketFactory === undefined ? {} : { socketFactory: options.socketFactory }),
+          onIdle: idleController => removeIdleConnection(message.id, idleController),
         })
         entry = { canonical: message.configCanonical, config, controller }
+        createdEntry = entry
         connections.set(message.id, entry)
       }
       else if (entry.controller.endpointRevision === 0 && entry.config.url !== message.url) {
         throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Initial endpoint conflicts with the current endpoint')
       }
-      detach(port, false)
+      detach(port, false, false)
       const sink = createSink(port, message)
       const client: RuntimeClient = {
         clientId: message.clientId,
@@ -279,24 +362,42 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         replayBytes: 0,
         replayDroppedBytes: 0,
         replayDroppedMessages: 0,
-        restore: message.restore,
+        restore: workerConfig.restore,
         sink,
         suspended: false,
+        inboundDroppedBytes: 0,
+        inboundDroppedMessages: 0,
+        nextDeliveryId: 0,
+        outstandingBytes: 0,
+        outstandingDeliveries: new Map(),
       }
+      entry.controller.attach(sink)
       clients.set(port, client)
       const unattachedTimer = unattachedTimers.get(port)
       if (unattachedTimer !== undefined)
         (options.clearTimeout ?? globalThis.clearTimeout)(unattachedTimer)
       unattachedTimers.delete(port)
-      entry.controller.attach(sink)
       respond(port, message.requestId, { attached: true, workerInstanceId: instanceId })
     }
     catch (error) {
+      // Attach is intentionally performed before committing the RuntimeClient.
+      // If it rejects (for example, because maxClientsPerConnection is full),
+      // release the provisional connection entry so this failed hello cannot
+      // consume a client slot or leave a stale controller in the Worker pool.
+      if (createdEntry !== undefined && createdEntry.controller.attachedClientCount === 0) {
+        connections.delete(message.id)
+        createdEntry.controller.dispose()
+      }
       reject(port, message.requestId, error)
+      detach(port, true)
     }
   }
 
   const handleOperation = async (port: MessagePortLike, message: Exclude<ClientControlMessage, HelloRequest>): Promise<void> => {
+    if (message.type === 'dispose') {
+      detach(port, true)
+      return
+    }
     if (message.type === 'lease') {
       const client = clients.get(port)
       if (client !== undefined)
@@ -313,15 +414,27 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       const client = clients.get(port)
       if (client !== undefined) {
         client.suspended = false
+        for (const item of client.replay)
+          deliver(client, item.data, item.receivedAt, true)
+        client.replay = []
+        client.replayBytes = 0
         if (client.replayDroppedMessages > 0) {
           post(port, { direction: 'replay', droppedBytes: client.replayDroppedBytes, droppedMessages: client.replayDroppedMessages, type: 'overflow' })
           client.replayDroppedBytes = 0
           client.replayDroppedMessages = 0
         }
-        for (const item of client.replay)
-          post(port, { data: item.data, receivedAt: item.receivedAt, replayed: true, type: 'message' })
-        client.replay = []
-        client.replayBytes = 0
+      }
+      return
+    }
+    if (message.type === 'receipt') {
+      const client = clients.get(port)
+      if (client !== undefined) {
+        const bytes = client.outstandingDeliveries.get(message.deliveryId)
+        if (bytes !== undefined) {
+          client.outstandingDeliveries.delete(message.deliveryId)
+          client.outstandingBytes -= bytes
+          flushInboundOverflow(client)
+        }
       }
       return
     }
@@ -333,7 +446,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
           respond(port, message.requestId, { ...await entry.controller.open(), transport: 'shared-worker' })
           break
         case 'close':
-          entry.controller.detach(client.clientId)
+          detach(port, false, true)
           respond(port, message.requestId, null)
           break
         case 'send':
@@ -355,9 +468,8 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         case 'diagnostics':
           respond(port, message.requestId, entry.controller.diagnostics('shared-worker', stableHash(instanceId)))
           break
-        case 'dispose':
-          detach(port, true)
-          respond(port, message.requestId, null)
+        case 'probe':
+          respond(port, message.requestId, { attached: true, workerInstanceId: instanceId })
           break
       }
     }
@@ -371,17 +483,13 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       port.close?.()
       return
     }
-    if (connectedPorts.size >= DEFAULT_RESOURCE_LIMITS.maxPortsPerWorker) {
+    if (connectedPorts.size >= workerLimits.maxPorts) {
       port.close?.()
       return
     }
     connectedPorts.add(port)
     const onMessage = (event: { readonly data: unknown }): void => {
-      const client = clients.get(port)
-      const maxBytes = client === undefined
-        ? DEFAULT_RESOURCE_LIMITS.maxControlEnvelopeBytes
-        : connections.get(client.connectionId)?.config.shared.limits.maxControlEnvelopeBytes ?? DEFAULT_RESOURCE_LIMITS.maxControlEnvelopeBytes
-      if (estimateBytes(event.data) > maxBytes) {
+      if (estimateStructuredCloneBytes(event.data, workerLimits.maxControlEnvelopeBytes) > workerLimits.maxControlEnvelopeBytes) {
         detach(port, true)
         return
       }
@@ -389,6 +497,8 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         const record = event.data as { readonly requestId?: unknown }
         if (typeof record?.requestId === 'string')
           reject(port, record.requestId, new WwsError('INVALID_CONTROL_MESSAGE', 'Invalid control message'))
+        else
+          detach(port, true)
         return
       }
       if (event.data.type === 'hello')
@@ -406,7 +516,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       port.onmessageerror = onMessageError
     }
     port.start?.()
-    const timer = (options.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay)))(() => detach(port, true), DEFAULT_RESOURCE_LIMITS.unattachedPortTimeoutMs)
+    const timer = (options.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay)))(() => detach(port, true), workerLimits.unattachedPortTimeoutMs)
     unattachedTimers.set(port, timer)
   }
 

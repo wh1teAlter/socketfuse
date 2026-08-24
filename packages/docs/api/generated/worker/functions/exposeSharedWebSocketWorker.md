@@ -2,7 +2,7 @@
 
 > **exposeSharedWebSocketWorker**(`options?`, `scope?`): [`SharedWebSocketRuntime`](../interfaces/SharedWebSocketRuntime.md)
 
-Defined in: [core/src/worker-runtime.ts:441](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/worker-runtime.ts#L441)
+Defined in: [core/src/worker-runtime.ts:551](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/worker-runtime.ts#L551)
 
 Create a runtime and install its port handler on the SharedWorker global scope.
 

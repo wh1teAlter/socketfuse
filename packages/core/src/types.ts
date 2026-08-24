@@ -81,11 +81,15 @@ export interface LeaseOptions {
   timeout: number
 }
 
-/** Hard limits that protect the SharedWorker control plane and payload path. */
-export interface ResourceLimits {
-  maxPortsPerWorker: number
+/** Limits that belong to one shared physical WebSocket connection. */
+export interface ConnectionLimits {
   maxClientsPerConnection: number
   maxEncodedMessageBytes: number
+}
+
+/** Static limits that protect one SharedWorker control plane. */
+export interface WorkerResourceLimits {
+  maxPorts: number
   maxControlEnvelopeBytes: number
   unattachedPortTimeoutMs: number
 }
@@ -355,8 +359,8 @@ export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = Socket
   lease?: Partial<LeaseOptions>
   /** Page-local freeze/restore handling. Disabled by default. */
   lifecycle?: LifecycleOptions
-  /** Shared Worker resource limits. */
-  limits?: Partial<ResourceLimits>
+  /** Shared physical connection resource limits. */
+  limits?: Partial<ConnectionLimits>
   /** Delay before closing an unused physical socket, in milliseconds. Defaults to `5000`. */
   idleGraceMs?: number
   /** Page-local sink for sanitized operational diagnostics. */

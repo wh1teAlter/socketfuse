@@ -1,6 +1,6 @@
 # Interface: LeaseOptions
 
-Defined in: [core/src/types.ts:79](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L79)
+Defined in: [core/src/types.ts:79](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L79)
 
 Shared page-client liveness lease, in milliseconds.
 
@@ -10,7 +10,7 @@ Shared page-client liveness lease, in milliseconds.
 
 > **interval**: `number`
 
-Defined in: [core/src/types.ts:80](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L80)
+Defined in: [core/src/types.ts:80](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L80)
 
 ***
 
@@ -18,4 +18,4 @@ Defined in: [core/src/types.ts:80](https://github.com/wh1teAlter/wws/blob/67c6ce
 
 > **timeout**: `number`
 
-Defined in: [core/src/types.ts:81](https://github.com/wh1teAlter/wws/blob/67c6cef834b648e5ab5037d8b8c8080a6a904d54/packages/core/src/types.ts#L81)
+Defined in: [core/src/types.ts:81](https://github.com/wh1teAlter/wws/blob/d8329db0e508c9b14b515c2bb718c128ea4754e4/packages/core/src/types.ts#L81)

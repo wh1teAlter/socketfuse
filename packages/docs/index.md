@@ -20,7 +20,7 @@ const ws = createWebSocket('wss://api.example.com/realtime', {
 })
 
 await ws.open()
-await ws.sendMessage({ type: 'join', room: 'general' })
+await ws.sendMessage(JSON.stringify({ type: 'join', room: 'general' }))
 ```
 
 `id` is the explicit sharing identity. Tabs that use the same `id`, initial URL
@@ -28,6 +28,10 @@ and shared configuration attach to one physical WebSocket. `lifecycle`, local
 listeners and other page-local options do not create a configuration conflict.
 Later endpoint and auth changes are ordered across the shared connection by
 monotonic revisions instead of becoming part of its static fingerprint.
+
+The default raw protocol accepts only native WebSocket values: `string`,
+`Blob`, `ArrayBuffer`, or a typed-array view. Use the JSON protocol below when
+your business messages are objects.
 
 ## Message handling
 
@@ -111,8 +115,11 @@ const ws = createWebSocket(url, {
 
 Replay is bounded and uses the normal `onMessage` path with
 `event.replayed === true`. Overflow drops the oldest buffered message and
-emits `overflow`; Worker restart, lease expiry and page termination are not
-reliable message recovery boundaries.
+emits `overflow`. On a restore-enabled page WWS probes the selected
+SharedWorker; if it was restarted, the page rebuilds that shared transport and
+replays its newest endpoint/auth revisions before reopening demand. This is
+best-effort transport recovery, not durable business-message recovery: Worker
+restart, lease expiry and page termination can still lose messages.
 
 ## Worker deployment
 
