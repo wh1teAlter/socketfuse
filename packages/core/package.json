@@ -12,12 +12,13 @@
   },
   "scripts": {
     "build": "tsdown",
-    "test": "vitest run src",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@typescript/native": "catalog:dev",
-    "tsdown": "catalog:dev",
-    "vitest": "catalog:dev"
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "4.1.11"
   }
 }

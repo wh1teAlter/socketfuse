@@ -1,3 +1,4 @@
+/** Stable machine-readable error codes emitted by WWS v1. */
 export const WWS_ERROR_CODES = [
   'INVALID_OPTIONS',
   'ENVIRONMENT_UNSUPPORTED',
@@ -34,6 +35,7 @@ export const WWS_ERROR_CODES = [
   'INTERNAL_STATE_ERROR',
 ] as const
 
+/** Union of every stable WWS v1 error code. */
 export type WwsErrorCode = typeof WWS_ERROR_CODES[number]
 
 export interface WwsErrorOptions {
@@ -43,6 +45,12 @@ export interface WwsErrorOptions {
   cause?: unknown
 }
 
+/**
+ * Error contract used by rejected operations and error callbacks.
+ *
+ * Prefer `code` over matching `message`. Details are sanitized before errors
+ * cross the Worker boundary or reach page callbacks.
+ */
 export class WwsError extends Error {
   readonly name = 'WwsError' as const
   readonly code: WwsErrorCode
@@ -61,6 +69,7 @@ export class WwsError extends Error {
   }
 }
 
+/** Return whether an unknown value is a `WwsError`. */
 export function isWwsError(value: unknown): value is WwsError {
   return value instanceof WwsError
 }

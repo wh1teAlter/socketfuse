@@ -1,0 +1,25 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "../wws/src/index.ts",
+    "../wws/src/protocol.ts",
+    "../wws/src/worker.ts"
+  ],
+  "entryPointStrategy": "resolve",
+  "excludeExternals": true,
+  "excludeInternal": true,
+  "hideBreadcrumbs": true,
+  "hidePageHeader": true,
+  "name": "wws API",
+  "out": "api/generated",
+  "plugin": ["typedoc-plugin-markdown"],
+  "readme": "none",
+  "sort": ["source-order"],
+  "tsconfig": "tsconfig.typedoc.json",
+  "visibilityFilters": {
+    "external": false,
+    "inherited": false,
+    "private": false,
+    "protected": false
+  }
+}

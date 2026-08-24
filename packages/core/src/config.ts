@@ -25,9 +25,9 @@ import {
   DEFAULT_REPLAY_MAX_MESSAGES,
   DEFAULT_RESOURCE_LIMITS,
 } from './constants'
-import { invalidOptions } from './errors'
 import { createJsonProtocolAdapter, getProtocolDescriptor, rawProtocol, validateProtocolAdapter } from './protocol'
 import { assertStructuredCloneable, stableHash, stableSerialize } from './structured'
+import { invalidOptions } from './errors'
 
 export interface NormalizedProtocolDescriptor {
   readonly kind: 'raw' | 'json' | 'custom'

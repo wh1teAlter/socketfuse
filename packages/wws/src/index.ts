@@ -1,11 +1,9 @@
-import type { CreateWebSocketOptions, SharedWorkerLike, SocketData, WebSocketClient } from '@wws/core'
-import {
-  DirectTransport,
-  normalizeWebSocketOptions,
-  PageWebSocketClient,
+import { type CreateWebSocketOptions, DirectTransport, normalizeWebSocketOptions, PageWebSocketClient,
+  type SharedWorkerLike,
   SharedWorkerTransport,
-  WwsError,
-} from '@wws/core'
+  type SocketData,
+  type WebSocketClient,
+  WwsError } from '@wws/core'
 import { INLINE_WORKER_SOURCE } from './inline-worker-source.generated'
 
 export { isWwsError, WWS_ERROR_CODES, WwsError } from '@wws/core'
@@ -46,6 +44,40 @@ export type {
   WwsStateChangeEvent,
 } from '@wws/core'
 
+function createDirectFallback<Incoming, Outgoing, Auth>(
+  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
+  clientId: string,
+): DirectTransport<Incoming, Outgoing, Auth> | undefined {
+  if (typeof WebSocket === 'undefined')
+    return undefined
+  return new DirectTransport({ clientId, config })
+}
+
+function createInlineWorkerUrl(): string {
+  return `data:text/javascript;charset=utf-8,${encodeURIComponent(INLINE_WORKER_SOURCE)}`
+}
+
+function createClientId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    return crypto.randomUUID()
+  return `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+/**
+ * Create a page-local client backed by a same-origin SharedWorker connection.
+ *
+ * The function returns synchronously. With `immediate: true` (the default),
+ * opening starts in the background; call `open()` when the caller needs an
+ * awaitable connection snapshot. Worker setup failures use the configured
+ * direct/error fallback, while socket and protocol failures remain on the
+ * selected transport.
+ *
+ * @typeParam Incoming Decoded business payload delivered to `onMessage`.
+ * @typeParam Outgoing Application value accepted by `sendMessage`.
+ * @typeParam Auth Revisioned authentication value accepted by `updateAuth`.
+ * @param url Initial absolute `ws:` or `wss:` endpoint.
+ * @param options Shared connection and page-local behavior.
+ */
 export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
   url: string | URL,
   options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
@@ -88,23 +120,4 @@ export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Au
   if (config.local.immediate)
     void client.open().catch(() => undefined)
   return client
-}
-
-function createDirectFallback<Incoming, Outgoing, Auth>(
-  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
-  clientId: string,
-): DirectTransport<Incoming, Outgoing, Auth> | undefined {
-  if (typeof WebSocket === 'undefined')
-    return undefined
-  return new DirectTransport({ clientId, config })
-}
-
-function createInlineWorkerUrl(): string {
-  return `data:text/javascript;charset=utf-8,${encodeURIComponent(INLINE_WORKER_SOURCE)}`
-}
-
-function createClientId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-  return `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }

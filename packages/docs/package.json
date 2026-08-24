@@ -4,12 +4,22 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "api": "typedoc --options typedoc.json",
     "build": "vitepress build",
-    "dev": "vitepress dev",
-    "typecheck": "tsc -p tsconfig.json"
+    "dev": "vitepress dev --host 127.0.0.1 --port 4173",
+    "prebuild": "pnpm api",
+    "predev": "pnpm api",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "wws": "workspace:*"
   },
   "devDependencies": {
-    "@typescript/native": "catalog:dev",
-    "vitepress": "catalog:dev"
+    "typedoc": "0.28.20",
+    "typedoc-plugin-markdown": "4.12.0",
+    "typescript": "catalog:",
+    "vitepress": "2.0.0-alpha.19",
+    "vue": "3.5.41",
+    "vue-tsc": "3.3.10"
   }
 }

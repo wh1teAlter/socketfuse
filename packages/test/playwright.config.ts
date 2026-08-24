@@ -1,5 +1,4 @@
-import type { PlaywrightTestConfig } from '@playwright/test'
-import { defineConfig, devices } from '@playwright/test'
+import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
 
 const config: PlaywrightTestConfig = {
   projects: [
@@ -10,7 +9,7 @@ const config: PlaywrightTestConfig = {
   testDir: './e2e',
   webServer: [
     {
-      command: 'pnpm --filter @wws/playground dev --host 127.0.0.1',
+      command: 'pnpm --filter @wws/docs dev',
       port: 4173,
       reuseExistingServer: true,
     },

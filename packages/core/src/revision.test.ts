@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { WwsError } from './errors'
 import { assertRevision, AuthRevisionRegister, EndpointRevisionRegister } from './revision'
+import { WwsError } from './errors'
 
 describe('revision registers', () => {
   it('applies newer auth revisions and rejects stale/equal values', () => {

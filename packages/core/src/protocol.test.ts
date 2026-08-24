@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { WwsError } from './errors'
 import { createJsonProtocolAdapter, decodeAndClassify, rawProtocol } from './protocol'
+import { WwsError } from './errors'
 
 describe('protocol adapters', () => {
   it('keeps raw data and classifies it as a business frame', () => {

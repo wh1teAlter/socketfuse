@@ -1,10 +1,9 @@
+import { describe, expect, it } from 'vitest'
 import type { WebSocketLike } from './socket'
 import type { SocketData } from './types'
-import type { MessagePortLike } from './worker-runtime'
-import { describe, expect, it } from 'vitest'
-import { normalizeWebSocketOptions } from './config'
+import { createSharedWebSocketRuntime, type MessagePortLike } from './worker-runtime'
 import { SharedWorkerTransport } from './shared-worker-transport'
-import { createSharedWebSocketRuntime } from './worker-runtime'
+import { normalizeWebSocketOptions } from './config'
 
 class LinkedPort implements MessagePortLike {
   peer: LinkedPort | undefined

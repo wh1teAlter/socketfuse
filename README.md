@@ -24,5 +24,6 @@ Worker construction or the initialization handshake fails. Use
 connection id is not an authorization boundary; authentication still belongs
 to the server and an application protocol adapter.
 
-See the [v1 guide](packages/docs/index.md), [technical specification](docs/specs/wws-v1-spec.md),
-and [implementation tickets](docs/planning/02-wws-v1-tickets.md).
+See the [documentation](packages/docs/index.md), [Playground](packages/docs/playground.md),
+[technical specification](docs/specs/wws-v1-spec.md), and
+[implementation tickets](docs/planning/02-wws-v1-tickets.md).

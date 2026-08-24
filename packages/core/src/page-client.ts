@@ -1,6 +1,3 @@
-import type { NormalizedWebSocketConfig } from './config'
-import type { ConnectionSink } from './connection-controller'
-import type { ClientTransport } from './direct-transport'
 import type {
   ConnectionDiagnostics,
   ConnectionSnapshot,
@@ -21,15 +18,91 @@ import type {
   WwsOverflowEvent,
   WwsStateChangeEvent,
 } from './types'
+import type { ConnectionSink } from './connection-controller'
+import type { NormalizedWebSocketConfig } from './config'
+import type { ClientTransport } from './direct-transport'
 import { readyStateFor, statusFor } from './connection-state'
-import { WwsError } from './errors'
 import { stableHash } from './structured'
+import { WwsError } from './errors'
 
 type MessageHandler<Incoming> = (event: WwsMessageEvent<Incoming>) => void
 
 const EventTargetBase: typeof EventTarget = typeof EventTarget === 'undefined'
   ? class { addEventListener(): void {} removeEventListener(): void {} dispatchEvent(): boolean { return false } } as unknown as typeof EventTarget
   : EventTarget
+
+function sanitizeDetails(details: Readonly<Record<string, unknown>> | undefined): Readonly<Record<string, unknown>> | undefined {
+  if (details === undefined)
+    return undefined
+  const safe: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(details)) {
+    if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string')
+      safe[key] = value
+  }
+  return safe
+}
+
+function sanitizeError(error: WwsError): WwsError {
+  const details = sanitizeDetails(error.details)
+  const options = { fatal: error.fatal, retryable: error.retryable }
+  return details === undefined
+    ? new WwsError(error.code, error.message, options)
+    : new WwsError(error.code, error.message, { ...options, details })
+}
+
+function createMessageEvent<Incoming>(data: Incoming, receivedAt: number, transport: Exclude<Transport, 'pending'>, replayed: boolean): WwsMessageEvent<Incoming> {
+  const event = new Event('message') as WwsMessageEvent<Incoming>
+  Object.defineProperties(event, {
+    data: { value: data },
+    receivedAt: { value: receivedAt },
+    replayed: { value: replayed },
+    transport: { value: transport },
+  })
+  return event
+}
+
+function createCloseEvent(event: { readonly code: number, readonly wasClean: boolean, readonly terminal: boolean, readonly willReconnect: boolean }): WwsCloseEvent {
+  const result = new Event('close') as WwsCloseEvent
+  Object.defineProperties(result, {
+    code: { value: event.code },
+    terminal: { value: event.terminal },
+    wasClean: { value: event.wasClean },
+    willReconnect: { value: event.willReconnect },
+  })
+  return result
+}
+
+function createErrorEvent(error: WwsError): Event {
+  const event = new Event('error')
+  Object.defineProperty(event, 'error', { value: error })
+  Object.defineProperty(event, 'detail', { value: error })
+  return event
+}
+
+function estimateValueBytes(value: unknown): number {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  }
+  catch {
+    return 0
+  }
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function stateValue(value: unknown, fallback: ConnectionState): ConnectionState {
+  return typeof value === 'string' ? value as ConnectionState : fallback
+}
 
 export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBase implements WebSocketClient<Incoming, Outgoing, Auth> {
   private currentData: Incoming | null = null
@@ -357,77 +430,4 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     if (this.disposed)
       throw new WwsError('CLIENT_DISPOSED', 'WebSocket client has been disposed')
   }
-}
-
-function sanitizeError(error: WwsError): WwsError {
-  const details = sanitizeDetails(error.details)
-  const options = { fatal: error.fatal, retryable: error.retryable }
-  return details === undefined
-    ? new WwsError(error.code, error.message, options)
-    : new WwsError(error.code, error.message, { ...options, details })
-}
-
-function sanitizeDetails(details: Readonly<Record<string, unknown>> | undefined): Readonly<Record<string, unknown>> | undefined {
-  if (details === undefined)
-    return undefined
-  const safe: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(details)) {
-    if (value === null || typeof value === 'boolean' || typeof value === 'number' || typeof value === 'string')
-      safe[key] = value
-  }
-  return safe
-}
-
-function createMessageEvent<Incoming>(data: Incoming, receivedAt: number, transport: Exclude<Transport, 'pending'>, replayed: boolean): WwsMessageEvent<Incoming> {
-  const event = new Event('message') as WwsMessageEvent<Incoming>
-  Object.defineProperties(event, {
-    data: { value: data },
-    receivedAt: { value: receivedAt },
-    replayed: { value: replayed },
-    transport: { value: transport },
-  })
-  return event
-}
-
-function createCloseEvent(event: { readonly code: number, readonly wasClean: boolean, readonly terminal: boolean, readonly willReconnect: boolean }): WwsCloseEvent {
-  const result = new Event('close') as WwsCloseEvent
-  Object.defineProperties(result, {
-    code: { value: event.code },
-    terminal: { value: event.terminal },
-    wasClean: { value: event.wasClean },
-    willReconnect: { value: event.willReconnect },
-  })
-  return result
-}
-
-function createErrorEvent(error: WwsError): Event {
-  const event = new Event('error')
-  Object.defineProperty(event, 'error', { value: error })
-  Object.defineProperty(event, 'detail', { value: error })
-  return event
-}
-
-function estimateValueBytes(value: unknown): number {
-  try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength
-  }
-  catch {
-    return 0
-  }
-}
-
-function numberValue(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-function numberOrNull(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function stateValue(value: unknown, fallback: ConnectionState): ConnectionState {
-  return typeof value === 'string' ? value as ConnectionState : fallback
 }

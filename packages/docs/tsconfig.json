@@ -1,4 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": [".vitepress/**/*.ts"]
+  "compilerOptions": {
+    "isolatedDeclarations": false
+  },
+  "include": [".vitepress/**/*.ts", ".vitepress/**/*.d.ts", ".vitepress/**/*.vue"]
 }

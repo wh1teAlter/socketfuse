@@ -1,7 +1,3 @@
-import type { NormalizedWebSocketConfig } from './config'
-import type { ConnectionSink } from './connection-controller'
-import type { ClientControlMessage, ControlError, ControlResponseValue } from './control'
-import type { ClientTransport } from './direct-transport'
 import type {
   ConnectionDiagnostics,
   ConnectionSnapshot,
@@ -11,9 +7,12 @@ import type {
   SendReceipt,
   TimerHandle,
 } from './types'
+import type { ConnectionSink } from './connection-controller'
+import type { NormalizedWebSocketConfig } from './config'
+import type { ClientTransport } from './direct-transport'
 import type { MessagePortLike } from './worker-runtime'
+import { type ClientControlMessage, type ControlError, type ControlResponseValue, isWorkerControlMessage } from './control'
 import { CONTROL_PROTOCOL_MAJOR } from './constants'
-import { isWorkerControlMessage } from './control'
 import { WwsError } from './errors'
 
 export interface SharedWorkerLike {
@@ -33,6 +32,64 @@ interface PendingRequest {
   readonly resolve: (value: ControlResponseValue) => void
   readonly reject: (error: WwsError) => void
   readonly timer: TimerHandle
+}
+
+function canFallbackFromWorkerError(error: unknown, workerInstanceId: string | null): boolean {
+  if (workerInstanceId !== null)
+    return false
+  if (!(error instanceof WwsError))
+    return true
+  return [
+    'ADAPTER_NOT_REGISTERED',
+    'INVALID_CONTROL_MESSAGE',
+    'PROTOCOL_VERSION_MISMATCH',
+    'WORKER_CONSTRUCTION_FAILED',
+    'WORKER_DISCONNECTED',
+    'WORKER_INIT_TIMEOUT',
+    'WORKER_LOAD_FAILED',
+    'WORKER_UNSUPPORTED',
+  ].includes(error.code)
+}
+
+function createId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    return crypto.randomUUID()
+  return `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function deserializeError(value: ControlError): WwsError {
+  return new WwsError(value.code, value.message, { fatal: value.fatal, retryable: value.retryable })
+}
+
+function toInitError(error: unknown): WwsError {
+  if (error instanceof WwsError)
+    return error
+  return new WwsError('WORKER_LOAD_FAILED', 'SharedWorker initialization failed', { cause: error })
+}
+
+function emptyDiagnostics<Incoming, Outgoing, Auth>(
+  config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>,
+  workerInstanceId: string | null,
+): Readonly<ConnectionDiagnostics> {
+  return Object.freeze({
+    attachedClientCount: 0,
+    bufferedAmount: 0,
+    configFingerprint: config.configFingerprint,
+    controlProtocolMajor: CONTROL_PROTOCOL_MAJOR,
+    endpointOrigin: new URL(config.url).origin,
+    idHash: '',
+    lastErrorCode: null,
+    lastSafeCloseCode: null,
+    logicalState: 'idle',
+    nextRetryDelay: null,
+    outboundHighWater: false,
+    physicalState: 'idle',
+    queueBytes: 0,
+    queueMessages: 0,
+    retryAttempt: 0,
+    transport: 'shared-worker',
+    workerInstanceHash: workerInstanceId,
+  })
 }
 
 export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implements ClientTransport<Incoming, Outgoing, Auth> {
@@ -343,62 +400,4 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
     if (this.disposed)
       throw new WwsError('CLIENT_DISPOSED', 'SharedWorker transport has been disposed')
   }
-}
-
-function canFallbackFromWorkerError(error: unknown, workerInstanceId: string | null): boolean {
-  if (workerInstanceId !== null)
-    return false
-  if (!(error instanceof WwsError))
-    return true
-  return [
-    'ADAPTER_NOT_REGISTERED',
-    'INVALID_CONTROL_MESSAGE',
-    'PROTOCOL_VERSION_MISMATCH',
-    'WORKER_CONSTRUCTION_FAILED',
-    'WORKER_DISCONNECTED',
-    'WORKER_INIT_TIMEOUT',
-    'WORKER_LOAD_FAILED',
-    'WORKER_UNSUPPORTED',
-  ].includes(error.code)
-}
-
-function deserializeError(value: ControlError): WwsError {
-  return new WwsError(value.code, value.message, { fatal: value.fatal, retryable: value.retryable })
-}
-
-function toInitError(error: unknown): WwsError {
-  if (error instanceof WwsError)
-    return error
-  return new WwsError('WORKER_LOAD_FAILED', 'SharedWorker initialization failed', { cause: error })
-}
-
-function emptyDiagnostics<Incoming, Outgoing, Auth>(
-  config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>,
-  workerInstanceId: string | null,
-): Readonly<ConnectionDiagnostics> {
-  return Object.freeze({
-    attachedClientCount: 0,
-    bufferedAmount: 0,
-    configFingerprint: config.configFingerprint,
-    controlProtocolMajor: CONTROL_PROTOCOL_MAJOR,
-    endpointOrigin: new URL(config.url).origin,
-    idHash: '',
-    lastErrorCode: null,
-    lastSafeCloseCode: null,
-    logicalState: 'idle',
-    nextRetryDelay: null,
-    outboundHighWater: false,
-    physicalState: 'idle',
-    queueBytes: 0,
-    queueMessages: 0,
-    retryAttempt: 0,
-    transport: 'shared-worker',
-    workerInstanceHash: workerInstanceId,
-  })
-}
-
-function createId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-  return `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }

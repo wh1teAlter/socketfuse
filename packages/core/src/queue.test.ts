@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { WwsError } from './errors'
 import { OutboundQueue } from './queue'
+import { WwsError } from './errors'
 
 describe('outboundQueue', () => {
   it('is FIFO and tracks encoded bytes', () => {

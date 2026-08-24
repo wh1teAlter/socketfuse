@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_RECONNECT_OPTIONS } from './constants'
 import { calculateReconnectDelay, ReconnectPolicy } from './reconnect'
+import { DEFAULT_RECONNECT_OPTIONS } from './constants'
 
 describe('reconnect policy', () => {
   it('calculates bounded exponential jitter', () => {

@@ -1,15 +1,14 @@
-import type { NormalizedWebSocketConfig, SharedConnectionConfig } from './config'
-import type { ConnectionSink } from './connection-controller'
-import type { ClientControlMessage, ControlError, ControlResponseValue, HelloRequest, WorkerControlMessage } from './control'
-import type { WebSocketFactory } from './socket'
 import type { NormalizedRestoreOptions, ProtocolAdapter, TimerHandle } from './types'
-import { ConnectionController } from './connection-controller'
-import { CONTROL_PROTOCOL_MAJOR, DEFAULT_RESOURCE_LIMITS } from './constants'
-import { isClientControlMessage } from './control'
-import { isWwsError, toWwsError, WwsError } from './errors'
+import type { NormalizedWebSocketConfig, SharedConnectionConfig } from './config'
+import type { WebSocketFactory } from './socket'
+import { type ClientControlMessage, type ControlError, type ControlResponseValue, type HelloRequest, isClientControlMessage, type WorkerControlMessage } from './control'
 import { createJsonProtocolAdapter, rawProtocol, validateProtocolAdapter } from './protocol'
+import { ConnectionController, type ConnectionSink } from './connection-controller'
+import { CONTROL_PROTOCOL_MAJOR, DEFAULT_RESOURCE_LIMITS } from './constants'
+import { isWwsError, toWwsError, WwsError } from './errors'
 import { stableHash } from './structured'
 
+/** Minimal MessagePort surface used by the custom Worker runtime. */
 export interface MessagePortLike {
   postMessage: (message: unknown) => void
   start?: () => void
@@ -20,6 +19,7 @@ export interface MessagePortLike {
   onmessageerror?: ((event: { readonly data: unknown }) => void) | null
 }
 
+/** Custom Worker runtime dependencies and statically registered protocols. */
 export interface SharedWebSocketRuntimeOptions {
   readonly protocols?: readonly ProtocolAdapter<unknown, unknown, unknown>[]
   readonly socketFactory?: WebSocketFactory
@@ -48,12 +48,102 @@ interface ConnectionEntry {
   readonly controller: ConnectionController<unknown, unknown, unknown>
 }
 
+/** SharedWorker-side runtime that accepts page ports and owns connections. */
 export interface SharedWebSocketRuntime {
   readonly instanceId: string
   connect: (port: MessagePortLike) => void
   dispose: () => void
 }
 
+function adapterKey(id: string, version: number): string {
+  return `${id}@${version}`
+}
+
+function createId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    return crypto.randomUUID()
+  return `worker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function estimateBytes(value: unknown): number {
+  if (typeof value === 'string')
+    return new TextEncoder().encode(value).byteLength
+  if (typeof Blob !== 'undefined' && value instanceof Blob)
+    return value.size
+  if (value instanceof ArrayBuffer)
+    return value.byteLength
+  if (ArrayBuffer.isView(value))
+    return value.byteLength
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  }
+  catch {
+    return 0
+  }
+}
+
+function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, maxMessages: number, maxBytes: number): void {
+  const bytes = estimateBytes(data)
+  while (client.replay.length >= maxMessages || client.replayBytes + bytes > maxBytes) {
+    const removed = client.replay.shift()
+    if (removed === undefined)
+      break
+    client.replayBytes -= removed.bytes
+    client.replayDroppedBytes += removed.bytes
+    client.replayDroppedMessages++
+  }
+  if (bytes > maxBytes) {
+    client.replayDroppedBytes += bytes
+    client.replayDroppedMessages++
+    return
+  }
+  client.replay.push({ bytes, data, receivedAt })
+  client.replayBytes += bytes
+}
+
+function resolveAdapter(
+  shared: SharedConnectionConfig,
+  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
+): ProtocolAdapter<unknown, unknown, unknown> {
+  if (shared.protocol.kind === 'raw')
+    return rawProtocol as ProtocolAdapter<unknown, unknown, unknown>
+  if (shared.protocol.kind === 'json')
+    return createJsonProtocolAdapter(shared.protocol.sharedConfig as never) as ProtocolAdapter<unknown, unknown, unknown>
+  const adapter = adapters.get(adapterKey(shared.protocol.id, shared.protocol.version))
+  if (adapter === undefined)
+    throw new WwsError('ADAPTER_NOT_REGISTERED', 'Custom protocol adapter is not registered in this Worker')
+  return adapter
+}
+
+function createWorkerConfig(
+  message: HelloRequest,
+  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
+): NormalizedWebSocketConfig<unknown, unknown, unknown> {
+  const adapter = resolveAdapter(message.shared, adapters)
+  return Object.freeze({
+    adapter,
+    configCanonical: message.configCanonical,
+    configFingerprint: message.configFingerprint,
+    id: message.id,
+    local: Object.freeze({
+      autoClose: true,
+      fallback: 'error' as const,
+      immediate: true,
+      lifecycle: Object.freeze({ enabled: false, maxBytes: 0, maxMessages: 0, replay: false }),
+      logger: undefined,
+      workerMode: 'custom' as const,
+    }),
+    shared: message.shared,
+    url: message.url,
+  })
+}
+
+function serializeError(error: unknown): ControlError {
+  const value = isWwsError(error) ? error : toWwsError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
+  return { code: value.code, fatal: value.fatal, message: value.message, retryable: value.retryable }
+}
+
+/** Create a Worker-side runtime without installing a global `onconnect` hook. */
 export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOptions = {}): SharedWebSocketRuntime {
   const adapters = new Map<string, ProtocolAdapter<unknown, unknown, unknown>>()
   for (const adapter of options.protocols ?? []) {
@@ -342,98 +432,12 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   }
 }
 
-function createWorkerConfig(
-  message: HelloRequest,
-  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
-): NormalizedWebSocketConfig<unknown, unknown, unknown> {
-  const adapter = resolveAdapter(message.shared, adapters)
-  return Object.freeze({
-    adapter,
-    configCanonical: message.configCanonical,
-    configFingerprint: message.configFingerprint,
-    id: message.id,
-    local: Object.freeze({
-      autoClose: true,
-      fallback: 'error' as const,
-      immediate: true,
-      lifecycle: Object.freeze({ enabled: false, maxBytes: 0, maxMessages: 0, replay: false }),
-      logger: undefined,
-      workerMode: 'custom' as const,
-    }),
-    shared: message.shared,
-    url: message.url,
-  })
-}
-
-function resolveAdapter(
-  shared: SharedConnectionConfig,
-  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
-): ProtocolAdapter<unknown, unknown, unknown> {
-  if (shared.protocol.kind === 'raw')
-    return rawProtocol as ProtocolAdapter<unknown, unknown, unknown>
-  if (shared.protocol.kind === 'json')
-    return createJsonProtocolAdapter(shared.protocol.sharedConfig as never) as ProtocolAdapter<unknown, unknown, unknown>
-  const adapter = adapters.get(adapterKey(shared.protocol.id, shared.protocol.version))
-  if (adapter === undefined)
-    throw new WwsError('ADAPTER_NOT_REGISTERED', 'Custom protocol adapter is not registered in this Worker')
-  return adapter
-}
-
-function adapterKey(id: string, version: number): string {
-  return `${id}@${version}`
-}
-
-function serializeError(error: unknown): ControlError {
-  const value = isWwsError(error) ? error : toWwsError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
-  return { code: value.code, fatal: value.fatal, message: value.message, retryable: value.retryable }
-}
-
-function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, maxMessages: number, maxBytes: number): void {
-  const bytes = estimateBytes(data)
-  while (client.replay.length >= maxMessages || client.replayBytes + bytes > maxBytes) {
-    const removed = client.replay.shift()
-    if (removed === undefined)
-      break
-    client.replayBytes -= removed.bytes
-    client.replayDroppedBytes += removed.bytes
-    client.replayDroppedMessages++
-  }
-  if (bytes > maxBytes) {
-    client.replayDroppedBytes += bytes
-    client.replayDroppedMessages++
-    return
-  }
-  client.replay.push({ bytes, data, receivedAt })
-  client.replayBytes += bytes
-}
-
-function estimateBytes(value: unknown): number {
-  if (typeof value === 'string')
-    return new TextEncoder().encode(value).byteLength
-  if (typeof Blob !== 'undefined' && value instanceof Blob)
-    return value.size
-  if (value instanceof ArrayBuffer)
-    return value.byteLength
-  if (ArrayBuffer.isView(value))
-    return value.byteLength
-  try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength
-  }
-  catch {
-    return 0
-  }
-}
-
-function createId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-  return `worker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
-
+/** Minimal SharedWorker global scope accepted by `exposeSharedWebSocketWorker`. */
 export interface SharedWorkerGlobalLike {
   onconnect: ((event: { readonly ports: readonly MessagePortLike[] }) => void) | null
 }
 
+/** Create a runtime and install its port handler on the SharedWorker global scope. */
 export function exposeSharedWebSocketWorker(options: SharedWebSocketRuntimeOptions = {}, scope?: SharedWorkerGlobalLike): SharedWebSocketRuntime {
   const target = scope ?? globalThis as unknown as SharedWorkerGlobalLike
   const runtime = createSharedWebSocketRuntime(options)

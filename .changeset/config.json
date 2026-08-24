@@ -5,7 +5,7 @@
   "bumpVersionsWithWorkspaceProtocolOnly": true,
   "commit": false,
   "fixed": [],
-  "ignore": ["@wws/core", "@wws/docs", "@wws/playground", "@wws/test"],
+  "ignore": ["@wws/core", "@wws/docs", "@wws/test"],
   "linked": [],
   "privatePackages": {
     "tag": false,

@@ -13,12 +13,13 @@ import type {
   ProtocolFrame,
   SocketData,
 } from './types'
-import { isValidAdapterId } from './config'
-import { invalidOptions, WwsError } from './errors'
 import { assertStructuredCloneable, isPlainRecord, stableSerialize } from './structured'
+import { invalidOptions, WwsError } from './errors'
+import { isValidAdapterId } from './config'
 
 const rawCapabilities: ProtocolCapabilities = Object.freeze({ auth: false, binary: true, heartbeat: false })
 
+/** Pass WebSocket payloads through unchanged and become ready on socket open. */
 export const rawProtocol: ProtocolAdapter<SocketData, SocketData> = Object.freeze({
   capabilities: rawCapabilities,
   classify(data: SocketData): ProtocolFrame<SocketData> {

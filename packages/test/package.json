@@ -4,20 +4,15 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "test": "vitest run",
+    "release:verify": "node ./scripts/verify-release.mjs",
     "test:e2e": "playwright test -c playwright.config.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {
-    "@wws/core": "workspace:*",
-    "wws": "workspace:*"
-  },
   "devDependencies": {
-    "@playwright/test": "catalog:dev",
-    "@types/node": "catalog:dev",
-    "@types/ws": "catalog:dev",
-    "@typescript/native": "catalog:dev",
-    "vitest": "catalog:dev",
-    "ws": "catalog:dev"
+    "@playwright/test": "1.62.1",
+    "@types/node": "26.2.0",
+    "@types/ws": "8.18.1",
+    "typescript": "catalog:",
+    "ws": "8.21.3"
   }
 }

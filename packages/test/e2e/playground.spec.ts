@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('loads the public playground and exposes connection controls', async ({ page }) => {
-  await page.goto('http://127.0.0.1:4173')
+  await page.goto('http://127.0.0.1:4173/playground')
   await expect(page.getByRole('heading', { name: 'Shared WebSocket console' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Open another tab' }).click()
@@ -13,8 +13,8 @@ test('shares one physical WebSocket across two tabs', async ({ browser, request 
   const first = await context.newPage()
   const second = await context.newPage()
   await Promise.all([
-    first.goto('http://127.0.0.1:4173'),
-    second.goto('http://127.0.0.1:4173'),
+    first.goto('http://127.0.0.1:4173/playground'),
+    second.goto('http://127.0.0.1:4173/playground'),
   ])
 
   for (const page of [first, second]) {
@@ -42,7 +42,7 @@ test('shares one physical WebSocket across two tabs', async ({ browser, request 
 })
 
 test('uses direct only for a Worker construction failure when fallback allows it', async ({ page, request }) => {
-  await page.goto('http://127.0.0.1:4173')
+  await page.goto('http://127.0.0.1:4173/playground')
   await page.getByLabel('URL').fill('ws://127.0.0.1:8787/socket')
   await page.getByLabel('Connection id').fill('fallback-direct')
   await page.getByLabel('Simulate Worker init failure').check()

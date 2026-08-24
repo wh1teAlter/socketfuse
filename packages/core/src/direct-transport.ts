@@ -1,6 +1,3 @@
-import type { NormalizedWebSocketConfig } from './config'
-import type { ConnectionControllerOptions, ConnectionSink } from './connection-controller'
-import type { WebSocketFactory } from './socket'
 import type {
   ConnectionSnapshot,
   ProtocolCapabilities,
@@ -10,7 +7,9 @@ import type {
   SocketData,
   WebSocketClient,
 } from './types'
-import { ConnectionController } from './connection-controller'
+import type { NormalizedWebSocketConfig } from './config'
+import type { WebSocketFactory } from './socket'
+import { ConnectionController, type ConnectionControllerOptions, type ConnectionSink } from './connection-controller'
 import { WwsError } from './errors'
 
 export interface ClientTransport<Incoming, Outgoing, Auth> {

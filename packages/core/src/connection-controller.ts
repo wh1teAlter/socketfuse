@@ -1,5 +1,3 @@
-import type { NormalizedWebSocketConfig } from './config'
-import type { WebSocketFactory, WebSocketLike } from './socket'
 import type {
   ConnectionDiagnostics,
   ConnectionSnapshot,
@@ -15,18 +13,19 @@ import type {
   Transport,
   WebSocketStatus,
 } from './types'
-import { BackpressureTracker } from './backpressure'
-import { assertEncodedMessageSize } from './bytes'
+import type { NormalizedWebSocketConfig } from './config'
+import { addSocketListener, browserWebSocketFactory, SOCKET_CONNECTING, SOCKET_OPEN, type WebSocketFactory, type WebSocketLike } from './socket'
 import { ConnectionStateMachine, readyStateFor, statusFor } from './connection-state'
-import { CONTROL_PROTOCOL_MAJOR } from './constants'
-import { toWwsError, WwsError } from './errors'
-import { HeartbeatController } from './heartbeat'
-import { encodeWithAdapter, OrderedProtocol } from './protocol'
-import { OutboundQueue } from './queue'
-import { ReconnectPolicy } from './reconnect'
 import { AuthRevisionRegister, EndpointRevisionRegister } from './revision'
-import { addSocketListener, browserWebSocketFactory, SOCKET_CONNECTING, SOCKET_OPEN } from './socket'
+import { encodeWithAdapter, OrderedProtocol } from './protocol'
+import { BackpressureTracker } from './backpressure'
+import { CONTROL_PROTOCOL_MAJOR } from './constants'
+import { assertEncodedMessageSize } from './bytes'
+import { HeartbeatController } from './heartbeat'
+import { toWwsError, WwsError } from './errors'
+import { ReconnectPolicy } from './reconnect'
 import { stableHash } from './structured'
+import { OutboundQueue } from './queue'
 
 export interface ConnectionSink<Incoming> {
   readonly id: string
@@ -54,6 +53,41 @@ interface OpenWaiter {
 function safeCloseInfo(event: { readonly code?: number, readonly wasClean?: boolean }): SafeCloseInfo {
   const code = event.code ?? 1006
   return { code, terminal: code === 1000, wasClean: event.wasClean ?? code === 1000 }
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength)
+    return false
+  for (let index = 0; index < left.byteLength; index++) {
+    if (left[index] !== right[index])
+      return false
+  }
+  return true
+}
+
+function createOperationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+    return crypto.randomUUID()
+  return `wws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function safeOrigin(url: string): string {
+  try {
+    return new URL(url).origin
+  }
+  catch {
+    return ''
+  }
+}
+
+function socketDataEquals(left: unknown, right: SocketData): boolean {
+  if (typeof left === 'string' || typeof right === 'string')
+    return left === right
+  if (left instanceof ArrayBuffer && right instanceof ArrayBuffer)
+    return bytesEqual(new Uint8Array(left), new Uint8Array(right))
+  if (ArrayBuffer.isView(left) && ArrayBuffer.isView(right))
+    return bytesEqual(new Uint8Array(left.buffer, left.byteOffset, left.byteLength), new Uint8Array(right.buffer, right.byteOffset, right.byteLength))
+  return left === right
 }
 
 export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
@@ -671,40 +705,5 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private assertUsable(): void {
     if (this.disposed)
       throw new WwsError('CLIENT_DISPOSED', 'Connection controller has been disposed')
-  }
-}
-
-function createOperationId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-  return `wws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
-
-function socketDataEquals(left: unknown, right: SocketData): boolean {
-  if (typeof left === 'string' || typeof right === 'string')
-    return left === right
-  if (left instanceof ArrayBuffer && right instanceof ArrayBuffer)
-    return bytesEqual(new Uint8Array(left), new Uint8Array(right))
-  if (ArrayBuffer.isView(left) && ArrayBuffer.isView(right))
-    return bytesEqual(new Uint8Array(left.buffer, left.byteOffset, left.byteLength), new Uint8Array(right.buffer, right.byteOffset, right.byteLength))
-  return left === right
-}
-
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength)
-    return false
-  for (let index = 0; index < left.byteLength; index++) {
-    if (left[index] !== right[index])
-      return false
-  }
-  return true
-}
-
-function safeOrigin(url: string): string {
-  try {
-    return new URL(url).origin
-  }
-  catch {
-    return ''
   }
 }

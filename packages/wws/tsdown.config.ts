@@ -1,7 +1,6 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  attw: { level: 'error', profile: 'esm-only' },
   clean: true,
   deps: {
     alwaysBundle: ['@wws/core'],

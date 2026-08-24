@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
-import process from 'node:process'
 import { WebSocketServer } from 'ws'
+import process from 'node:process'
 
 const port = 8787
 const sockets = new Set()

@@ -1,6 +1,6 @@
+import type { ConnectionDiagnostics, ConnectionSnapshot, NormalizedRestoreOptions, RevisionReceipt, SendOptions, SendReceipt, SocketData } from './types'
 import type { SharedConnectionConfig } from './config'
 import type { WwsErrorCode } from './errors'
-import type { ConnectionDiagnostics, ConnectionSnapshot, NormalizedRestoreOptions, RevisionReceipt, SendOptions, SendReceipt, SocketData } from './types'
 
 export interface ControlError {
   readonly code: WwsErrorCode

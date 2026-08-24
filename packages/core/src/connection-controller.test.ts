@@ -1,8 +1,8 @@
+import { describe, expect, it } from 'vitest'
 import type { WebSocketLike } from './socket'
 import type { SocketData } from './types'
-import { describe, expect, it } from 'vitest'
-import { normalizeWebSocketOptions } from './config'
 import { ConnectionController } from './connection-controller'
+import { normalizeWebSocketOptions } from './config'
 import { DirectTransport } from './direct-transport'
 
 class FakeSocket implements WebSocketLike {

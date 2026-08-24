@@ -27,18 +27,15 @@
     "access": "public"
   },
   "scripts": {
-    "build": "node ../../scripts/generate-inline-worker.mjs && tsdown",
+    "build": "node ./scripts/generate-inline-worker.mjs && tsdown",
     "prepack": "pnpm build",
-    "test": "vitest run src",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@arethetypeswrong/core": "catalog:dev",
-    "@typescript/native": "catalog:dev",
     "@wws/core": "workspace:*",
-    "publint": "catalog:dev",
-    "rolldown": "catalog:dev",
-    "tsdown": "catalog:dev",
-    "vitest": "catalog:dev"
+    "publint": "0.3.24",
+    "rolldown": "1.2.2",
+    "tsdown": "catalog:",
+    "typescript": "catalog:"
   }
 }
