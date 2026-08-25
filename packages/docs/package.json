@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "api": "typedoc --options typedoc.json",
-    "build": "vitepress build",
-    "dev": "vitepress dev --host 127.0.0.1 --port 4173",
+    "build": "vitepress build site",
+    "dev": "vitepress dev site --host 127.0.0.1 --port 4173",
     "prebuild": "pnpm api",
     "predev": "pnpm api",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"

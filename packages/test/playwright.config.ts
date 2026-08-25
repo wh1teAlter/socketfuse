@@ -6,7 +6,7 @@ const config: PlaywrightTestConfig = {
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
-  testDir: './e2e',
+  testDir: './e2e/specs',
   webServer: [
     {
       command: 'pnpm --filter @wws/docs dev',

@@ -11,7 +11,7 @@
   "hideBreadcrumbs": true,
   "hidePageHeader": true,
   "name": "wws API",
-  "out": "api/generated",
+  "out": "site/api/generated",
   "plugin": ["typedoc-plugin-markdown"],
   "readme": "none",
   "sort": ["source-order"],

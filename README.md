@@ -28,6 +28,6 @@ Raw mode accepts only native WebSocket data (`string`, `Blob`, `ArrayBuffer` or
 a typed-array view). Choose `protocol: { type: 'json' }` before sending JSON
 objects. Raw mode intentionally has no WWS heartbeat support.
 
-See the [documentation](packages/docs/index.md), [Playground](packages/docs/playground.md),
+See the [documentation](packages/docs/site/index.md), [Playground](packages/docs/site/playground.md),
 [technical specification](docs/specs/wws-v1-spec.md), and
 [implementation tickets](docs/planning/02-wws-v1-tickets.md).

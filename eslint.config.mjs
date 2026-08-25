@@ -22,7 +22,7 @@ export default defineConfig(
     '**/node_modules/**',
     '**/playwright-report/**',
     '**/test-results/**',
-    'packages/wws/src/inline-worker-source.generated.ts',
+    'packages/wws/src/worker/source.generated.ts',
   ]),
   ...jsonc.configs['flat/recommended-with-jsonc'],
   {

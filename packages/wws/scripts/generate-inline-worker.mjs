@@ -5,8 +5,8 @@ import { rolldown } from 'rolldown'
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const workspaceRoot = resolve(packageDir, '..', '..')
-const output = resolve(packageDir, 'src/inline-worker-source.generated.ts')
-const entry = resolve(packageDir, 'src/inline-worker-entry.ts')
+const output = resolve(packageDir, 'src/worker/source.generated.ts')
+const entry = resolve(packageDir, 'src/worker/entry.ts')
 
 const bundle = await rolldown({
   input: entry,
