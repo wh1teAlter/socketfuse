@@ -1,42 +1,45 @@
-# Interface: WebSocketClient\<Incoming, Outgoing, Auth\>
+# 接口: WebSocketClient\<Incoming, Outgoing, Auth\>
 
-Defined in: [core/src/shared/types.ts:385](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L385)
+定义于: [core/src/shared/types.ts:550](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L550)
 
-Page-local proxy for a SharedWorker-owned or direct WebSocket connection.
+SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
-## Extends
+所有方法仅能在 `createWebSocket` 成功返回后调用。除 `diagnostics` 外，异步方法会以
+`WwsError` reject；调用方应按稳定 `code` 判断失败，而不是匹配 message。
+
+## 继承
 
 - `EventTarget`
 
-## Type Parameters
+## 类型参数
 
 ### Incoming
 
 `Incoming` = [`SocketData`](../type-aliases/SocketData.md)
 
-Decoded business payload delivered by `onMessage`.
+`onMessage` 派发的解码业务 payload。
 
 ### Outgoing
 
 `Outgoing` = [`SocketData`](../type-aliases/SocketData.md)
 
-Application value accepted by `sendMessage`.
+`sendMessage` 接受的应用值。
 
 ### Auth
 
 `Auth` = `unknown`
 
-Revisioned authentication value accepted by `updateAuth`.
+`updateAuth` 接受的带 revision 认证值。
 
-## Properties
+## 属性
 
 ### data
 
 > `readonly` **data**: `Incoming` \| `null`
 
-Defined in: [core/src/shared/types.ts:387](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L387)
+定义于: [core/src/shared/types.ts:552](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L552)
 
-Most recently delivered business payload, or `null` before the first message.
+最近一次已派发业务 payload；首条消息前为 `null`。
 
 ***
 
@@ -44,9 +47,9 @@ Most recently delivered business payload, or `null` before the first message.
 
 > `readonly` **status**: [`WebSocketStatus`](../type-aliases/WebSocketStatus.md)
 
-Defined in: [core/src/shared/types.ts:389](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L389)
+定义于: [core/src/shared/types.ts:554](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L554)
 
-Compact `CONNECTING`, `OPEN` or `CLOSED` status.
+紧凑的 `CONNECTING`、`OPEN` 或 `CLOSED` 状态。
 
 ***
 
@@ -54,9 +57,9 @@ Compact `CONNECTING`, `OPEN` or `CLOSED` status.
 
 > `readonly` **state**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/shared/types.ts:391](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L391)
+定义于: [core/src/shared/types.ts:556](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L556)
 
-Detailed logical lifecycle state.
+页面逻辑 client 的详细生命周期状态。
 
 ***
 
@@ -64,9 +67,9 @@ Detailed logical lifecycle state.
 
 > `readonly` **readyState**: [`ReadyState`](../type-aliases/ReadyState.md)
 
-Defined in: [core/src/shared/types.ts:393](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L393)
+定义于: [core/src/shared/types.ts:558](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L558)
 
-Native WebSocket-compatible numeric ready state.
+原生 WebSocket 兼容的数值 readyState。
 
 ***
 
@@ -74,9 +77,9 @@ Native WebSocket-compatible numeric ready state.
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-Defined in: [core/src/shared/types.ts:395](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L395)
+定义于: [core/src/shared/types.ts:560](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L560)
 
-Currently selected transport.
+当前选定的 transport。
 
 ***
 
@@ -84,9 +87,9 @@ Currently selected transport.
 
 > `readonly` **workerMode**: [`WorkerMode`](../type-aliases/WorkerMode.md)
 
-Defined in: [core/src/shared/types.ts:397](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L397)
+定义于: [core/src/shared/types.ts:562](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L562)
 
-Inline, custom or no Worker deployment mode.
+inline、custom 或 direct/no Worker 部署方式。
 
 ***
 
@@ -94,9 +97,9 @@ Inline, custom or no Worker deployment mode.
 
 > `readonly` **capabilities**: [`ProtocolCapabilities`](ProtocolCapabilities.md)
 
-Defined in: [core/src/shared/types.ts:399](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L399)
+定义于: [core/src/shared/types.ts:564](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L564)
 
-Capabilities declared by the selected protocol adapter.
+选定协议 adapter 声明的能力。
 
 ***
 
@@ -104,21 +107,29 @@ Capabilities declared by the selected protocol adapter.
 
 > **open**: (`options?`) => `Promise`\<[`ConnectionSnapshot`](ConnectionSnapshot.md)\>
 
-Defined in: [core/src/shared/types.ts:401](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L401)
+定义于: [core/src/shared/types.ts:572](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L572)
 
-Open the logical client; multiple callers share the in-flight operation.
+在未 dispose 阶段打开逻辑 client；并发调用共享同一次物理 open。
 
-#### Parameters
+#### 参数
 
 ##### options?
+
+可选 AbortSignal；仅取消当前等待者，不会关闭其他 client 的共享连接。
 
 ###### signal?
 
 `AbortSignal`
 
-#### Returns
+#### 返回
 
 `Promise`\<[`ConnectionSnapshot`](ConnectionSnapshot.md)\>
+
+socket 与协议均 ready 时的连接快照。
+
+#### 抛出
+
+`ABORTED`、`CONNECTION_TIMEOUT`、协议或 transport 的安全错误。
 
 ***
 
@@ -126,13 +137,19 @@ Open the logical client; multiple callers share the in-flight operation.
 
 > **close**: () => `Promise`\<`void`\>
 
-Defined in: [core/src/shared/types.ts:403](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L403)
+定义于: [core/src/shared/types.ts:579](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L579)
 
-Close this page's logical participation without disposing the instance.
+关闭当前页面的逻辑参与，但不 dispose 实例；close 后允许再次 `open`。
 
-#### Returns
+#### 返回
 
 `Promise`\<`void`\>
+
+detach 完成的 Promise。
+
+#### 抛出
+
+transport 控制失败时以 `WwsError` reject。
 
 ***
 
@@ -140,23 +157,33 @@ Close this page's logical participation without disposing the instance.
 
 > **sendMessage**: (`data`, `options?`) => `Promise`\<[`SendReceipt`](../type-aliases/SendReceipt.md)\>
 
-Defined in: [core/src/shared/types.ts:405](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L405)
+定义于: [core/src/shared/types.ts:588](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L588)
 
-Submit or queue one message and resolve with a local acceptance receipt.
+在已创建且未 dispose 阶段提交一条业务消息，或在配置允许时将其有界入队。
 
-#### Parameters
+#### 参数
 
 ##### data
 
 `Outgoing`
 
+由选定 adapter 接受的业务值。
+
 ##### options?
 
 [`SendOptions`](SendOptions.md)
 
-#### Returns
+本次发送的队列覆盖和业务幂等键。
+
+#### 返回
 
 `Promise`\<[`SendReceipt`](../type-aliases/SendReceipt.md)\>
+
+本地 `accepted` 或 `queued` 回执；不代表服务器已收到。
+
+#### 抛出
+
+`SEND_WHILE_DISCONNECTED`、`BACKPRESSURE`、队列/大小限制或编码错误。
 
 ***
 
@@ -164,17 +191,21 @@ Submit or queue one message and resolve with a local acceptance receipt.
 
 > **onMessage**: (`handler`) => () => `void`
 
-Defined in: [core/src/shared/types.ts:407](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L407)
+定义于: [core/src/shared/types.ts:595](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L595)
 
-Add a dynamic business message handler and return its removal function.
+在 client 存活阶段添加一个页面本地业务消息 handler。
 
-#### Parameters
+#### 参数
 
 ##### handler
 
 (`event`) => `void`
 
-#### Returns
+接收业务帧与回放标记的回调；抛出不会阻塞其他 handler 或 Worker。
+
+#### 返回
+
+幂等移除函数；dispose 后仍可安全调用。
 
 () => `void`
 
@@ -184,25 +215,35 @@ Add a dynamic business message handler and return its removal function.
 
 > **updateAuth**: (`auth`, `options`) => `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
 
-Defined in: [core/src/shared/types.ts:409](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L409)
+定义于: [core/src/shared/types.ts:604](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L604)
 
-Apply authentication data when `revision` is newer than the shared register.
+以更大的单调 revision 应用认证数据；仅在 adapter 声明 auth 能力时可用。
 
-#### Parameters
+#### 参数
 
 ##### auth
 
 `Auth`
 
+不会写入诊断或跨 client 暴露的认证值。
+
 ##### options
+
+共享 auth register 的正整数 revision。
 
 ###### revision
 
 `number`
 
-#### Returns
+#### 返回
 
 `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
+
+applied、stale 或 unchanged revision 回执。
+
+#### 抛出
+
+`CAPABILITY_UNSUPPORTED`、`CLIENT_DISPOSED` 或 transport 错误。
 
 ***
 
@@ -210,21 +251,29 @@ Apply authentication data when `revision` is newer than the shared register.
 
 > **clearAuth**: (`options`) => `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
 
-Defined in: [core/src/shared/types.ts:411](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L411)
+定义于: [core/src/shared/types.ts:612](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L612)
 
-Clear authentication and pending business data using a newer revision.
+以更大的 revision 清除认证与该页面拥有的待发业务数据。
 
-#### Parameters
+#### 参数
 
 ##### options
+
+共享 auth register 的正整数 revision。
 
 ###### revision
 
 `number`
 
-#### Returns
+#### 返回
 
 `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
+
+applied、stale 或 unchanged revision 回执。
+
+#### 抛出
+
+`CAPABILITY_UNSUPPORTED`、`CLIENT_DISPOSED` 或 transport 错误。
 
 ***
 
@@ -232,25 +281,35 @@ Clear authentication and pending business data using a newer revision.
 
 > **updateUrl**: (`url`, `options`) => `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
 
-Defined in: [core/src/shared/types.ts:413](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L413)
+定义于: [core/src/shared/types.ts:621](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L621)
 
-Apply a new endpoint using the shared monotonic endpoint register.
+以更大的 revision 更新共享 endpoint；必要时取消旧连接尝试并重连。
 
-#### Parameters
+#### 参数
 
 ##### url
 
 `string` \| `URL`
 
+新的绝对 `ws:` 或 `wss:` URL。
+
 ##### options
+
+共享 endpoint register 的正整数 revision。
 
 ###### revision
 
 `number`
 
-#### Returns
+#### 返回
 
 `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
+
+applied、stale 或 unchanged revision 回执。
+
+#### 抛出
+
+`INVALID_OPTIONS`、`CLIENT_DISPOSED` 或 transport 错误。
 
 ***
 
@@ -258,21 +317,29 @@ Apply a new endpoint using the shared monotonic endpoint register.
 
 > **reconnect**: (`options?`) => `Promise`\<`void`\>
 
-Defined in: [core/src/shared/types.ts:415](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L415)
+定义于: [core/src/shared/types.ts:629](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L629)
 
-Explicitly start a new connection attempt.
+在 client 未 dispose 时显式开始新的共享连接尝试。
 
-#### Parameters
+#### 参数
 
 ##### options?
+
+可安全记录的调用原因；不会作为服务端 payload 发送。
 
 ###### reason?
 
 `string`
 
-#### Returns
+#### 返回
 
 `Promise`\<`void`\>
+
+重连请求被接纳后的 Promise，不代表 socket 已 open。
+
+#### 抛出
+
+`CLIENT_DISPOSED` 或 transport 控制错误。
 
 ***
 
@@ -280,13 +347,15 @@ Explicitly start a new connection attempt.
 
 > **diagnostics**: () => `Readonly`\<[`ConnectionDiagnostics`](ConnectionDiagnostics.md)\>
 
-Defined in: [core/src/shared/types.ts:417](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L417)
+定义于: [core/src/shared/types.ts:635](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L635)
 
-Return sanitized operational metrics without auth, query or payload data.
+返回当前已脱敏运行指标；任意 client 状态均可调用。
 
-#### Returns
+#### 返回
 
 `Readonly`\<[`ConnectionDiagnostics`](ConnectionDiagnostics.md)\>
+
+不含 auth、URL query、业务 payload 或内部堆栈的快照。
 
 ***
 
@@ -294,10 +363,16 @@ Return sanitized operational metrics without auth, query or payload data.
 
 > **dispose**: () => `Promise`\<`void`\>
 
-Defined in: [core/src/shared/types.ts:419](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L419)
+定义于: [core/src/shared/types.ts:642](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L642)
 
-Permanently release the client, handlers and transport participation.
+永久释放该页面 client、handler 与 transport 参与；dispose 后不能再次 open。
 
-#### Returns
+#### 返回
 
 `Promise`\<`void`\>
+
+本地清理与 detach 完成的 Promise。
+
+#### 抛出
+
+transport 清理异常会以安全 `WwsError` reject，但本地终态仍保持 dispose。

@@ -1,3 +1,9 @@
+/**
+ * 拥有一条物理 WebSocket 的连接状态机。
+ *
+ * 该模块只处理连接尝试、协议握手、重连、心跳、队列、背压和 revision，不知道页面或
+ * Worker 的实现；所有外部观察通过 `ConnectionSink` 派发且不等待业务 handler。
+ */
 import type {
   ConnectionDiagnostics,
   ConnectionSnapshot,
@@ -28,36 +34,53 @@ import { ReconnectPolicy } from './reconnect'
 import { OutboundQueue } from './queue'
 
 export interface ConnectionSink<Incoming> {
+  /** 页面逻辑 client id。 */
   readonly id: string
+  /** 详细状态变化通知。 */
   readonly onState?: (snapshot: ConnectionSnapshot, reasonCode?: string) => void
+  /** 连接 ready 通知。 */
   readonly onOpen?: (snapshot: ConnectionSnapshot) => void
+  /** 解码后的业务消息通知；controller 不等待 handler。 */
   readonly onMessage?: (data: Incoming, receivedAt: number, replayed?: boolean) => void
+  /** 有界入站或回放缓冲的溢出通知。 */
   readonly onOverflow?: (event: { readonly direction: 'inbound' | 'replay', readonly strategy: 'drop-newest' | 'drop-oldest', readonly droppedMessages: number, readonly droppedBytes: number }) => void
+  /** 安全 close 信息通知。 */
   readonly onClose?: (event: SafeCloseInfo & { readonly willReconnect: boolean }) => void
+  /** 本地连接错误通知；跨 Worker 前仍需脱敏。 */
   readonly onError?: (error: WwsError) => void
 }
 
 export interface ConnectionControllerOptions<Incoming, Outgoing, Auth> {
+  /** 物理连接与 adapter 的规范化配置。 */
   readonly config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>
+  /** 可选测试 socket 工厂。 */
   readonly socketFactory?: WebSocketFactory
+  /** 当前时间源，单位为 Unix 毫秒。 */
   readonly now?: () => number
+  /** 重连抖动随机源。 */
   readonly random?: () => number
+  /** 可注入 timer 工厂。 */
   readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
+  /** 与注入 timer 配对的清理函数。 */
   readonly clearTimeout?: (handle: TimerHandle) => void
-  /** Called once an ownerless controller has completed intentional idle close. */
+  /** 无 owner controller 完成主动 idle close 后调用一次。 */
   readonly onIdle?: (controller: ConnectionController<Incoming, Outgoing, Auth>) => void
 }
 
 interface OpenWaiter {
+  /** ready 后返回连接快照。 */
   readonly resolve: (snapshot: ConnectionSnapshot) => void
+  /** 终态、关闭或 abort 时拒绝。 */
   readonly reject: (error: WwsError) => void
 }
 
+/** 将原生 close 事件裁剪为不含 reason 的安全信息。 */
 function safeCloseInfo(event: { readonly code?: number, readonly wasClean?: boolean }): SafeCloseInfo {
   const code = event.code ?? 1006
   return { code, terminal: code === 1000, wasClean: event.wasClean ?? code === 1000 }
 }
 
+/** 按字节比较两个二进制视图。 */
 function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   if (left.byteLength !== right.byteLength)
     return false
@@ -68,12 +91,14 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   return true
 }
 
+/** 生成本地 send/auth 操作使用的 id。 */
 function createOperationId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
   return `wws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+/** 只保留 endpoint origin，拒绝向诊断暴露 path/query/凭据。 */
 function safeOrigin(url: string): string {
   try {
     return new URL(url).origin
@@ -83,6 +108,7 @@ function safeOrigin(url: string): string {
   }
 }
 
+/** 比较心跳原生 payload，不做隐式文本或二进制转换。 */
 function socketDataEquals(left: unknown, right: SocketData): boolean {
   if (typeof left === 'string' || typeof right === 'string')
     return left === right
@@ -94,39 +120,72 @@ function socketDataEquals(left: unknown, right: SocketData): boolean {
 }
 
 export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
+  /** 物理连接状态机。 */
   private readonly machine = new ConnectionStateMachine()
+  /** 所有页面 owner 共享的有界出站队列。 */
   private readonly queue: OutboundQueue
+  /** 原生 bufferedAmount 高低水位跟踪器。 */
   private readonly backpressure: BackpressureTracker
+  /** 物理连接重试预算与退避策略。 */
   private readonly retry: ReconnectPolicy
+  /** 保证异步协议解码顺序的处理器。 */
   private readonly orderedProtocol: OrderedProtocol<Incoming, Outgoing, Auth>
+  /** 当前 endpoint 与单调 revision。 */
   private readonly endpoint: EndpointRevisionRegister
+  /** 当前认证值与单调 revision。 */
   private readonly auth: AuthRevisionRegister<Auth>
+  /** client id 到事件 sink 的所有权映射。 */
   private readonly sinks = new Map<string, ConnectionSink<Incoming>>()
+  /** 等待当前物理连接 ready 的 open 调用。 */
   private readonly waiters: OpenWaiter[] = []
+  /** 当前时间源。 */
   private readonly now: () => number
+  /** 当前 timer 工厂。 */
   private readonly setTimer: (callback: () => void, delay: number) => TimerHandle
+  /** 当前 timer 清理函数。 */
   private readonly clearTimer: (handle: TimerHandle) => void
+  /** 原生 WebSocket 工厂。 */
   private readonly socketFactory: WebSocketFactory
+  /** 当前物理 socket；一次只能拥有一个。 */
   private socket: WebSocketLike | null = null
+  /** 当前 socket 的事件解绑函数。 */
   private socketCleanups: (() => void)[] = []
+  /** 当前应用层心跳 controller。 */
   private heartbeat: HeartbeatController | undefined
+  /** 当前建连/握手超时 timer。 */
   private connectTimer: TimerHandle | undefined
+  /** 当前重连退避 timer。 */
   private retryTimer: TimerHandle | undefined
+  /** owner 归零后的宽限关闭 timer。 */
   private idleTimer: TimerHandle | undefined
+  /** 背压队列冲刷 timer。 */
   private flushTimer: TimerHandle | undefined
+  /** 最近一次 ready 时间，单位为 Unix 毫秒。 */
   private connectedAt = 0
+  /** 已计划的下次重试延迟，单位为毫秒。 */
   private nextRetryDelay: number | null = null
+  /** 最近安全 close code。 */
   private lastSafeCloseCode: number | null = null
+  /** 最近本地 WWS 错误；跨边界前必须脱敏。 */
   private lastError: WwsError | null = null
+  /** close 是否由当前控制器主动发起。 */
   private intentionalClose = false
+  /** close 完成后是否必须立即开始显式重连。 */
   private forceReconnect = false
+  /** 区分过期 socket 回调的单调尝试 id。 */
   private activeAttempt = 0
+  /** adapter-frame ready 前必须完成的 auth promise。 */
   private authReady: { readonly attempt: number, readonly promise: Promise<void> } | undefined
+  /** onIdle 是否已经为当前空闲周期通知。 */
   private idleNotified = false
+  /** 当前关闭是否由 owner 归零触发。 */
   private idleCloseRequested = false
+  /** controller 是否已永久释放。 */
   private disposed = false
+  /** 串行化异步 encode，保持 sendMessage 调用顺序。 */
   private outgoingTail: Promise<void> = Promise.resolve()
 
+  /** 创建拥有单一物理 WebSocket 的连接控制器。 */
   constructor(readonly options: ConnectionControllerOptions<Incoming, Outgoing, Auth>) {
     this.queue = new OutboundQueue(options.config.shared.queue.maxMessages, options.config.shared.queue.maxBytes)
     this.backpressure = new BackpressureTracker(options.config.shared.backpressure)
@@ -142,62 +201,77 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.socketFactory = options.socketFactory ?? browserWebSocketFactory
   }
 
+  /** 返回当前详细物理连接状态。 */
   get state(): ConnectionState {
     return this.machine.state
   }
 
+  /** 返回 VueUse 风格紧凑状态。 */
   get status(): WebSocketStatus {
     return statusFor(this.state)
   }
 
+  /** 返回原生 WebSocket 兼容 readyState。 */
   get readyState(): ReadyState {
     return readyStateFor(this.state)
   }
 
+  /** 当前物理连接是否已经 ready。 */
   get connected(): boolean {
     return this.state === 'open'
   }
 
+  /** 当前附着的逻辑 client 数。 */
   get attachedClientCount(): number {
     return this.sinks.size
   }
 
+  /** 当前 endpoint revision。 */
   get endpointRevision(): number {
     return this.endpoint.revision
   }
 
+  /** 当前 endpoint 完整 URL；不得进入跨端口 diagnostics。 */
   get endpointUrl(): string {
     return this.endpoint.value
   }
 
+  /** 出站队列消息数。 */
   get queueMessages(): number {
     return this.queue.size
   }
 
+  /** 出站队列编码字节数。 */
   get queueBytes(): number {
     return this.queue.bytes
   }
 
+  /** 当前 socket bufferedAmount。 */
   get bufferedAmount(): number {
     return this.socket?.bufferedAmount ?? 0
   }
 
+  /** 当前是否处于出站高水位。 */
   get outboundHighWater(): boolean {
     return this.backpressure.isHighWater
   }
 
+  /** 当前连续重试次数。 */
   get retryAttempt(): number {
     return this.retry.attempt
   }
 
+  /** 已计划的下次重试延迟。 */
   get retryDelay(): number | null {
     return this.nextRetryDelay
   }
 
+  /** 最近安全错误码。 */
   get lastErrorCode(): string | null {
     return this.lastError?.code ?? null
   }
 
+  /** 构造不暴露 endpoint path/query、凭据或 payload 的诊断快照。 */
   diagnostics(transport: Exclude<Transport, 'pending'>, workerInstanceHash: string | null = null): Readonly<ConnectionDiagnostics> {
     return Object.freeze({
       attachedClientCount: this.attachedClientCount,
@@ -220,6 +294,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     })
   }
 
+  /** 附着一个逻辑 client；超出资源上限时同步抛出。 */
   attach(sink: ConnectionSink<Incoming>): void {
     this.assertUsable()
     if (!this.sinks.has(sink.id) && this.sinks.size >= this.options.config.shared.limits.maxClientsPerConnection)
@@ -233,6 +308,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }
   }
 
+  /** 脱离 client 并在最后一个 owner 离开后安排 idle close。 */
   detach(clientId: string): void {
     this.sinks.delete(clientId)
     this.queue.removeOwner(clientId)
@@ -240,6 +316,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       this.scheduleIdleClose()
   }
 
+  /** 打开或等待物理连接 ready；abort、终态和关闭会 reject。 */
   open(signal?: AbortSignal): Promise<ConnectionSnapshot> {
     this.assertUsable()
     if (signal?.aborted)
@@ -268,6 +345,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return promise
   }
 
+  /** 主动关闭物理连接并清空出站队列。 */
   close(): void {
     if (this.disposed)
       return
@@ -286,6 +364,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.queue.clear()
   }
 
+  /** 串行编码并本地发送或排队，不承诺服务端 Ack。 */
   async send(ownerId: string, data: Outgoing, options: SendOptions = {}): Promise<SendReceipt> {
     this.assertUsable()
     const messageId = createOperationId()
@@ -313,6 +392,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return operation
   }
 
+  /** 应用认证 revision；协议不支持时 reject。 */
   async updateAuth(value: Auth, revision: number): Promise<RevisionReceipt> {
     this.assertUsable()
     if (!this.options.config.adapter.capabilities.auth || this.options.config.adapter.createAuth === undefined)
@@ -323,6 +403,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return receipt
   }
 
+  /** 清除认证 revision，并移除可能携带旧身份的队列项。 */
   async clearAuth(revision: number): Promise<RevisionReceipt> {
     this.assertUsable()
     const receipt = this.auth.update(undefined, revision)
@@ -334,6 +415,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return receipt
   }
 
+  /** 应用 endpoint revision；仅 ws/wss URL 可被接受。 */
   async updateUrl(url: string, revision: number): Promise<RevisionReceipt> {
     this.assertUsable()
     let parsed: URL
@@ -351,6 +433,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return receipt
   }
 
+  /** 清空退避并请求一次显式物理重连。 */
   async reconnect(reason = 'RECONNECT_REQUESTED'): Promise<void> {
     this.assertUsable()
     this.retry.reset()
@@ -369,6 +452,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.startSocket()
   }
 
+  /** 释放 controller、所有 owner、socket 与 timers。 */
   dispose(): void {
     if (this.disposed)
       return
@@ -379,6 +463,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.clearAllTimers()
   }
 
+  /** 返回当前物理连接快照；transport 会由上层覆盖。 */
   snapshot(): ConnectionSnapshot {
     return {
       attempt: this.retry.attempt,
@@ -390,11 +475,13 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }
   }
 
+  /** 将一条已编码消息放入有界 FIFO 队列。 */
   private enqueue(ownerId: string, data: SocketData, messageId: string, idempotencyKey?: string): SendReceipt {
     const result = this.queue.enqueue(ownerId, data, messageId, idempotencyKey)
     return { messageId, position: result.position, status: 'queued' }
   }
 
+  /** 创建物理 socket、绑定本尝试监听器并设置连接 deadline。 */
   private startSocket(): void {
     if (this.disposed || this.socket !== null || this.sinks.size === 0)
       return
@@ -426,6 +513,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }, this.options.config.shared.connectionTimeout)
   }
 
+  /** 处理 socket open，并按协议 ready 模式完成 auth/handshake。 */
   private handleOpen(socket: WebSocketLike, attempt: number): void {
     if (!this.isCurrentAttempt(socket, attempt))
       return
@@ -440,6 +528,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     void this.sendAuth(socket, attempt).then(() => this.becomeOpen(socket, attempt)).catch(() => undefined)
   }
 
+  /** 在 ready 前发送当前认证 revision 的 protocol 帧。 */
   private async sendAuth(socket: WebSocketLike, attempt: number): Promise<void> {
     const createAuth = this.options.config.adapter.createAuth
     if (createAuth === undefined || this.auth.value === undefined)
@@ -467,6 +556,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }
   }
 
+  /** 将当前尝试标记为 ready，启动心跳、冲刷队列并通知所有 sink。 */
   private becomeOpen(socket: WebSocketLike = this.socket as WebSocketLike, attempt: number = this.activeAttempt): void {
     if (!this.isCurrentAttempt(socket, attempt))
       return
@@ -482,6 +572,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       sink.onOpen?.(this.snapshot())
   }
 
+  /** 顺序处理一条原始入站 payload。 */
   private async handleMessage(socket: WebSocketLike, attempt: number, data: SocketData): Promise<void> {
     if (!this.isCurrentAttempt(socket, attempt))
       return
@@ -494,6 +585,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }
   }
 
+  /** 根据协议帧执行握手、心跳、控制帧或业务 fan-out。 */
   private async handleFrame(socket: WebSocketLike, attempt: number, frame: ProtocolFrame<Incoming>): Promise<void> {
     if (!this.isCurrentAttempt(socket, attempt))
       return
@@ -549,6 +641,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       sink.onMessage?.(frame.data, this.now())
   }
 
+  /** 记录错误并通知 sink；不等待页面 handler。 */
   private handleError(error: WwsError, socket?: WebSocketLike, attempt?: number): void {
     if (socket !== undefined && attempt !== undefined && !this.isCurrentAttempt(socket, attempt))
       return
@@ -557,6 +650,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       sink.onError?.(error)
   }
 
+  /** 清理当前 socket 并根据 retry/terminal 策略安排后续状态。 */
   private handleClose(socket: WebSocketLike, attempt: number, event: { readonly code: number, readonly wasClean: boolean }): void {
     if (!this.isCurrentAttempt(socket, attempt))
       return
@@ -625,6 +719,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       this.notifyIdle()
   }
 
+  /** 在 socket 构造失败等无 close 事件路径进入终态。 */
   private fail(error: WwsError): void {
     this.handleError(error)
     if (this.socket !== null)
@@ -635,6 +730,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.rejectWaiters(error)
   }
 
+  /** 在低水位时按 FIFO 冲刷队列；高水位时保持队列并重试。 */
   private flushQueue(): void {
     if (this.flushTimer !== undefined)
       this.clearTimer(this.flushTimer)
@@ -660,6 +756,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     flush()
   }
 
+  /** 按 adapter 能力创建心跳 controller；未配置则返回 undefined。 */
   private createHeartbeat(): HeartbeatController | undefined {
     const configured = this.options.config.shared.heartbeat
     if (configured === false)
@@ -693,6 +790,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     })
   }
 
+  /** 最后一个 owner 离开后按宽限期关闭，避免短暂页面切换抖动。 */
   private scheduleIdleClose(): void {
     if (this.idleTimer !== undefined)
       return
@@ -707,6 +805,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }, this.options.config.shared.idleGraceMs)
   }
 
+  /** 将心跳超时转换为可重试连接错误并关闭 socket。 */
   private handleHeartbeatTimeout(): void {
     const error = new WwsError('HEARTBEAT_TIMEOUT', 'Heartbeat timed out', { retryable: true })
     this.handleError(error)
@@ -714,18 +813,21 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.socket?.close(4000)
   }
 
+  /** 通过状态机执行迁移并在变化时通知 sink。 */
   private transition(next: ConnectionState, reasonCode?: string): void {
     const transition = this.machine.transition(next)
     if (transition.previous !== transition.state)
       this.emitState(reasonCode)
   }
 
+  /** 向所有 sink 派发当前快照。 */
   private emitState(reasonCode?: string): void {
     const snapshot = this.snapshot()
     for (const sink of this.sinks.values())
       sink.onState?.(snapshot, reasonCode)
   }
 
+  /** resolve 当前 ready 的所有 open waiter。 */
   private resolveWaiters(): void {
     const waiters = this.waiters.splice(0)
     const snapshot = this.snapshot()
@@ -733,12 +835,14 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       waiter.resolve(snapshot)
   }
 
+  /** reject 当前等待连接的所有 open waiter。 */
   private rejectWaiters(error: WwsError): void {
     const waiters = this.waiters.splice(0)
     for (const waiter of waiters)
       waiter.reject(error)
   }
 
+  /** 解绑当前 socket 监听器并释放 socket 引用。 */
   private cleanupSocket(): void {
     for (const cleanup of this.socketCleanups)
       cleanup()
@@ -746,10 +850,12 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.socket = null
   }
 
+  /** 判断回调是否仍属于当前物理连接尝试。 */
   private isCurrentAttempt(socket: WebSocketLike, attempt: number): boolean {
     return this.socket === socket && this.activeAttempt === attempt
   }
 
+  /** 每个空闲周期仅通知一次 Worker/direct pool 回收回调。 */
   private notifyIdle(): void {
     if (this.idleNotified)
       return
@@ -757,16 +863,19 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.options.onIdle?.(this)
   }
 
+  /** 判断当前是否存在可重连的活跃 socket 尝试。 */
   private isAttemptActive(): boolean {
     return this.socket !== null && (this.state === 'connecting' || this.state === 'handshaking' || this.state === 'open')
   }
 
+  /** 清理连接 deadline timer。 */
   private clearConnectTimer(): void {
     if (this.connectTimer !== undefined)
       this.clearTimer(this.connectTimer)
     this.connectTimer = undefined
   }
 
+  /** 清理重连 timer 及其公开延迟。 */
   private clearRetryTimer(): void {
     if (this.retryTimer !== undefined)
       this.clearTimer(this.retryTimer)
@@ -774,6 +883,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.nextRetryDelay = null
   }
 
+  /** 清理 controller 生命周期拥有的全部 timer。 */
   private clearAllTimers(): void {
     this.clearConnectTimer()
     this.clearRetryTimer()
@@ -786,6 +896,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.heartbeat?.stop()
   }
 
+  /** 拒绝 dispose 后的连接操作。 */
   private assertUsable(): void {
     if (this.disposed)
       throw new WwsError('CLIENT_DISPOSED', 'Connection controller has been disposed')

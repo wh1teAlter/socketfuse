@@ -3,11 +3,11 @@ layout: home
 title: wws
 hero:
   name: wws
-  text: Shared WebSocket connections across browser tabs
-  tagline: A SharedWorker-first transport with a direct WebSocket fallback.
+  text: 在浏览器标签页之间共享 WebSocket 连接
+  tagline: 以 SharedWorker 为首选，并提供 direct WebSocket 降级。
 ---
 
-# Quick start
+# 快速开始
 
 ```ts
 import { createWebSocket } from 'wws'
@@ -23,24 +23,17 @@ await ws.open()
 await ws.sendMessage(JSON.stringify({ type: 'join', room: 'general' }))
 ```
 
-`id` is the explicit sharing identity. Tabs that use the same `id`, initial URL
-and shared configuration attach to one physical WebSocket. `lifecycle`, local
-listeners and other page-local options do not create a configuration conflict.
-Later endpoint and auth changes are ordered across the shared connection by
-monotonic revisions instead of becoming part of its static fingerprint.
+`id` 是显式的共享标识。同源标签页使用相同的 `id`、初始 URL 和共享配置时，会接入
+同一个物理 WebSocket。`lifecycle`、本地监听器及其他页面本地选项不会导致配置冲突。
+后续 endpoint 与认证值的变更通过单调递增的 revision 在共享连接上排序，而不会成为
+静态指纹的一部分。
 
-The default raw protocol accepts only native WebSocket values: `string`,
-`Blob`, `ArrayBuffer`, or a typed-array view. Use the JSON protocol below when
-your business messages are objects.
+## 消息处理
 
-## Message handling
+`onMessage` 可随时注册和移除。每次注册彼此独立，抛出异常的处理器不会阻止其他
+处理器运行。最新业务消息可从 `ws.data` 获取；ready、ping、pong 等协议帧不会覆盖它。
 
-`onMessage` can be registered and removed at any time. Every registration is
-independent, and a throwing handler does not stop the other handlers. The
-latest business message is available as `ws.data`; protocol frames such as
-ready, ping and pong never replace it.
-
-`sendMessage()` resolves to either:
+`sendMessage()` 会解析为下列任一回执：
 
 ```json
 [
@@ -49,14 +42,13 @@ ready, ping and pong never replace it.
 ]
 ```
 
-These receipts only describe local acceptance. WWS v1 does not implement a
-server Ack, request correlation or `request()` helper. Queueing is opt-in:
-`queue: true` enables FIFO memory queueing for disconnected and backpressured
-states, capped at 100 messages and 1 MiB by default.
+这些回执只描述本地接纳结果。WWS v1 不实现服务端 Ack、请求关联或 `request()`
+辅助方法。队列需显式启用：`queue: true` 会在断开和背压状态下启用 FIFO 内存队列，
+默认上限为 100 条消息和 1 MiB。
 
-## Protocols and auth
+## 协议与认证
 
-Raw WebSocket data is the default. Declarative JSON is passed directly:
+默认使用原始 WebSocket 数据。声明式 JSON 配置可直接传入：
 
 ```ts
 const ws = createWebSocket('wss://api.example.com/events', {
@@ -77,15 +69,13 @@ const ws = createWebSocket('wss://api.example.com/events', {
 await ws.updateAuth({ token: 'short-lived-token' }, { revision: 1 })
 ```
 
-Matcher keys are dot/bracket paths such as `meta.code` and `items[0].kind`.
-For complex protocols, register a `ProtocolAdapter` in a custom Worker entry;
-adapter functions never cross a `MessagePort`.
+匹配器键使用点号或方括号路径，例如 `meta.code` 和 `items[0].kind`。对于复杂协议，
+请在自定义 Worker 入口中注册 `ProtocolAdapter`；适配器函数不能跨越 `MessagePort`。
 
-## Fallback and diagnostics
+## 降级与诊断
 
-Only Worker API support, construction, loading and initialization handshake
-errors can use `fallback: 'direct'`. Network failures, authentication errors,
-heartbeat timeout and server close codes stay on the selected transport.
+只有 Worker API 支持、构造、加载和初始化握手错误可以使用 `fallback: 'direct'`。
+网络故障、认证错误、心跳超时和服务端关闭码始终留在已选 transport 上处理。
 
 ```ts
 const ws = createWebSocket(url, {
@@ -97,14 +87,12 @@ const ws = createWebSocket(url, {
 ws.addEventListener('diagnostic', () => console.log(ws.diagnostics()))
 ```
 
-Diagnostics expose transport, state, origin, stable id/config hashes, retry,
-queue and overflow counters. Auth values, URL query strings, payloads and
-internal stacks are excluded.
+诊断信息包含 transport、状态、origin、稳定的 id/配置哈希、重试、队列和溢出计数。
+认证值、URL 查询字符串、payload 与内部堆栈均不会暴露。
 
-## Lifecycle restore
+## 生命周期恢复
 
-Restore is disabled by default. Enable it per page when a hidden/frozen page
-should stop receiving live messages:
+恢复默认关闭。当隐藏或冻结的页面应停止接收实时消息时，可按页面启用：
 
 ```ts
 const ws = createWebSocket(url, {
@@ -113,19 +101,16 @@ const ws = createWebSocket(url, {
 })
 ```
 
-Replay is bounded and uses the normal `onMessage` path with
-`event.replayed === true`. Overflow drops the oldest buffered message and
-emits `overflow`. On a restore-enabled page WWS probes the selected
-SharedWorker; if it was restarted, the page rebuilds that shared transport and
-replays its newest endpoint/auth revisions before reopening demand. This is
-best-effort transport recovery, not durable business-message recovery: Worker
-restart, lease expiry and page termination can still lose messages.
+回放受上限约束，并走正常的 `onMessage` 路径，且 `event.replayed === true`。发生
+溢出时会丢弃最早缓存的消息并派发 `overflow`。启用恢复的页面会探测已选 SharedWorker；
+若 Worker 已重启，页面会重建该共享 transport，并在重新打开请求前回放最新的 endpoint/
+认证 revision。这是尽力而为的 transport 恢复，并非持久化业务消息恢复：Worker 重启、
+租约过期和页面终止仍可能导致消息丢失。
 
-## Worker deployment
+## Worker 部署
 
-The default inline Worker uses a stable build-generated `data:` source. CSP,
-Cookie/SameSite or `Origin: null` requirements are reasons to deploy a custom,
-same-origin Worker URL instead:
+默认内联 Worker 使用构建产出的稳定 `data:` 源码。若 CSP、Cookie/SameSite 或
+`Origin: null` 有要求，应改为部署自定义的同源 Worker URL：
 
 ```ts
 const ws = createWebSocket(url, {
@@ -135,14 +120,12 @@ const ws = createWebSocket(url, {
 })
 ```
 
-The custom Worker must call `exposeSharedWebSocketWorker()` and statically
-register any custom adapter. Keep the Worker URL identical across SPAs that
-need to share connections. WWS does not create Blob URLs or load Worker code
-from a CDN.
+自定义 Worker 必须调用 `exposeSharedWebSocketWorker()`，并静态注册所有自定义适配器。
+需要共享连接的 SPA 必须使用完全一致的 Worker URL。WWS 不会创建 Blob URL，也不会从 CDN
+加载 Worker 代码。
 
-## Compatibility
+## 兼容性
 
-Chromium/Edge, Firefox and Safari 16+ are the target SharedWorker baseline.
-When SharedWorker is unavailable, direct fallback keeps the API and error
-semantics while limiting sharing to the current JavaScript realm. Node/SSR
-imports are safe, but creating a connection requires browser WebSocket APIs.
+Chromium/Edge、Firefox 和 Safari 16+ 是目标 SharedWorker 基线。SharedWorker 不可用时，
+direct 降级会保持 API 与错误语义，但共享范围仅限当前 JavaScript realm。Node/SSR 中导入
+是安全的，但创建连接需要浏览器 WebSocket API。

@@ -1,16 +1,18 @@
-# Interface: SharedWebSocketRuntime
+# 接口: SharedWebSocketRuntime
 
-Defined in: [core/src/worker/runtime.ts:59](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L59)
+定义于: [core/src/worker/runtime.ts:96](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L96)
 
-SharedWorker-side runtime that accepts page ports and owns connections.
+SharedWorker 端 runtime：接受页面 port 并拥有共享物理连接。
 
-## Properties
+## 属性
 
 ### instanceId
 
 > `readonly` **instanceId**: `string`
 
-Defined in: [core/src/worker/runtime.ts:60](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L60)
+定义于: [core/src/worker/runtime.ts:98](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L98)
+
+Worker 实例 id，仅用于安全诊断关联。
 
 ***
 
@@ -18,15 +20,17 @@ Defined in: [core/src/worker/runtime.ts:60](https://github.com/wh1teAlter/wws/bl
 
 > **connect**: (`port`) => `void`
 
-Defined in: [core/src/worker/runtime.ts:61](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L61)
+定义于: [core/src/worker/runtime.ts:100](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L100)
 
-#### Parameters
+接受一个新页面 port；失败时关闭端口。
+
+#### 参数
 
 ##### port
 
 [`MessagePortLike`](MessagePortLike.md)
 
-#### Returns
+#### 返回
 
 `void`
 
@@ -36,8 +40,10 @@ Defined in: [core/src/worker/runtime.ts:61](https://github.com/wh1teAlter/wws/bl
 
 > **dispose**: () => `void`
 
-Defined in: [core/src/worker/runtime.ts:62](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L62)
+定义于: [core/src/worker/runtime.ts:102](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L102)
 
-#### Returns
+停止 lease、关闭端口并销毁所有 controller。
+
+#### 返回
 
 `void`

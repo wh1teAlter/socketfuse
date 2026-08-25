@@ -1,3 +1,4 @@
+/** 验证有界出站 FIFO 队列的顺序、字节和 owner 清理。 */
 import { describe, expect, it } from 'vitest'
 import { WwsError } from '../shared/errors'
 import { OutboundQueue } from './queue'

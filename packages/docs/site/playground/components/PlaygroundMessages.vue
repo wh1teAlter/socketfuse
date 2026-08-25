@@ -1,11 +1,19 @@
 <script setup lang="ts">
+/**
+ * Playground 消息列表展示组件。
+ *
+ * 列表只渲染 composable 提供的快照，并通过 clear 事件请求清空；不会修改消息对象
+ * 或参与协议解码。
+ */
 import type { PlaygroundMessage } from '../composables/usePlaygroundConnection'
 
+/** 消息列表的只读展示输入。 */
 const props = defineProps<{
   count: number
   messages: readonly PlaygroundMessage[]
 }>()
 
+/** 列表操作事件。 */
 const emit = defineEmits<{
   clear: []
 }>()
@@ -16,10 +24,10 @@ const emit = defineEmits<{
     <div class="playground-console-header">
       <div>
         <h3 class="playground-console-title">
-          Messages
+          消息
         </h3>
         <p class="playground-console-count">
-          {{ props.count }} received
+          已接收 {{ props.count }} 条
         </p>
       </div>
       <button
@@ -27,7 +35,7 @@ const emit = defineEmits<{
         type="button"
         @click="emit('clear')"
       >
-        Clear
+        清空
       </button>
     </div>
     <ol
@@ -43,11 +51,11 @@ const emit = defineEmits<{
         <span
           v-if="message.replayed"
           class="playground-replayed"
-        >[replayed]</span>
+        >[已回放]</span>
         <span
           v-if="message.type === 'binary'"
           class="playground-replayed"
-        >[binary]</span>
+        >[二进制]</span>
         {{ message.value }}
       </li>
     </ol>

@@ -1,18 +1,18 @@
-# Interface: SendOptions
+# 接口: SendOptions
 
-Defined in: [core/src/shared/types.ts:120](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L120)
+定义于: [core/src/shared/types.ts:150](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L150)
 
-Controls one `sendMessage` operation.
+控制一次 `sendMessage` 调用的页面本地选项。
 
-## Properties
+## 属性
 
 ### queue?
 
 > `optional` **queue?**: `boolean`
 
-Defined in: [core/src/shared/types.ts:122](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L122)
+定义于: [core/src/shared/types.ts:152](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L152)
 
-Override shared queue eligibility for this send.
+覆盖本次发送是否可按共享队列策略入队。
 
 ***
 
@@ -20,6 +20,6 @@ Override shared queue eligibility for this send.
 
 > `optional` **idempotencyKey?**: `string`
 
-Defined in: [core/src/shared/types.ts:124](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L124)
+定义于: [core/src/shared/types.ts:154](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L154)
 
-Application key retained with a queued message; WWS does not implement server Ack.
+随排队消息保留的业务幂等键；WWS 不将其解释为服务端 Ack。

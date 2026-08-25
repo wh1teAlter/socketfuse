@@ -1,6 +1,8 @@
+/** 将连接状态迁移限制在合法图中，并映射为 WebSocket 兼容状态。 */
 import type { ConnectionState, ReadyState, WebSocketStatus } from '../shared/types'
 import { WwsError } from '../shared/errors'
 
+/** 连接状态机允许的有向迁移图；未列出的边必须失败。 */
 const transitions: Readonly<Record<ConnectionState, readonly ConnectionState[]>> = {
   closed: ['connecting', 'idle', 'failed'],
   closing: ['closed', 'idle', 'connecting'],
@@ -13,17 +15,22 @@ const transitions: Readonly<Record<ConnectionState, readonly ConnectionState[]>>
 }
 
 export interface StateTransition {
+  /** 迁移前生命周期状态。 */
   readonly previous: ConnectionState
+  /** 迁移后生命周期状态。 */
   readonly state: ConnectionState
 }
 
 export class ConnectionStateMachine {
+  /** 当前物理连接状态；所有迁移必须经过 transition。 */
   private current: ConnectionState = 'idle'
 
+  /** 返回当前状态。 */
   get state(): ConnectionState {
     return this.current
   }
 
+  /** 校验并应用一个合法状态迁移。 */
   transition(next: ConnectionState): StateTransition {
     if (next === this.current)
       return { previous: this.current, state: next }
@@ -38,6 +45,7 @@ export class ConnectionStateMachine {
     return { previous, state: next }
   }
 
+  /** 回到 idle，供新一轮连接生命周期开始。 */
   reset(): StateTransition {
     const previous = this.current
     this.current = 'idle'
@@ -45,6 +53,7 @@ export class ConnectionStateMachine {
   }
 }
 
+/** 将详细状态映射到原生 WebSocket readyState 数值。 */
 export function readyStateFor(state: ConnectionState): ReadyState {
   if (state === 'connecting' || state === 'handshaking' || state === 'reconnecting')
     return 0
@@ -55,6 +64,7 @@ export function readyStateFor(state: ConnectionState): ReadyState {
   return 3
 }
 
+/** 将详细状态压缩为公开的 OPEN/CONNECTING/CLOSED 状态。 */
 export function statusFor(state: ConnectionState): WebSocketStatus {
   if (state === 'connecting' || state === 'handshaking' || state === 'reconnecting')
     return 'CONNECTING'

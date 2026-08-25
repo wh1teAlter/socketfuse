@@ -1,3 +1,4 @@
+/** 验证 raw、JSON 和 custom adapter 的编码、分类与顺序保证。 */
 import { describe, expect, it } from 'vitest'
 import { createJsonProtocolAdapter, decodeAndClassify, rawProtocol } from './adapter'
 import { WwsError } from '../shared/errors'

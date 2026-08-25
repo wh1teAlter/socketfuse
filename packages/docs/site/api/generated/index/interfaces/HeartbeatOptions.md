@@ -1,16 +1,18 @@
-# Interface: HeartbeatOptions
+# 接口: HeartbeatOptions
 
-Defined in: [core/src/shared/types.ts:52](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L52)
+定义于: [core/src/shared/types.ts:62](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L62)
 
-Shared heartbeat policy. Intervals are expressed in milliseconds.
+多标签页共享的应用层心跳策略；时间字段单位均为毫秒。
 
-## Properties
+## 属性
 
 ### mode
 
 > **mode**: `"pong"` \| `"activity"`
 
-Defined in: [core/src/shared/types.ts:53](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L53)
+定义于: [core/src/shared/types.ts:64](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L64)
+
+`pong` 要求应答，`activity` 则以任意入站活动续命。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:53](https://github.com/wh1teAlter/wws/blob
 
 > **interval**: `number`
 
-Defined in: [core/src/shared/types.ts:54](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L54)
+定义于: [core/src/shared/types.ts:66](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L66)
+
+两次心跳发送之间的间隔。
 
 ***
 
@@ -26,7 +30,9 @@ Defined in: [core/src/shared/types.ts:54](https://github.com/wh1teAlter/wws/blob
 
 > **pongTimeout**: `number`
 
-Defined in: [core/src/shared/types.ts:55](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L55)
+定义于: [core/src/shared/types.ts:68](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L68)
+
+`pong` 模式等待应答的最长时间。
 
 ***
 
@@ -34,7 +40,9 @@ Defined in: [core/src/shared/types.ts:55](https://github.com/wh1teAlter/wws/blob
 
 > **message**: [`SocketData`](../type-aliases/SocketData.md)
 
-Defined in: [core/src/shared/types.ts:56](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L56)
+定义于: [core/src/shared/types.ts:70](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L70)
+
+发送给服务端的原生 WebSocket payload。
 
 ***
 
@@ -42,4 +50,6 @@ Defined in: [core/src/shared/types.ts:56](https://github.com/wh1teAlter/wws/blob
 
 > **responseMessage**: [`SocketData`](../type-aliases/SocketData.md)
 
-Defined in: [core/src/shared/types.ts:57](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L57)
+定义于: [core/src/shared/types.ts:72](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L72)
+
+在 `pong` 模式下被视为应答的原生 payload。

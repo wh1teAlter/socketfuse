@@ -1,7 +1,7 @@
-# Variable: WWS\_ERROR\_CODES
+# 变量: WWS\_ERROR\_CODES
 
 > `const` **WWS\_ERROR\_CODES**: readonly \[`"INVALID_OPTIONS"`, `"ENVIRONMENT_UNSUPPORTED"`, `"CLIENT_DISPOSED"`, `"CLIENT_DISCONNECTED"`, `"ABORTED"`, `"WORKER_UNSUPPORTED"`, `"WORKER_CONSTRUCTION_FAILED"`, `"WORKER_LOAD_FAILED"`, `"WORKER_INIT_TIMEOUT"`, `"WORKER_DISCONNECTED"`, `"PROTOCOL_VERSION_MISMATCH"`, `"ADAPTER_NOT_REGISTERED"`, `"INVALID_CONTROL_MESSAGE"`, `"CONNECTION_CONFIG_CONFLICT"`, `"CONNECTION_TIMEOUT"`, `"SOCKET_ERROR"`, `"CLOSE_NOT_RETRYABLE"`, `"RETRY_EXHAUSTED"`, `"HEARTBEAT_TIMEOUT"`, `"AUTH_FAILED"`, `"STALE_REVISION"`, `"SEND_WHILE_DISCONNECTED"`, `"QUEUE_FULL"`, `"QUEUE_BYTES_EXCEEDED"`, `"BACKPRESSURE"`, `"MESSAGE_TOO_LARGE"`, `"RESOURCE_LIMIT_EXCEEDED"`, `"ENCODE_FAILED"`, `"DECODE_FAILED"`, `"PROTOCOL_ERROR"`, `"CAPABILITY_UNSUPPORTED"`, `"INBOUND_OVERFLOW"`, `"INTERNAL_STATE_ERROR"`\]
 
-Defined in: [core/src/shared/errors.ts:2](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/errors.ts#L2)
+定义于: [core/src/shared/errors.ts:8](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L8)
 
-Stable machine-readable error codes emitted by WWS v1.
+WWS v1 对外稳定的机器可读错误码集合。

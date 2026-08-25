@@ -1,18 +1,18 @@
-# Interface: RestoreOptions
+# 接口: RestoreOptions
 
-Defined in: [core/src/shared/types.ts:98](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L98)
+定义于: [core/src/shared/types.ts:122](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L122)
 
-Page-local buffering used while a lifecycle-aware page is suspended.
+页面启用生命周期恢复后，在挂起期间使用的本地回放缓冲配置。
 
-## Properties
+## 属性
 
 ### replay?
 
 > `optional` **replay?**: `boolean`
 
-Defined in: [core/src/shared/types.ts:100](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L100)
+定义于: [core/src/shared/types.ts:124](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L124)
 
-Replay buffered messages through `onMessage` on restore. Defaults to `false`.
+恢复时是否通过 `onMessage` 重放缓冲消息，默认值为 `false`。
 
 ***
 
@@ -20,9 +20,9 @@ Replay buffered messages through `onMessage` on restore. Defaults to `false`.
 
 > `optional` **maxMessages?**: `number`
 
-Defined in: [core/src/shared/types.ts:102](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L102)
+定义于: [core/src/shared/types.ts:126](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L126)
 
-Maximum buffered messages. Defaults to `256`.
+可缓冲的最大消息数，默认值为 `256`。
 
 ***
 
@@ -30,6 +30,6 @@ Maximum buffered messages. Defaults to `256`.
 
 > `optional` **maxBytes?**: `number`
 
-Defined in: [core/src/shared/types.ts:104](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L104)
+定义于: [core/src/shared/types.ts:128](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L128)
 
-Maximum buffered bytes. Defaults to 4 MiB.
+可缓冲的最大 payload 字节数，默认值为 4 MiB。

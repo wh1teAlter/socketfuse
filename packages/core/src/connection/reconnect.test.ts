@@ -1,3 +1,4 @@
+/** 验证指数退避、抖动边界和稳定连接后的预算重置。 */
 import { describe, expect, it } from 'vitest'
 import { calculateReconnectDelay, ReconnectPolicy } from './reconnect'
 import { DEFAULT_RECONNECT_OPTIONS } from '../shared/constants'

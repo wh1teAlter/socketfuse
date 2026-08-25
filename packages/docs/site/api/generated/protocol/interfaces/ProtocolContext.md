@@ -1,10 +1,10 @@
-# Interface: ProtocolContext
+# 接口: ProtocolContext
 
-Defined in: [core/src/shared/types.ts:250](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L250)
+定义于: [core/src/shared/types.ts:361](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L361)
 
-Timestamp supplied to protocol adapter operations.
+传给协议适配器操作的基础时间上下文。
 
-## Extended by
+## 继承于
 
 - [`AuthContext`](AuthContext.md)
 - [`ClassifyContext`](ClassifyContext.md)
@@ -12,10 +12,12 @@ Timestamp supplied to protocol adapter operations.
 - [`EncodeContext`](EncodeContext.md)
 - [`HeartbeatContext`](HeartbeatContext.md)
 
-## Properties
+## 属性
 
 ### now
 
 > `readonly` **now**: `number`
 
-Defined in: [core/src/shared/types.ts:251](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L251)
+定义于: [core/src/shared/types.ts:363](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L363)
+
+操作发生时的 Unix 时间戳，单位为毫秒。

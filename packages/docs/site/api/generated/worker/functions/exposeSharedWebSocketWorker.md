@@ -1,21 +1,31 @@
-# Function: exposeSharedWebSocketWorker()
+# 函数: exposeSharedWebSocketWorker()
 
 > **exposeSharedWebSocketWorker**(`options?`, `scope?`): [`SharedWebSocketRuntime`](../interfaces/SharedWebSocketRuntime.md)
 
-Defined in: [core/src/worker/runtime.ts:551](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L551)
+定义于: [core/src/worker/runtime.ts:629](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L629)
 
-Create a runtime and install its port handler on the SharedWorker global scope.
+创建 runtime 并在 SharedWorker global scope 安装 onconnect。
 
-## Parameters
+## 参数
 
 ### options?
 
 [`SharedWebSocketRuntimeOptions`](../interfaces/SharedWebSocketRuntimeOptions.md) = `{}`
 
+Worker runtime 依赖和静态资源上限。
+
 ### scope?
 
 [`SharedWorkerGlobalLike`](../interfaces/SharedWorkerGlobalLike.md)
 
-## Returns
+可选的测试/自定义 global scope；省略时使用当前 Worker globalThis。
+
+## 返回
 
 [`SharedWebSocketRuntime`](../interfaces/SharedWebSocketRuntime.md)
+
+已安装连接入口的 runtime。
+
+## 抛出
+
+`WwsError`，当 runtime 选项无效时。

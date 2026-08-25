@@ -1,13 +1,15 @@
-# Interface: JsonAuthTemplate
+# 接口: JsonAuthTemplate
 
-Defined in: [core/src/shared/types.ts:226](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L226)
+定义于: [core/src/shared/types.ts:325](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L325)
 
-Strings equal to `$auth` or starting with `$auth.` are replaced from auth data.
+`$auth` 或 `$auth.` 开头的字符串会在生成认证帧时从 auth 数据替换。
 
-## Properties
+## 属性
 
 ### template
 
 > `readonly` **template**: [`JsonValue`](../type-aliases/JsonValue.md)
 
-Defined in: [core/src/shared/types.ts:227](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L227)
+定义于: [core/src/shared/types.ts:327](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L327)
+
+可含 auth 占位符的认证业务帧模板。

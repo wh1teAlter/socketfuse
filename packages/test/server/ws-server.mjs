@@ -1,15 +1,25 @@
+/**
+ * 仅供 Playwright E2E 使用的本地 WebSocket 回显服务。
+ *
+ * namespace 将不同测试隔离；连接集合和统计数据只用于验证共享连接数、广播及
+ * 生命周期，不属于 wws 产品协议。control 端点不接收凭据或生产流量。
+ */
 import { createServer } from 'node:http'
 import { WebSocketServer } from 'ws'
 import process from 'node:process'
 
+/** E2E HTTP/WebSocket 服务监听端口。 */
 const port = 8787
+/** namespace 到测试统计和活跃 socket 集合的映射。 */
 const namespaces = new Map()
 
+/** 从测试请求 URL 提取隔离 namespace。 */
 function namespaceFor(requestUrl) {
   const url = new URL(requestUrl, `http://127.0.0.1:${port}`)
   return url.searchParams.get('namespace') ?? 'default'
 }
 
+/** 获取或创建一个测试 namespace 的本地统计状态。 */
 function statsFor(namespace) {
   let stats = namespaces.get(namespace)
   if (stats === undefined) {
@@ -89,6 +99,7 @@ webSockets.on('connection', (socket, request) => {
 
 server.listen(port, '127.0.0.1')
 
+/** 关闭所有测试 socket 和 HTTP 服务，保证进程退出时不残留句柄。 */
 function close() {
   for (const stats of namespaces.values()) {
     for (const socket of stats.sockets)

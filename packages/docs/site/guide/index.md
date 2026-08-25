@@ -1,21 +1,19 @@
-# Guide
+# 指南
 
-WWS is a browser library that gives same-origin tabs one logical WebSocket
-connection. It puts the physical socket inside a `SharedWorker`; every tab gets
-its own `WebSocketClient` proxy and local event handlers.
+WWS 是一个浏览器库，让同源标签页共享一个逻辑 WebSocket 连接。它将物理 socket 放入
+`SharedWorker`；每个标签页都会获得自己的 `WebSocketClient` 代理和本地事件处理器。
 
-The default path is deliberately small: provide a URL and stable `id`, call
-`open()`, then use `onMessage()` and `sendMessage()`.
+默认路径刻意保持精简：提供 URL 和稳定的 `id`，调用 `open()`，然后使用 `onMessage()`
+与 `sendMessage()`。
 
-## What is shared
+## 共享的内容
 
-The socket, reconnect policy, queue, heartbeat, lease and protocol adapter are
-shared. A page's listeners, latest `data`, lifecycle replay buffer and client
-object are local to that page.
+socket、重连策略、队列、心跳、租约和协议适配器会被共享。页面的监听器、最新 `data`、
+生命周期回放缓冲区和 client 对象则仅属于当前页面。
 
-## Start here
+## 从这里开始
 
-- [Getting started](./getting-started) for the smallest usable client.
-- [Connection sharing](./connection-sharing) for `id` and conflict rules.
-- [Reliability](./reliability) for queues, backpressure and reconnects.
-- [Fallback and Worker](./fallback-and-worker) for deployment choices.
+- [快速开始](./getting-started)：创建最小可用 client。
+- [连接共享](./connection-sharing)：了解 `id` 与冲突规则。
+- [可靠性](./reliability)：了解队列、背压与重连。
+- [降级与 Worker](./fallback-and-worker)：了解部署选择。

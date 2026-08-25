@@ -1,16 +1,18 @@
-# Interface: ProtocolCapabilities
+# 接口: ProtocolCapabilities
 
-Defined in: [core/src/shared/types.ts:29](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L29)
+定义于: [core/src/shared/types.ts:36](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L36)
 
-Features implemented by the selected protocol adapter.
+选定协议适配器实现的能力集合。
 
-## Properties
+## 属性
 
 ### auth
 
 > `readonly` **auth**: `boolean`
 
-Defined in: [core/src/shared/types.ts:30](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L30)
+定义于: [core/src/shared/types.ts:38](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L38)
+
+是否能根据 revision 生成认证帧。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:30](https://github.com/wh1teAlter/wws/blob
 
 > `readonly` **heartbeat**: `boolean`
 
-Defined in: [core/src/shared/types.ts:31](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L31)
+定义于: [core/src/shared/types.ts:40](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L40)
+
+是否能生成和识别应用层心跳帧。
 
 ***
 
@@ -26,4 +30,6 @@ Defined in: [core/src/shared/types.ts:31](https://github.com/wh1teAlter/wws/blob
 
 > `readonly` **binary**: `boolean`
 
-Defined in: [core/src/shared/types.ts:32](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L32)
+定义于: [core/src/shared/types.ts:42](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L42)
+
+是否能安全处理二进制 WebSocket payload。

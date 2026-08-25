@@ -1,16 +1,18 @@
-# Interface: WwsDiagnosticEvent
+# 接口: WwsDiagnosticEvent
 
-Defined in: [core/src/shared/types.ts:186](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L186)
+定义于: [core/src/shared/types.ts:264](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L264)
 
-Sanitized operational event passed to the optional logger.
+传给可选 logger 的已脱敏运行事件。
 
-## Properties
+## 属性
 
 ### type
 
 > `readonly` **type**: `string`
 
-Defined in: [core/src/shared/types.ts:187](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L187)
+定义于: [core/src/shared/types.ts:266](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L266)
+
+诊断事件类别。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:187](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **timestamp**: `number`
 
-Defined in: [core/src/shared/types.ts:188](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L188)
+定义于: [core/src/shared/types.ts:268](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L268)
+
+产生事件的 Unix 时间戳，单位为毫秒。
 
 ***
 
@@ -26,7 +30,9 @@ Defined in: [core/src/shared/types.ts:188](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **code?**: `string`
 
-Defined in: [core/src/shared/types.ts:189](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L189)
+定义于: [core/src/shared/types.ts:270](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L270)
+
+可公开的稳定错误或原因码。
 
 ***
 
@@ -34,4 +40,6 @@ Defined in: [core/src/shared/types.ts:189](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **details?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-Defined in: [core/src/shared/types.ts:190](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L190)
+定义于: [core/src/shared/types.ts:272](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L272)
+
+只含原始值白名单的附加信息；不含凭据与 payload。

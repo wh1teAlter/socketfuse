@@ -1,3 +1,4 @@
+/** 验证创建选项默认值、共享 fingerprint 和冲突校验。 */
 import { describe, expect, it } from 'vitest'
 import { hasConfigConflict, normalizeWebSocketOptions } from './normalize'
 import { WwsError } from '../shared/errors'

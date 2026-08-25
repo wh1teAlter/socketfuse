@@ -1,17 +1,26 @@
-# Function: createSharedWebSocketRuntime()
+# 函数: createSharedWebSocketRuntime()
 
 > **createSharedWebSocketRuntime**(`options?`): [`SharedWebSocketRuntime`](../interfaces/SharedWebSocketRuntime.md)
 
-Defined in: [core/src/worker/runtime.ts:172](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L172)
+定义于: [core/src/worker/runtime.ts:230](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L230)
 
-Create a Worker-side runtime without installing a global `onconnect` hook.
+创建不安装全局 onconnect 的 Worker-side runtime。
 
-## Parameters
+## 参数
 
 ### options?
 
 [`SharedWebSocketRuntimeOptions`](../interfaces/SharedWebSocketRuntimeOptions.md) = `{}`
 
-## Returns
+Worker 内静态 adapter、socket 工厂、时钟和资源上限；创建后资源上限
+不能通过页面控制消息放宽。
+
+## 返回
 
 [`SharedWebSocketRuntime`](../interfaces/SharedWebSocketRuntime.md)
+
+可手动连接 port、查询 instanceId 并最终 dispose 的 runtime。
+
+## 抛出
+
+`WwsError`，当静态 adapter 或 Worker 资源上限无效时。

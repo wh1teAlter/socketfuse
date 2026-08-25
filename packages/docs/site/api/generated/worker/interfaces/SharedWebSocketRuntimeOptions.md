@@ -1,16 +1,18 @@
-# Interface: SharedWebSocketRuntimeOptions
+# 接口: SharedWebSocketRuntimeOptions
 
-Defined in: [core/src/worker/runtime.ts:23](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L23)
+定义于: [core/src/worker/runtime.ts:36](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L36)
 
-Custom Worker runtime dependencies and statically registered protocols.
+自定义 Worker runtime 的依赖、时钟与静态协议注册。
 
-## Properties
+## 属性
 
 ### protocols?
 
 > `readonly` `optional` **protocols?**: readonly [`ProtocolAdapter`](../../protocol/interfaces/ProtocolAdapter.md)\<`unknown`, `unknown`, `unknown`\>[]
 
-Defined in: [core/src/worker/runtime.ts:24](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L24)
+定义于: [core/src/worker/runtime.ts:38](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L38)
+
+在 Worker 内静态注册的 custom adapter。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/worker/runtime.ts:24](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **socketFactory?**: `WebSocketFactory`
 
-Defined in: [core/src/worker/runtime.ts:25](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L25)
+定义于: [core/src/worker/runtime.ts:40](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L40)
+
+可注入的 WebSocket 工厂。
 
 ***
 
@@ -26,9 +30,11 @@ Defined in: [core/src/worker/runtime.ts:25](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **now?**: () => `number`
 
-Defined in: [core/src/worker/runtime.ts:26](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L26)
+定义于: [core/src/worker/runtime.ts:42](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L42)
 
-#### Returns
+当前时间源，单位为 Unix 毫秒。
+
+#### 返回
 
 `number`
 
@@ -38,9 +44,11 @@ Defined in: [core/src/worker/runtime.ts:26](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **setTimeout?**: (`callback`, `delay`) => `number`
 
-Defined in: [core/src/worker/runtime.ts:27](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L27)
+定义于: [core/src/worker/runtime.ts:44](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L44)
 
-#### Parameters
+可注入的 timer 工厂。
+
+#### 参数
 
 ##### callback
 
@@ -50,7 +58,7 @@ Defined in: [core/src/worker/runtime.ts:27](https://github.com/wh1teAlter/wws/bl
 
 `number`
 
-#### Returns
+#### 返回
 
 `number`
 
@@ -60,15 +68,17 @@ Defined in: [core/src/worker/runtime.ts:27](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **clearTimeout?**: (`handle`) => `void`
 
-Defined in: [core/src/worker/runtime.ts:28](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L28)
+定义于: [core/src/worker/runtime.ts:46](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L46)
 
-#### Parameters
+与注入 timer 配对的清理函数。
+
+#### 参数
 
 ##### handle
 
 `number`
 
-#### Returns
+#### 返回
 
 `void`
 
@@ -78,6 +88,6 @@ Defined in: [core/src/worker/runtime.ts:28](https://github.com/wh1teAlter/wws/bl
 
 > `readonly` `optional` **workerLimits?**: `Partial`\<[`WorkerResourceLimits`](WorkerResourceLimits.md)\>
 
-Defined in: [core/src/worker/runtime.ts:30](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/worker/runtime.ts#L30)
+定义于: [core/src/worker/runtime.ts:48](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L48)
 
-Static limits for this Worker runtime, set once before any page connects.
+runtime 静态资源上限，只能在首个页面连接前设置。

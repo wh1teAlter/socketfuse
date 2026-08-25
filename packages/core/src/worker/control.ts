@@ -1,27 +1,42 @@
+/** 定义 page-to-Worker 控制消息、响应消息和严格的运行时解析器。 */
 import type { ConnectionDiagnostics, ConnectionSnapshot, NormalizedRestoreOptions, RevisionReceipt, SendOptions, SendReceipt, SocketData } from '../shared/types'
 import type { SharedConnectionConfig } from '../config/normalize'
 import { isWwsErrorCode, type WwsErrorCode } from '../shared/errors'
 import { isPlainRecord } from '../shared/structured'
 
 export interface ControlError {
+  /** 稳定错误码；不携带原始异常文本。 */
   readonly code: WwsErrorCode
+  /** 当前操作是否可重试。 */
   readonly retryable: boolean
+  /** 是否进入终态。 */
   readonly fatal: boolean
 }
 
 export interface HelloRequest {
+  /** 控制消息类型。 */
   readonly type: 'hello'
+  /** page/Worker 控制协议主版本。 */
   readonly protocolMajor: number
+  /** 用于匹配响应的页面请求 id。 */
   readonly requestId: string
+  /** 当前页面逻辑 client id。 */
   readonly clientId: string
+  /** 共享连接业务 identity。 */
   readonly id: string
+  /** 当前 endpoint 绝对 URL。 */
   readonly url: string
+  /** 共享配置 canonical。 */
   readonly configCanonical: string
+  /** canonical 的稳定 fingerprint。 */
   readonly configFingerprint: string
+  /** Worker 需要重建的共享配置。 */
   readonly shared: SharedConnectionConfig
+  /** 页面本地 restore 配置的 Worker 副本。 */
   readonly restore: NormalizedRestoreOptions
 }
 
+/** page-to-Worker 的请求与生命周期操作联合类型。 */
 export type ClientOperation
   = | { readonly type: 'open', readonly requestId: string }
     | { readonly type: 'close', readonly requestId: string }
@@ -38,10 +53,13 @@ export type ClientOperation
     | { readonly type: 'suspend' }
     | { readonly type: 'restore' }
 
+/** 所有页面发往 Worker 的控制消息。 */
 export type ClientControlMessage = HelloRequest | ClientOperation
 
+/** Worker 响应 request 的允许值集合。 */
 export type ControlResponseValue = ConnectionDiagnostics | ConnectionSnapshot | SendReceipt | RevisionReceipt | { readonly attached: true, readonly workerInstanceId: string } | null
 
+/** Worker 主动派发给页面的事件与请求响应联合类型。 */
 export type WorkerControlMessage
   = | { readonly type: 'response', readonly requestId: string, readonly ok: true, readonly value: ControlResponseValue }
     | { readonly type: 'response', readonly requestId: string, readonly ok: false, readonly error: ControlError }
@@ -52,27 +70,33 @@ export type WorkerControlMessage
     | { readonly type: 'error', readonly error: ControlError }
     | { readonly type: 'overflow', readonly direction: 'inbound' | 'replay', readonly droppedMessages: number, readonly droppedBytes: number }
 
+/** 严格比较控制 envelope 的必需和可选字段，拒绝未知字段。 */
 function exactKeys(record: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): boolean {
   const allowed = new Set([...required, ...optional])
   return required.every(key => key in record) && Object.keys(record).every(key => allowed.has(key))
 }
 
+/** 判断值是否为正安全整数。 */
 function positiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 }
 
+/** 判断值是否为正有限数。 */
 function positiveFinite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
+/** 判断值是否为非负有限数。 */
 function nonNegativeFinite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
+/** 限制控制协议字符串长度，避免异常 envelope 占用无限内存。 */
 function shortString(value: unknown, maximum = 4_096): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maximum
 }
 
+/** 判断值是否能作为原生 WebSocket payload。 */
 function isSocketData(value: unknown): boolean {
   return typeof value === 'string'
     || (typeof Blob !== 'undefined' && value instanceof Blob)
@@ -80,6 +104,7 @@ function isSocketData(value: unknown): boolean {
     || ArrayBuffer.isView(value)
 }
 
+/** 校验 Worker 侧 restore 配置及其有界回放约束。 */
 function isRestore(value: unknown): value is NormalizedRestoreOptions {
   if (!isPlainRecord(value) || !exactKeys(value, ['enabled', 'replay', 'maxMessages', 'maxBytes']))
     return false
@@ -90,6 +115,7 @@ function isRestore(value: unknown): value is NormalizedRestoreOptions {
     && (value.enabled || value.replay === false)
 }
 
+/** 校验共享配置的字段、单位与能力形状。 */
 function isSharedConfig(value: unknown): value is SharedConnectionConfig {
   if (!isPlainRecord(value) || !exactKeys(value, [
     'protocols', 'protocol', 'binaryType', 'reconnect', 'connectionTimeout',
@@ -153,6 +179,7 @@ function isSharedConfig(value: unknown): value is SharedConnectionConfig {
   return true
 }
 
+/** 校验 send 的页面本地选项。 */
 function isSendOptions(value: unknown): value is SendOptions {
   if (!isPlainRecord(value) || !exactKeys(value, [], ['queue', 'idempotencyKey']))
     return false
@@ -160,6 +187,7 @@ function isSendOptions(value: unknown): value is SendOptions {
     && (value.idempotencyKey === undefined || typeof value.idempotencyKey === 'string')
 }
 
+/** 解析页面控制消息，拒绝未知字段、错误 revision 和超长字符串。 */
 export function isClientControlMessage(value: unknown): value is ClientControlMessage {
   if (!isPlainRecord(value))
     return false
@@ -200,9 +228,11 @@ export function isClientControlMessage(value: unknown): value is ClientControlMe
   return false
 }
 
+/** 判断未知值是否为连接生命周期状态。 */
 const isConnectionState = (value: unknown): boolean =>
   typeof value === 'string' && ['idle', 'connecting', 'handshaking', 'open', 'reconnecting', 'closing', 'closed', 'failed'].includes(value)
 
+/** 校验 Worker 返回的连接快照。 */
 const isSnapshot = (value: unknown): value is ConnectionSnapshot =>
   isPlainRecord(value) && exactKeys(value, ['state', 'status', 'readyState', 'transport', 'attempt', 'connectedAt'])
   && isConnectionState(value.state)
@@ -211,15 +241,18 @@ const isSnapshot = (value: unknown): value is ConnectionSnapshot =>
   && ['direct', 'shared-worker'].includes(value.transport as string)
   && Number.isSafeInteger(value.attempt) && (value.attempt as number) >= 0 && nonNegativeFinite(value.connectedAt)
 
+/** 校验不含 message/cause 的跨端口错误结构。 */
 const isControlError = (value: unknown): value is ControlError =>
   isPlainRecord(value) && exactKeys(value, ['code', 'retryable', 'fatal'])
   && isWwsErrorCode(value.code) && typeof value.retryable === 'boolean' && typeof value.fatal === 'boolean'
 
+/** 校验单调 revision 回执。 */
 const isRevisionReceipt = (value: unknown): value is RevisionReceipt =>
   isPlainRecord(value) && exactKeys(value, ['status', 'revision'])
   && (value.status === 'applied' || value.status === 'stale' || value.status === 'unchanged')
   && positiveInteger(value.revision)
 
+/** 校验 accepted 或 queued 的本地发送回执。 */
 const isSendReceipt = (value: unknown): value is SendReceipt => {
   if (!isPlainRecord(value) || typeof value.status !== 'string' || !shortString(value.messageId, 256))
     return false
@@ -228,6 +261,7 @@ const isSendReceipt = (value: unknown): value is SendReceipt => {
   return value.status === 'queued' && exactKeys(value, ['status', 'messageId', 'position']) && positiveInteger(value.position)
 }
 
+/** 校验已脱敏的连接诊断快照。 */
 const isDiagnostics = (value: unknown): value is ConnectionDiagnostics =>
   isPlainRecord(value) && exactKeys(value, [
     'transport', 'logicalState', 'physicalState', 'workerInstanceHash', 'controlProtocolMajor', 'idHash',
@@ -248,11 +282,13 @@ const isDiagnostics = (value: unknown): value is ConnectionDiagnostics =>
   && typeof value.outboundHighWater === 'boolean'
   && (value.lastErrorCode === null || isWwsErrorCode(value.lastErrorCode))
 
+/** 校验 Worker request 的响应 payload。 */
 const isControlResponseValue = (value: unknown): value is ControlResponseValue =>
   value === null || isSnapshot(value) || isDiagnostics(value) || isSendReceipt(value) || isRevisionReceipt(value)
   || (isPlainRecord(value) && exactKeys(value, ['attached', 'workerInstanceId'])
     && value.attached === true && shortString(value.workerInstanceId, 256))
 
+/** 解析 Worker 派发消息，确保页面只处理受控结构。 */
 export function isWorkerControlMessage(value: unknown): value is WorkerControlMessage {
   if (!isPlainRecord(value))
     return false

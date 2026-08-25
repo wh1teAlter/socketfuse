@@ -1,18 +1,18 @@
-# Interface: QueueOptions
+# 接口: QueueOptions
 
-Defined in: [core/src/shared/types.ts:61](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L61)
+定义于: [core/src/shared/types.ts:76](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L76)
 
-Shared bounded outbound queue policy.
+多标签页共享且有边界的出站队列策略。
 
-## Properties
+## 属性
 
 ### whenDisconnected
 
 > **whenDisconnected**: `boolean`
 
-Defined in: [core/src/shared/types.ts:63](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L63)
+定义于: [core/src/shared/types.ts:78](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L78)
 
-Queue while the socket is disconnected. Defaults to `false`.
+socket 未连接时是否允许入队，默认值为 `false`。
 
 ***
 
@@ -20,9 +20,9 @@ Queue while the socket is disconnected. Defaults to `false`.
 
 > **whenBackpressured**: `boolean`
 
-Defined in: [core/src/shared/types.ts:65](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L65)
+定义于: [core/src/shared/types.ts:80](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L80)
 
-Queue while buffered data is above the high-water mark. Defaults to `false`.
+`bufferedAmount` 超过高水位时是否允许入队，默认值为 `false`。
 
 ***
 
@@ -30,9 +30,9 @@ Queue while buffered data is above the high-water mark. Defaults to `false`.
 
 > **maxMessages**: `number`
 
-Defined in: [core/src/shared/types.ts:67](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L67)
+定义于: [core/src/shared/types.ts:82](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L82)
 
-Maximum queued message count. Defaults to `100`.
+队列可持有的最大消息数，默认值为 `100`。
 
 ***
 
@@ -40,6 +40,6 @@ Maximum queued message count. Defaults to `100`.
 
 > **maxBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:69](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L69)
+定义于: [core/src/shared/types.ts:84](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L84)
 
-Maximum encoded queue size. Defaults to 1 MiB.
+编码后队列可持有的最大字节数，默认值为 1 MiB。

@@ -1,6 +1,6 @@
 # protocol
 
-## Interfaces
+## 接口
 
 - [ProtocolContext](interfaces/ProtocolContext.md)
 - [EncodeContext](interfaces/EncodeContext.md)
@@ -11,53 +11,53 @@
 - [SafeCloseInfo](interfaces/SafeCloseInfo.md)
 - [ProtocolAdapter](interfaces/ProtocolAdapter.md)
 
-## Type Aliases
+## 类型别名
 
 - [ProtocolFrame](type-aliases/ProtocolFrame.md)
 - [MaybePromise](type-aliases/MaybePromise.md)
 
-## Variables
+## 变量
 
 - [rawProtocol](variables/rawProtocol.md)
 
-## References
+## 参考
 
 ### JsonAuthTemplate
 
-Re-exports [JsonAuthTemplate](../index/interfaces/JsonAuthTemplate.md)
+重新导出 [JsonAuthTemplate](../index/interfaces/JsonAuthTemplate.md)
 
 ***
 
 ### JsonHeartbeatTemplate
 
-Re-exports [JsonHeartbeatTemplate](../index/interfaces/JsonHeartbeatTemplate.md)
+重新导出 [JsonHeartbeatTemplate](../index/interfaces/JsonHeartbeatTemplate.md)
 
 ***
 
 ### JsonMatcher
 
-Re-exports [JsonMatcher](../index/type-aliases/JsonMatcher.md)
+重新导出 [JsonMatcher](../index/type-aliases/JsonMatcher.md)
 
 ***
 
 ### JsonProtocolOptions
 
-Re-exports [JsonProtocolOptions](../index/interfaces/JsonProtocolOptions.md)
+重新导出 [JsonProtocolOptions](../index/interfaces/JsonProtocolOptions.md)
 
 ***
 
 ### JsonValue
 
-Re-exports [JsonValue](../index/type-aliases/JsonValue.md)
+重新导出 [JsonValue](../index/type-aliases/JsonValue.md)
 
 ***
 
 ### ProtocolCapabilities
 
-Re-exports [ProtocolCapabilities](../index/interfaces/ProtocolCapabilities.md)
+重新导出 [ProtocolCapabilities](../index/interfaces/ProtocolCapabilities.md)
 
 ***
 
 ### SocketData
 
-Re-exports [SocketData](../index/type-aliases/SocketData.md)
+重新导出 [SocketData](../index/type-aliases/SocketData.md)

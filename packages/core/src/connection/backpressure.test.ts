@@ -1,3 +1,4 @@
+/** 验证 bufferedAmount 高低水位迟滞行为。 */
 import { describe, expect, it } from 'vitest'
 import { BackpressureTracker } from './backpressure'
 

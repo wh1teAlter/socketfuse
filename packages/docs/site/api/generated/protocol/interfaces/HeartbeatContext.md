@@ -1,22 +1,24 @@
-# Interface: HeartbeatContext
+# 接口: HeartbeatContext
 
-Defined in: [core/src/shared/types.ts:270](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L270)
+定义于: [core/src/shared/types.ts:391](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L391)
 
-Timestamp supplied to protocol adapter operations.
+调用适配器心跳工厂时附加的上下文。
 
-## Extends
+## 继承
 
 - [`ProtocolContext`](ProtocolContext.md)
 
-## Properties
+## 属性
 
 ### now
 
 > `readonly` **now**: `number`
 
-Defined in: [core/src/shared/types.ts:251](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L251)
+定义于: [core/src/shared/types.ts:363](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L363)
 
-#### Inherited from
+操作发生时的 Unix 时间戳，单位为毫秒。
+
+#### 继承自
 
 [`ProtocolContext`](ProtocolContext.md).[`now`](ProtocolContext.md#now)
 
@@ -26,4 +28,6 @@ Defined in: [core/src/shared/types.ts:251](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **attempt**: `number`
 
-Defined in: [core/src/shared/types.ts:271](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L271)
+定义于: [core/src/shared/types.ts:393](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L393)
+
+当前物理连接尝试计数。

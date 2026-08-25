@@ -1,3 +1,4 @@
+/** 验证连接状态迁移图与 WebSocket 兼容状态映射。 */
 import { describe, expect, it } from 'vitest'
 import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
 import { WwsError } from '../shared/errors'

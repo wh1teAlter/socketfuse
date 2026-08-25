@@ -1,14 +1,14 @@
-# Interface: CreateWebSocketOptions\<Incoming, Outgoing, Auth\>
+# 接口: CreateWebSocketOptions\<Incoming, Outgoing, Auth\>
 
-Defined in: [core/src/shared/types.ts:331](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L331)
+定义于: [core/src/shared/types.ts:493](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L493)
 
-Configuration for a page client and its shared physical connection.
+页面 client 及其共享物理连接的创建配置。
 
-Options that affect physical socket behavior must match for clients reusing
-an `id`. Page-local options are identified below and do not enter the shared
-configuration fingerprint.
+只能在浏览器页面 realm 调用 `createWebSocket` 时传入。会改变物理 socket 的字段
+必须在同一 `id` 下完全一致；页面本地字段不参与共享 fingerprint。无效配置在创建
+阶段同步抛出 `WwsError`，Worker 构造/握手失败按 `fallback` 决定拒绝或降级。
 
-## Type Parameters
+## 类型参数
 
 ### Incoming
 
@@ -22,15 +22,15 @@ configuration fingerprint.
 
 `Auth` = `unknown`
 
-## Properties
+## 属性
 
 ### id
 
 > **id**: `string`
 
-Defined in: [core/src/shared/types.ts:333](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L333)
+定义于: [core/src/shared/types.ts:495](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L495)
 
-Stable application identity used to share a connection across same-origin tabs.
+同源标签页共享连接的稳定业务 identity；不能为空，且不得包含凭据。
 
 ***
 
@@ -38,9 +38,9 @@ Stable application identity used to share a connection across same-origin tabs.
 
 > `optional` **protocols?**: `string` \| readonly `string`[]
 
-Defined in: [core/src/shared/types.ts:335](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L335)
+定义于: [core/src/shared/types.ts:497](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L497)
 
-WebSocket subprotocol token or ordered tokens. Defaults to none.
+原生 WebSocket subprotocol token 或有序 token 列表；默认不传。
 
 ***
 
@@ -48,11 +48,11 @@ WebSocket subprotocol token or ordered tokens. Defaults to none.
 
 > `optional` **worker?**: () => `SharedWorker`
 
-Defined in: [core/src/shared/types.ts:337](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L337)
+定义于: [core/src/shared/types.ts:499](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L499)
 
-Page-local custom SharedWorker factory. Defaults to the built-in inline Worker.
+页面本地 custom SharedWorker 工厂；默认使用内置 inline Worker。
 
-#### Returns
+#### 返回
 
 `SharedWorker`
 
@@ -62,9 +62,9 @@ Page-local custom SharedWorker factory. Defaults to the built-in inline Worker.
 
 > `optional` **protocol?**: `ProtocolSelector`\<`Incoming`, `Outgoing`, `Auth`\>
 
-Defined in: [core/src/shared/types.ts:339](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L339)
+定义于: [core/src/shared/types.ts:501](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L501)
 
-Message protocol. Defaults to the raw adapter.
+消息协议；默认 raw 适配器。自定义 adapter 必须同时静态注册在 Worker。
 
 ***
 
@@ -72,9 +72,9 @@ Message protocol. Defaults to the raw adapter.
 
 > `optional` **fallback?**: `"direct"` \| `"error"`
 
-Defined in: [core/src/shared/types.ts:341](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L341)
+定义于: [core/src/shared/types.ts:503](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L503)
 
-Page-local behavior when Worker setup fails. Defaults to `direct`.
+Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 ***
 
@@ -82,9 +82,9 @@ Page-local behavior when Worker setup fails. Defaults to `direct`.
 
 > `optional` **immediate?**: `boolean`
 
-Defined in: [core/src/shared/types.ts:343](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L343)
+定义于: [core/src/shared/types.ts:505](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L505)
 
-Open immediately after creation. Page-local; defaults to `true`.
+创建后是否立即异步打开；页面本地，默认 `true`。
 
 ***
 
@@ -92,9 +92,9 @@ Open immediately after creation. Page-local; defaults to `true`.
 
 > `optional` **autoClose?**: `boolean`
 
-Defined in: [core/src/shared/types.ts:345](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L345)
+定义于: [core/src/shared/types.ts:507](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L507)
 
-Detach automatically during page teardown. Page-local; defaults to `true`.
+普通页面卸载时是否自动 detach；页面本地，默认 `true`。
 
 ***
 
@@ -102,9 +102,9 @@ Detach automatically during page teardown. Page-local; defaults to `true`.
 
 > `optional` **autoReconnect?**: `boolean` \| `Partial`\<[`ReconnectOptions`](ReconnectOptions.md)\>
 
-Defined in: [core/src/shared/types.ts:347](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L347)
+定义于: [core/src/shared/types.ts:509](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L509)
 
-Shared reconnect policy. `true` or omission uses exponential defaults.
+共享重连策略；`true` 或省略使用指数退避默认值。
 
 ***
 
@@ -112,9 +112,9 @@ Shared reconnect policy. `true` or omission uses exponential defaults.
 
 > `optional` **connectionTimeout?**: `number`
 
-Defined in: [core/src/shared/types.ts:349](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L349)
+定义于: [core/src/shared/types.ts:511](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L511)
 
-Shared open/handshake timeout in milliseconds. Defaults to `10000`.
+共享 socket open 与 adapter handshake 共用的超时，单位毫秒，默认 `10000`。
 
 ***
 
@@ -122,9 +122,9 @@ Shared open/handshake timeout in milliseconds. Defaults to `10000`.
 
 > `optional` **binaryType?**: `"arraybuffer"` \| `"blob"`
 
-Defined in: [core/src/shared/types.ts:351](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L351)
+定义于: [core/src/shared/types.ts:513](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L513)
 
-Shared binary receive representation. Defaults to `arraybuffer`.
+共享二进制接收表示，默认 `arraybuffer`。
 
 ***
 
@@ -132,9 +132,9 @@ Shared binary receive representation. Defaults to `arraybuffer`.
 
 > `optional` **heartbeat?**: `boolean` \| `Partial`\<[`HeartbeatOptions`](HeartbeatOptions.md)\>
 
-Defined in: [core/src/shared/types.ts:353](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L353)
+定义于: [core/src/shared/types.ts:515](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L515)
 
-Shared heartbeat policy. Disabled by default and requires adapter support.
+共享心跳策略；默认关闭，且必须由协议 adapter 声明支持。
 
 ***
 
@@ -142,9 +142,9 @@ Shared heartbeat policy. Disabled by default and requires adapter support.
 
 > `optional` **queue?**: `boolean` \| `Partial`\<[`QueueOptions`](QueueOptions.md)\>
 
-Defined in: [core/src/shared/types.ts:355](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L355)
+定义于: [core/src/shared/types.ts:517](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L517)
 
-Shared bounded outbound queue policy. Queueing is disabled by default.
+共享有界出站队列策略；默认不允许离线或背压入队。
 
 ***
 
@@ -152,9 +152,9 @@ Shared bounded outbound queue policy. Queueing is disabled by default.
 
 > `optional` **backpressure?**: `Partial`\<[`BackpressureOptions`](BackpressureOptions.md)\>
 
-Defined in: [core/src/shared/types.ts:357](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L357)
+定义于: [core/src/shared/types.ts:519](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L519)
 
-Shared buffered-amount thresholds.
+共享原生 socket `bufferedAmount` 阈值。
 
 ***
 
@@ -162,9 +162,9 @@ Shared buffered-amount thresholds.
 
 > `optional` **lease?**: `Partial`\<[`LeaseOptions`](LeaseOptions.md)\>
 
-Defined in: [core/src/shared/types.ts:359](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L359)
+定义于: [core/src/shared/types.ts:521](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L521)
 
-Shared client liveness lease.
+共享 client 活性租约。
 
 ***
 
@@ -172,9 +172,9 @@ Shared client liveness lease.
 
 > `optional` **lifecycle?**: [`LifecycleOptions`](LifecycleOptions.md)
 
-Defined in: [core/src/shared/types.ts:361](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L361)
+定义于: [core/src/shared/types.ts:523](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L523)
 
-Page-local freeze/restore handling. Disabled by default.
+页面本地 freeze/restore 处理；默认关闭。
 
 ***
 
@@ -182,9 +182,9 @@ Page-local freeze/restore handling. Disabled by default.
 
 > `optional` **limits?**: `Partial`\<[`ConnectionLimits`](ConnectionLimits.md)\>
 
-Defined in: [core/src/shared/types.ts:363](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L363)
+定义于: [core/src/shared/types.ts:525](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L525)
 
-Shared physical connection resource limits.
+共享物理连接资源上限；不含 Worker 级控制平面上限。
 
 ***
 
@@ -192,9 +192,9 @@ Shared physical connection resource limits.
 
 > `optional` **idleGraceMs?**: `number`
 
-Defined in: [core/src/shared/types.ts:365](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L365)
+定义于: [core/src/shared/types.ts:527](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L527)
 
-Delay before closing an unused physical socket, in milliseconds. Defaults to `5000`.
+最后一个 client 离开后关闭物理 socket 前的宽限期，单位毫秒，默认 `5000`。
 
 ***
 
@@ -202,9 +202,9 @@ Delay before closing an unused physical socket, in milliseconds. Defaults to `50
 
 > `optional` **logger?**: [`WwsLogger`](../type-aliases/WwsLogger.md)
 
-Defined in: [core/src/shared/types.ts:367](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L367)
+定义于: [core/src/shared/types.ts:529](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L529)
 
-Page-local sink for sanitized operational diagnostics.
+接收已脱敏运行诊断的页面本地 sink。
 
 ***
 
@@ -212,11 +212,11 @@ Page-local sink for sanitized operational diagnostics.
 
 > `optional` **onConnected?**: (`client`, `snapshot`) => `void`
 
-Defined in: [core/src/shared/types.ts:369](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L369)
+定义于: [core/src/shared/types.ts:531](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L531)
 
-Page-local callback invoked when the logical client opens.
+逻辑 client open 后调用的页面本地回调。
 
-#### Parameters
+#### 参数
 
 ##### client
 
@@ -226,7 +226,7 @@ Page-local callback invoked when the logical client opens.
 
 [`ConnectionSnapshot`](ConnectionSnapshot.md)
 
-#### Returns
+#### 返回
 
 `void`
 
@@ -236,11 +236,11 @@ Page-local callback invoked when the logical client opens.
 
 > `optional` **onDisconnected?**: (`client`, `event`) => `void`
 
-Defined in: [core/src/shared/types.ts:371](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L371)
+定义于: [core/src/shared/types.ts:533](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L533)
 
-Page-local callback invoked when the logical client closes.
+逻辑 client close 后调用的页面本地回调。
 
-#### Parameters
+#### 参数
 
 ##### client
 
@@ -250,7 +250,7 @@ Page-local callback invoked when the logical client closes.
 
 [`WwsCloseEvent`](WwsCloseEvent.md)
 
-#### Returns
+#### 返回
 
 `void`
 
@@ -260,11 +260,11 @@ Page-local callback invoked when the logical client closes.
 
 > `optional` **onError?**: (`client`, `error`) => `void`
 
-Defined in: [core/src/shared/types.ts:373](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L373)
+定义于: [core/src/shared/types.ts:535](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L535)
 
-Page-local callback invoked for a sanitized `WwsError`.
+收到已脱敏 `WwsError` 时调用的页面本地回调。
 
-#### Parameters
+#### 参数
 
 ##### client
 
@@ -274,7 +274,7 @@ Page-local callback invoked for a sanitized `WwsError`.
 
 [`WwsError`](../classes/WwsError.md)
 
-#### Returns
+#### 返回
 
 `void`
 
@@ -284,11 +284,11 @@ Page-local callback invoked for a sanitized `WwsError`.
 
 > `optional` **onMessage?**: (`client`, `event`) => `void`
 
-Defined in: [core/src/shared/types.ts:375](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L375)
+定义于: [core/src/shared/types.ts:537](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L537)
 
-Initial page-local business message callback; more can be added with `onMessage`.
+初始业务消息回调；创建后仍可通过 `onMessage` 动态增加。
 
-#### Parameters
+#### 参数
 
 ##### client
 
@@ -298,6 +298,6 @@ Initial page-local business message callback; more can be added with `onMessage`
 
 [`WwsMessageEvent`](WwsMessageEvent.md)\<`Incoming`\>
 
-#### Returns
+#### 返回
 
 `void`

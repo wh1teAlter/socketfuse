@@ -1,7 +1,7 @@
-# Type Alias: JsonValue
+# 类型别名: JsonValue
 
 > **JsonValue** = `JsonPrimitive` \| readonly `JsonValue`[] \| \{\[`key`: `string`\]: `JsonValue`; \}
 
-Defined in: [core/src/shared/types.ts:220](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L220)
+定义于: [core/src/shared/types.ts:319](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L319)
 
-Structured JSON value accepted by declarative templates and matchers.
+声明式模板与 matcher 接受的 JSON 结构值。

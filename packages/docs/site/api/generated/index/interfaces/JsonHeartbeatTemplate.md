@@ -1,16 +1,18 @@
-# Interface: JsonHeartbeatTemplate
+# 接口: JsonHeartbeatTemplate
 
-Defined in: [core/src/shared/types.ts:231](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L231)
+定义于: [core/src/shared/types.ts:331](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L331)
 
-Declarative JSON ping/pong templates and matchers.
+声明式 JSON ping/pong 模板与匹配器。
 
-## Properties
+## 属性
 
 ### ping
 
 > `readonly` **ping**: [`JsonValue`](../type-aliases/JsonValue.md)
 
-Defined in: [core/src/shared/types.ts:232](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L232)
+定义于: [core/src/shared/types.ts:333](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L333)
+
+客户端主动发送的 ping 帧。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:232](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **pong**: [`JsonMatcher`](../type-aliases/JsonMatcher.md)
 
-Defined in: [core/src/shared/types.ts:233](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L233)
+定义于: [core/src/shared/types.ts:335](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L335)
+
+用于识别服务端 pong 的匹配器。
 
 ***
 
@@ -26,7 +30,9 @@ Defined in: [core/src/shared/types.ts:233](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **serverPing?**: `Readonly`\<`Record`\<`string`, [`JsonValue`](../type-aliases/JsonValue.md)\>\>
 
-Defined in: [core/src/shared/types.ts:234](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L234)
+定义于: [core/src/shared/types.ts:337](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L337)
+
+可选的服务端 ping 匹配器。
 
 ***
 
@@ -34,4 +40,6 @@ Defined in: [core/src/shared/types.ts:234](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **serverPong?**: [`JsonValue`](../type-aliases/JsonValue.md)
 
-Defined in: [core/src/shared/types.ts:235](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L235)
+定义于: [core/src/shared/types.ts:339](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L339)
+
+收到 serverPing 后返回的 pong 帧。

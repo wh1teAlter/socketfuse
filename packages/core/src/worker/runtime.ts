@@ -1,3 +1,9 @@
+/**
+ * 拥有 SharedWorker 端口、连接池与 Worker 级资源限制。
+ *
+ * hello 是 attach 的事务边界：只有配置重建、controller.attach 和 client 提交都成功，
+ * 端口才成为已附着 client；任一失败都必须回滚临时连接和端口 timer。
+ */
 import type { JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, TimerHandle, WorkerResourceLimits } from '../shared/types'
 import type { WebSocketFactory } from '../transport/socket'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, type HelloRequest, isClientControlMessage, type WorkerControlMessage } from './control'
@@ -8,82 +14,121 @@ import { isWwsError, toSafePublicError, toWwsError, WwsError } from '../shared/e
 import { ConnectionController, type ConnectionSink } from '../connection/controller'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
 
-/** Minimal MessagePort surface used by the custom Worker runtime. */
+/** 自定义 Worker runtime 使用的最小 MessagePort 能力面。 */
 export interface MessagePortLike {
+  /** 发送结构化克隆控制消息。 */
   postMessage: (message: unknown) => void
+  /** 开始接收事件。 */
   start?: () => void
+  /** 关闭端口并释放其消息通道。 */
   close?: () => void
+  /** 注册消息或消息解析错误监听。 */
   addEventListener?: (type: 'message' | 'messageerror', listener: (event: { readonly data: unknown }) => void) => void
+  /** 移除已注册监听。 */
   removeEventListener?: (type: 'message' | 'messageerror', listener: (event: { readonly data: unknown }) => void) => void
+  /** 不支持 addEventListener 时的消息回调。 */
   onmessage?: ((event: { readonly data: unknown }) => void) | null
+  /** 不支持 addEventListener 时的消息错误回调。 */
   onmessageerror?: ((event: { readonly data: unknown }) => void) | null
 }
 
-/** Custom Worker runtime dependencies and statically registered protocols. */
+/** 自定义 Worker runtime 的依赖、时钟与静态协议注册。 */
 export interface SharedWebSocketRuntimeOptions {
+  /** 在 Worker 内静态注册的 custom adapter。 */
   readonly protocols?: readonly ProtocolAdapter<unknown, unknown, unknown>[]
+  /** 可注入的 WebSocket 工厂。 */
   readonly socketFactory?: WebSocketFactory
+  /** 当前时间源，单位为 Unix 毫秒。 */
   readonly now?: () => number
+  /** 可注入的 timer 工厂。 */
   readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
+  /** 与注入 timer 配对的清理函数。 */
   readonly clearTimeout?: (handle: TimerHandle) => void
-  /** Static limits for this Worker runtime, set once before any page connects. */
+  /** runtime 静态资源上限，只能在首个页面连接前设置。 */
   readonly workerLimits?: Partial<WorkerResourceLimits>
 }
 
 interface RuntimeClient {
+  /** 页面 port 所有权。 */
   readonly port: MessagePortLike
+  /** 页面逻辑 client id。 */
   readonly clientId: string
+  /** 所属共享连接 id。 */
   readonly connectionId: string
+  /** 连接 controller 的事件 sink。 */
   readonly sink: ConnectionSink<unknown>
+  /** 最近 lease 报活时间，单位为 Unix 毫秒。 */
   lastLeaseAt: number
+  /** 是否暂停实时派发。 */
   suspended: boolean
+  /** 挂起期间的有界 replay 队列。 */
   replay: { data: unknown, receivedAt: number, bytes: number }[]
+  /** replay 队列当前估算字节数。 */
   replayBytes: number
+  /** replay 溢出的消息累计数。 */
   replayDroppedMessages: number
+  /** replay 溢出的字节累计数。 */
   replayDroppedBytes: number
+  /** 当前页面请求的 restore 边界。 */
   readonly restore: Readonly<NormalizedRestoreOptions>
+  /** 下一条 Worker→page delivery 的单调序号。 */
   nextDeliveryId: number
+  /** 尚未收到 receipt 的 delivery 与估算字节。 */
   readonly outstandingDeliveries: Map<number, number>
+  /** outstanding delivery 当前总字节数。 */
   outstandingBytes: number
+  /** credit 满时待通知的入站丢弃数。 */
   inboundDroppedMessages: number
+  /** credit 满时待通知的入站丢弃字节。 */
   inboundDroppedBytes: number
 }
 
 interface ConnectionEntry {
+  /** 共享配置 canonical，用于冲突检测。 */
   readonly canonical: string
+  /** Worker 重建物理连接所需配置。 */
   readonly config: NormalizedWebSocketConfig<unknown, unknown, unknown>
+  /** 该 id 唯一的物理连接 controller。 */
   readonly controller: ConnectionController<unknown, unknown, unknown>
 }
 
-/** SharedWorker-side runtime that accepts page ports and owns connections. */
+/** SharedWorker 端 runtime：接受页面 port 并拥有共享物理连接。 */
 export interface SharedWebSocketRuntime {
+  /** Worker 实例 id，仅用于安全诊断关联。 */
   readonly instanceId: string
+  /** 接受一个新页面 port；失败时关闭端口。 */
   connect: (port: MessagePortLike) => void
+  /** 停止 lease、关闭端口并销毁所有 controller。 */
   dispose: () => void
 }
 
+/** 组合 custom adapter 的 Worker 注册 key。 */
 function adapterKey(id: string, version: number): string {
   return `${id}@${version}`
 }
 
+/** 生成 Worker 实例或测试请求使用的 id。 */
 function createId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
   return `worker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+/** 校验正安全整数 Worker 限制。 */
 function positiveInteger(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
     throw new WwsError('INVALID_OPTIONS', `${field} must be a positive safe integer`)
   return value
 }
 
+/** 校验正有限 Worker 限制。 */
 function positiveNumber(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
     throw new WwsError('INVALID_OPTIONS', `${field} must be a positive finite number`)
   return value
 }
 
+/** 规范化 Worker 级资源限制，限制在 runtime 生命周期内保持不变。 */
 function normalizeWorkerLimits(value: Partial<WorkerResourceLimits> | undefined): Readonly<WorkerResourceLimits> {
   if (value !== undefined && (value === null || typeof value !== 'object'))
     throw new WwsError('INVALID_OPTIONS', 'workerLimits must be an options object')
@@ -94,6 +139,7 @@ function normalizeWorkerLimits(value: Partial<WorkerResourceLimits> | undefined)
   })
 }
 
+/** 向有界 replay 队列追加消息，必要时按 oldest-first 丢弃。 */
 function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, maxMessages: number, maxBytes: number): void {
   const bytes = estimateStructuredCloneBytes(data, maxBytes)
   while (client.replay.length >= maxMessages || client.replayBytes + bytes > maxBytes) {
@@ -113,9 +159,12 @@ function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, ma
   client.replayBytes += bytes
 }
 
+/** Worker→page delivery 的数量上限，防止慢页面无限积压。 */
 const MAX_OUTSTANDING_DELIVERIES = 256
+/** Worker→page delivery 的字节上限，单位为字节。 */
 const MAX_OUTSTANDING_DELIVERY_BYTES = 4 * 1024 * 1024
 
+/** 从共享协议描述解析 Worker 内的 adapter 实现。 */
 function resolveAdapter(
   shared: SharedConnectionConfig,
   adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
@@ -130,6 +179,7 @@ function resolveAdapter(
   return adapter
 }
 
+/** 根据 hello 重建 Worker 侧规范化配置并校验 canonical/fingerprint。 */
 function createWorkerConfig(
   message: HelloRequest,
   adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
@@ -162,13 +212,21 @@ function createWorkerConfig(
     : false }) }
 }
 
+/** 将任意异常裁剪为可跨端口的稳定 ControlError。 */
 function serializeError(error: unknown): ControlError {
   const value = isWwsError(error) ? error : toWwsError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
   const safe = toSafePublicError(value)
   return { code: safe.code, fatal: safe.fatal, retryable: safe.retryable }
 }
 
-/** Create a Worker-side runtime without installing a global `onconnect` hook. */
+/**
+ * 创建不安装全局 onconnect 的 Worker-side runtime。
+ *
+ * @param options Worker 内静态 adapter、socket 工厂、时钟和资源上限；创建后资源上限
+ * 不能通过页面控制消息放宽。
+ * @returns 可手动连接 port、查询 instanceId 并最终 dispose 的 runtime。
+ * @throws `WwsError`，当静态 adapter 或 Worker 资源上限无效时。
+ */
 export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOptions = {}): SharedWebSocketRuntime {
   const workerLimits = normalizeWorkerLimits(options.workerLimits)
   const adapters = new Map<string, ProtocolAdapter<unknown, unknown, unknown>>()
@@ -185,6 +243,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   let leaseTimer: TimerHandle | undefined
   let disposed = false
 
+  /** 将页面 port 从 client、连接 owner 和 Worker 资源集合中释放。 */
   const detach = (port: MessagePortLike, closePort: boolean, releasePort = closePort): void => {
     const client = clients.get(port)
     if (client !== undefined) {
@@ -203,6 +262,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       port.close?.()
   }
 
+  /** 只移除仍由指定 controller 拥有且没有 client 的连接项。 */
   const removeIdleConnection = (id: string, controller: ConnectionController<unknown, unknown, unknown>): void => {
     const entry = connections.get(id)
     if (entry?.controller !== controller || controller.attachedClientCount !== 0)
@@ -211,6 +271,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     controller.dispose()
   }
 
+  /** 周期回收 lease 超时的页面 client。 */
   const scheduleLeaseSweep = (): void => {
     if (disposed)
       return
@@ -226,6 +287,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     }, 1_000)
   }
 
+  /** 向页面安全投递控制消息；端口失败即回收 client。 */
   const post = (port: MessagePortLike, message: WorkerControlMessage): void => {
     try {
       port.postMessage(message)
@@ -235,6 +297,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     }
   }
 
+  /** 在 credit 恢复后一次性通知累计入站丢弃。 */
   const flushInboundOverflow = (client: RuntimeClient): void => {
     if (client.inboundDroppedMessages === 0)
       return
@@ -248,6 +311,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     client.inboundDroppedMessages = 0
   }
 
+  /** 在数量与字节 credit 内投递消息，并登记待回收 delivery。 */
   const deliver = (client: RuntimeClient, data: unknown, receivedAt: number, replayed: boolean): boolean => {
     const bytes = estimateStructuredCloneBytes(data, MAX_OUTSTANDING_DELIVERY_BYTES)
     if (client.outstandingDeliveries.size >= MAX_OUTSTANDING_DELIVERIES
@@ -271,14 +335,17 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     return true
   }
 
+  /** 回复成功的 request。 */
   const respond = (port: MessagePortLike, requestId: string, value: ControlResponseValue): void => {
     post(port, { ok: true, requestId, type: 'response', value })
   }
 
+  /** 回复已脱敏失败的 request。 */
   const reject = (port: MessagePortLike, requestId: string, error: unknown): void => {
     post(port, { error: serializeError(error), ok: false, requestId, type: 'response' })
   }
 
+  /** 取得已经完成 hello 的 client 和连接项。 */
   const ensureAttached = (port: MessagePortLike): { client: RuntimeClient, entry: ConnectionEntry } => {
     const client = clients.get(port)
     if (client === undefined)
@@ -289,6 +356,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     return { client, entry }
   }
 
+  /** 创建 controller 到当前页面 port 的事件 sink。 */
   const createSink = (port: MessagePortLike, message: HelloRequest): ConnectionSink<unknown> => ({
     id: message.clientId,
     onClose: event => post(port, { ...event, type: 'close' }),
@@ -315,6 +383,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     },
   })
 
+  /** 以 attach→client commit 顺序完成 hello 事务，失败时完整回滚。 */
   const handleHello = (port: MessagePortLike, message: HelloRequest): void => {
     if (message.protocolMajor !== CONTROL_PROTOCOL_MAJOR) {
       reject(port, message.requestId, new WwsError('PROTOCOL_VERSION_MISMATCH', 'Control protocol version mismatch', { fatal: true }))
@@ -380,10 +449,8 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       respond(port, message.requestId, { attached: true, workerInstanceId: instanceId })
     }
     catch (error) {
-      // Attach is intentionally performed before committing the RuntimeClient.
-      // If it rejects (for example, because maxClientsPerConnection is full),
-      // release the provisional connection entry so this failed hello cannot
-      // consume a client slot or leave a stale controller in the Worker pool.
+      // controller.attach 必须先于 RuntimeClient 提交；如果资源上限拒绝 attach，
+      // 临时连接必须同时释放，失败 hello 不能占用 client slot 或留下池中孤儿。
       if (createdEntry !== undefined && createdEntry.controller.attachedClientCount === 0) {
         connections.delete(message.id)
         createdEntry.controller.dispose()
@@ -393,6 +460,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     }
   }
 
+  /** 处理已 hello 端口的请求、lease、挂起、回放和 delivery receipt。 */
   const handleOperation = async (port: MessagePortLike, message: Exclude<ClientControlMessage, HelloRequest>): Promise<void> => {
     if (message.type === 'dispose') {
       detach(port, true)
@@ -478,6 +546,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     }
   }
 
+  /** 接受一个新端口，安装严格 parser，并设置未 hello 回收 timer。 */
   const connect = (port: MessagePortLike): void => {
     if (disposed) {
       port.close?.()
@@ -524,6 +593,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
 
   return {
     connect,
+    /** 幂等销毁 runtime 拥有的所有 timer、端口与物理连接。 */
     dispose(): void {
       if (disposed)
         return
@@ -542,12 +612,20 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   }
 }
 
-/** Minimal SharedWorker global scope accepted by `exposeSharedWebSocketWorker`. */
+/** `exposeSharedWebSocketWorker` 接受的最小 SharedWorker global scope。 */
 export interface SharedWorkerGlobalLike {
+  /** 当前 Worker 的连接入口。 */
   onconnect: ((event: { readonly ports: readonly MessagePortLike[] }) => void) | null
 }
 
-/** Create a runtime and install its port handler on the SharedWorker global scope. */
+/**
+ * 创建 runtime 并在 SharedWorker global scope 安装 onconnect。
+ *
+ * @param options Worker runtime 依赖和静态资源上限。
+ * @param scope 可选的测试/自定义 global scope；省略时使用当前 Worker globalThis。
+ * @returns 已安装连接入口的 runtime。
+ * @throws `WwsError`，当 runtime 选项无效时。
+ */
 export function exposeSharedWebSocketWorker(options: SharedWebSocketRuntimeOptions = {}, scope?: SharedWorkerGlobalLike): SharedWebSocketRuntime {
   const target = scope ?? globalThis as unknown as SharedWorkerGlobalLike
   const runtime = createSharedWebSocketRuntime(options)

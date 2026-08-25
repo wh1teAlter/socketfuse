@@ -1,25 +1,42 @@
+/**
+ * Playground 连接状态与副作用 composable。
+ *
+ * 组件只通过 props/events 读写这些 refs；连接创建、生命周期监听、测试控制句柄和
+ * 错误格式化集中在此处，避免展示组件持有 transport 状态。
+ */
 import { createWebSocket, type JsonValue, type WebSocketClient, type WwsError, WwsError as WwsErrorClass } from 'wws'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
+/** Playground 列表中展示的一条消息。 */
 export interface PlaygroundMessage {
+  /** 仅用于稳定渲染 key 的页面本地序号。 */
   readonly id: number
+  /** 是否由 restore replay 投递。 */
   readonly replayed: boolean
+  /** 展示层对 payload 的分类。 */
   readonly type: 'binary' | 'text'
+  /** 已格式化且不承担协议语义的展示文本。 */
   readonly value: string
 }
 
+/** Playground 发送二进制样本的种类。 */
 type BinaryMessageKind = 'array-buffer' | 'blob' | 'typed-array'
+/** JSON 协议示例使用的认证值。 */
 type PlaygroundAuth = { readonly token: string }
+/** Playground 同时支持 raw 二进制与 JSON revision 的 client 类型。 */
 type PlaygroundClient = WebSocketClient<unknown, string | Blob | ArrayBuffer | Uint8Array, PlaygroundAuth>
 
+/** E2E Worker 终止控制所需的最小端口能力。 */
 interface WorkerTerminationPort {
   postMessage: (message: unknown) => void
 }
 
+/** 保存可终止 Worker 端口的页面句柄。 */
 interface WorkerTerminationHandle {
   readonly port: WorkerTerminationPort
 }
 
+/** 将异常转换为 playground 可读文本，不暴露未脱敏内部详情。 */
 function formatError(value: unknown): string {
   if (value instanceof WwsErrorClass)
     return `${value.code}: ${value.message}`
@@ -28,6 +45,7 @@ function formatError(value: unknown): string {
   return String(value)
 }
 
+/** 将 raw/binary/JSON payload 转成稳定展示文本。 */
 function formatMessage(value: unknown): string {
   if (value instanceof ArrayBuffer)
     return Array.from(new Uint8Array(value)).join(',')
@@ -41,6 +59,7 @@ function formatMessage(value: unknown): string {
   }
 }
 
+/** 创建 playground 页面使用的连接状态、操作和测试钩子。 */
 export function usePlaygroundConnection() {
   const client = shallowRef<PlaygroundClient>()
   const clients = shallowRef('-')
@@ -59,6 +78,7 @@ export function usePlaygroundConnection() {
 
   const messageCount = computed(() => messages.value.length)
 
+  /** 从当前 client 快照刷新页面指标。 */
   function refreshMetrics(current = client.value): void {
     if (current === undefined) {
       clients.value = '-'
@@ -71,6 +91,7 @@ export function usePlaygroundConnection() {
     transport.value = current.transport
   }
 
+  /** 追加一条已格式化的消息并分配页面内序号。 */
   function appendMessage(value: unknown, replayed: boolean): void {
     messages.value = [...messages.value, {
       id: nextMessageId++,
@@ -80,11 +101,13 @@ export function usePlaygroundConnection() {
     }]
   }
 
+  /** 清空消息列表并重置展示序号。 */
   function clearMessages(): void {
     messages.value = []
     nextMessageId = 0
   }
 
+  /** 释放旧 client，保证重新连接不会残留页面 port。 */
   async function disposeCurrentClient(): Promise<void> {
     const current = client.value
     client.value = undefined
@@ -93,11 +116,13 @@ export function usePlaygroundConnection() {
       await current.dispose().catch(() => undefined)
   }
 
+  /** 记录已脱敏的 client 错误并同步指标。 */
   function handleClientError(value: WwsError): void {
     error.value = `${value.code}: ${value.message}`
     refreshMetrics()
   }
 
+  /** 根据当前表单创建并打开 playground client。 */
   async function connect(): Promise<void> {
     await disposeCurrentClient()
     error.value = ''
@@ -158,6 +183,7 @@ export function usePlaygroundConnection() {
     }
   }
 
+  /** 关闭当前 client 并刷新页面指标。 */
   async function disconnect(): Promise<void> {
     const current = client.value
     if (current === undefined)
@@ -169,6 +195,7 @@ export function usePlaygroundConnection() {
     refreshMetrics(current)
   }
 
+  /** 发送文本样本；失败只更新展示错误，不抛出到模板事件。 */
   async function sendMessage(payload: string): Promise<void> {
     const current = client.value
     if (current === undefined || payload.length === 0)
@@ -178,6 +205,7 @@ export function usePlaygroundConnection() {
     })
   }
 
+  /** 发送指定类型的固定二进制样本。 */
   async function sendBinaryMessage(kind: BinaryMessageKind): Promise<void> {
     const current = client.value
     if (current === undefined)
@@ -192,14 +220,16 @@ export function usePlaygroundConnection() {
     })
   }
 
+  /** 通过测试 worker 控制端口触发 Worker 终止。 */
   function terminateWorkerForE2E(): void {
     restartableWorker?.port.postMessage({ type: '__wws_test_terminate__' })
   }
 
+  /** 为 revision replay E2E 更新 endpoint 与 auth revision。 */
   async function applyRevisionsForE2E(nextUrl: string): Promise<void> {
     const current = client.value
     if (current === undefined)
-      throw new Error('Connect before applying test revisions')
+      throw new Error('请先连接，再应用测试 revision')
     await current.updateUrl(nextUrl, { revision: 1 })
     await current.updateAuth({ token: 'e2e-revision-auth' }, { revision: 1 })
   }
@@ -210,6 +240,7 @@ export function usePlaygroundConnection() {
       __wwsPlaygroundTerminateWorker: terminateWorkerForE2E,
     })
 
+  /** 打开同源 playground 新标签页以观察连接共享。 */
   function openAnotherTab(): void {
     window.open(window.location.href, '_blank', 'noopener')
   }

@@ -1,25 +1,23 @@
 ---
-title: Playground
+title: 演练场
 ---
 
 <script setup lang="ts">
 import PlaygroundPanel from './playground/components/PlaygroundPanel.vue'
 </script>
 
-# Playground
+# 演练场
 
-Use this page to inspect WWS connection sharing from two same-origin tabs. The
-default `ws://localhost:8787` endpoint is only the local E2E/demo service; use
-your own WebSocket URL outside local development.
+使用本页观察两个同源标签页之间的 WWS 连接共享。默认的 `ws://localhost:8787` endpoint
+只用于本地 E2E/演示服务；在本地开发环境之外，请填写你自己的 WebSocket URL。
 
 <ClientOnly>
   <PlaygroundPanel />
   <template #fallback>
-    <p>Loading the browser-only playground…</p>
+    <p>正在加载仅在浏览器中运行的演练场…</p>
   </template>
 </ClientOnly>
 
-The connection is created only after **Connect**. Open another tab with the
-same URL and `id` to see one SharedWorker-owned physical connection. Select
-`direct` to observe the intentional construction/initialization fallback, or
-`error` to surface that failure without opening another physical socket.
+只有点击“连接”后才会创建连接。使用相同 URL 与 `id` 打开另一个标签页，即可看到由
+SharedWorker 持有的同一个物理连接。选择 `direct` 可观察有意设置的构造/初始化降级；选择
+`error` 则会直接显示该失败，不会打开另一个物理 socket。

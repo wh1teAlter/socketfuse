@@ -1,18 +1,18 @@
-# Interface: ReconnectOptions
+# 接口: ReconnectOptions
 
-Defined in: [core/src/shared/types.ts:36](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L36)
+定义于: [core/src/shared/types.ts:46](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L46)
 
-Shared reconnect policy. Delays are expressed in milliseconds.
+多标签页共享的重连策略；所有时间字段单位均为毫秒。
 
-## Properties
+## 属性
 
 ### retries
 
 > **retries**: `number`
 
-Defined in: [core/src/shared/types.ts:38](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L38)
+定义于: [core/src/shared/types.ts:48](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L48)
 
-Maximum retries, or `Infinity`. Defaults to `Infinity`.
+最大重试次数；`Infinity` 表示不设上限，默认值为 `Infinity`。
 
 ***
 
@@ -20,9 +20,9 @@ Maximum retries, or `Infinity`. Defaults to `Infinity`.
 
 > **initialDelay**: `number`
 
-Defined in: [core/src/shared/types.ts:40](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L40)
+定义于: [core/src/shared/types.ts:50](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L50)
 
-Base retry delay. Defaults to `1000`.
+指数退避的起始延迟，默认值为 `1000`。
 
 ***
 
@@ -30,9 +30,9 @@ Base retry delay. Defaults to `1000`.
 
 > **maxDelay**: `number`
 
-Defined in: [core/src/shared/types.ts:42](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L42)
+定义于: [core/src/shared/types.ts:52](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L52)
 
-Maximum retry delay. Defaults to `30000`.
+单次重试允许的最大延迟，默认值为 `30000`。
 
 ***
 
@@ -40,9 +40,9 @@ Maximum retry delay. Defaults to `30000`.
 
 > **factor**: `number`
 
-Defined in: [core/src/shared/types.ts:44](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L44)
+定义于: [core/src/shared/types.ts:54](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L54)
 
-Exponential multiplier. Defaults to `2`.
+每次重试的指数乘数，默认值为 `2`。
 
 ***
 
@@ -50,9 +50,9 @@ Exponential multiplier. Defaults to `2`.
 
 > **jitter**: `number`
 
-Defined in: [core/src/shared/types.ts:46](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L46)
+定义于: [core/src/shared/types.ts:56](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L56)
 
-Random delay ratio from `0` to `1`. Defaults to `0.2`.
+取值范围为 `0` 到 `1` 的随机抖动比例，默认值为 `0.2`。
 
 ***
 
@@ -60,6 +60,6 @@ Random delay ratio from `0` to `1`. Defaults to `0.2`.
 
 > **stableThreshold**: `number`
 
-Defined in: [core/src/shared/types.ts:48](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L48)
+定义于: [core/src/shared/types.ts:58](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L58)
 
-Open duration after which the retry counter resets. Defaults to `30000`.
+连接连续保持 open 多久后重置重试计数，默认值为 `30000`。

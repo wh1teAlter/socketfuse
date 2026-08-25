@@ -1,3 +1,9 @@
+/**
+ * 将页面创建选项规范化为共享物理配置与页面本地配置。
+ *
+ * 共享字段会参与 canonical/fingerprint；本地 handler、Worker 工厂和 lifecycle 设置
+ * 不参与冲突判断，从而允许每个标签页独立控制自身生命周期。
+ */
 import type {
   BackpressureOptions,
   ConnectionLimits,
@@ -30,67 +36,103 @@ import { assertStructuredCloneable, stableHash, stableSerialize } from '../share
 import { invalidOptions } from '../shared/errors'
 
 export interface NormalizedProtocolDescriptor {
+  /** 适配器种类，参与共享配置身份。 */
   readonly kind: 'raw' | 'json' | 'custom'
+  /** Worker 端查找适配器的稳定 id。 */
   readonly id: string
+  /** 适配器主版本，变更必须触发配置冲突。 */
   readonly version: number
+  /** 协议可用能力快照。 */
   readonly capabilities: ProtocolCapabilities
+  /** 判定连接 ready 的边界。 */
   readonly readyWhen: 'socket-open' | 'adapter-frame'
+  /** 可跨 Worker 的共享协议配置，不得包含页面秘密。 */
   readonly sharedConfig: Readonly<Record<string, unknown>>
 }
 
 export interface SharedConnectionConfig {
+  /** 原生 WebSocket subprotocol token 列表。 */
   readonly protocols: readonly string[]
+  /** 规范化协议身份及能力。 */
   readonly protocol: NormalizedProtocolDescriptor
+  /** Worker socket 的二进制接收表示。 */
   readonly binaryType: 'arraybuffer' | 'blob'
+  /** 物理连接共用的重连策略。 */
   readonly reconnect: false | Readonly<ReconnectOptions>
+  /** 建连或协议握手超时，单位为毫秒。 */
   readonly connectionTimeout: number
+  /** 物理连接共用的心跳策略。 */
   readonly heartbeat: false | Readonly<HeartbeatOptions>
+  /** 有界出站队列策略。 */
   readonly queue: Readonly<QueueOptions>
+  /** 原生 bufferedAmount 高低水位。 */
   readonly backpressure: Readonly<BackpressureOptions>
+  /** 页面活性租约策略。 */
   readonly lease: Readonly<LeaseOptions>
+  /** 物理连接的 client 数量和 payload 大小上限。 */
   readonly limits: Readonly<ConnectionLimits>
+  /** 无 client 时关闭物理 socket 前的宽限期，单位为毫秒。 */
   readonly idleGraceMs: number
 }
 
 export interface LocalClientConfig {
+  /** Worker 初始化失败时的页面本地处理。 */
   readonly fallback: 'direct' | 'error'
+  /** 创建后是否立即异步调用 open。 */
   readonly immediate: boolean
+  /** 页面卸载时是否自动 detach。 */
   readonly autoClose: boolean
+  /** 页面 freeze/restore 与回放策略。 */
   readonly lifecycle: Readonly<NormalizedRestoreOptions>
+  /** Worker 来源模式。 */
   readonly workerMode: 'inline' | 'custom'
+  /** 只在当前页面调用的脱敏日志函数。 */
   readonly logger: WwsLogger | undefined
 }
 
 export interface NormalizedWebSocketConfig<Incoming, Outgoing, Auth> {
+  /** 共享连接的业务 identity。 */
   readonly id: string
+  /** 当前 endpoint 的绝对 ws/wss URL。 */
   readonly url: string
+  /** 参与 Worker 冲突判断的物理配置。 */
   readonly shared: SharedConnectionConfig
+  /** 不参与冲突判断的页面本地配置。 */
   readonly local: LocalClientConfig
+  /** 共享配置的键顺序稳定表示。 */
   readonly configCanonical: string
+  /** 共享配置的稳定 hash。 */
   readonly configFingerprint: string
+  /** 当前 realm 使用的协议适配器实现。 */
   readonly adapter: ProtocolAdapter<Incoming, Outgoing, Auth>
 }
 
+/** WebSocket subprotocol token 的语法约束。 */
 const webSocketProtocolPattern = /^[!#$%&'*+\-.^`|~\w]+$/
+/** custom adapter id 的稳定命名约束。 */
 const adapterIdPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/
 
+/** 断言值为布尔选项并抛出字段化 INVALID_OPTIONS。 */
 function assertBoolean(value: unknown, field: string): asserts value is boolean {
   if (typeof value !== 'boolean')
     throw invalidOptions(`${field} must be a boolean`, field)
 }
 
+/** 校验有限数值，并按字段需要允许零。 */
 function positiveNumber(value: unknown, field: string, allowZero = false): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || (allowZero ? value < 0 : value <= 0))
     throw invalidOptions(`${field} must be a ${allowZero ? 'non-negative' : 'positive'} finite number`, field)
   return value
 }
 
+/** 校验正安全整数配置。 */
 function positiveInteger(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
     throw invalidOptions(`${field} must be a positive safe integer`, field)
   return value
 }
 
+/** 解析并校验绝对 ws/wss endpoint。 */
 function normalizeUrl(url: string | URL): string {
   let parsed: URL
   try {
@@ -104,6 +146,7 @@ function normalizeUrl(url: string | URL): string {
   return parsed.href
 }
 
+/** 规范化并去重 WebSocket subprotocol token。 */
 function normalizeProtocols(protocols: string | readonly string[] | undefined): readonly string[] {
   const values = protocols === undefined ? [] : typeof protocols === 'string' ? [protocols] : [...protocols]
   const seen = new Set<string>()
@@ -117,6 +160,7 @@ function normalizeProtocols(protocols: string | readonly string[] | undefined): 
   return Object.freeze(values)
 }
 
+/** 规范化共享重连策略及其边界。 */
 function normalizeReconnect(value: boolean | Partial<ReconnectOptions> | undefined): false | Readonly<ReconnectOptions> {
   if (value === false)
     return false
@@ -144,6 +188,7 @@ function normalizeReconnect(value: boolean | Partial<ReconnectOptions> | undefin
   })
 }
 
+/** 规范化共享心跳策略并验证其 payload 可跨 Worker。 */
 function normalizeHeartbeat(value: boolean | Partial<HeartbeatOptions> | undefined): false | Readonly<HeartbeatOptions> {
   if (value === false || value === undefined)
     return false
@@ -166,6 +211,7 @@ function normalizeHeartbeat(value: boolean | Partial<HeartbeatOptions> | undefin
   })
 }
 
+/** 规范化有界出站队列策略。 */
 function normalizeQueue(value: boolean | Partial<QueueOptions> | undefined): Readonly<QueueOptions> {
   if (value !== undefined && typeof value !== 'boolean' && (value === null || typeof value !== 'object'))
     throw invalidOptions('queue must be a boolean or options object', 'queue')
@@ -183,6 +229,7 @@ function normalizeQueue(value: boolean | Partial<QueueOptions> | undefined): Rea
   })
 }
 
+/** 规范化原生 bufferedAmount 高低水位。 */
 function normalizeBackpressure(value: Partial<BackpressureOptions> | undefined): Readonly<BackpressureOptions> {
   if (value !== undefined && (value === null || typeof value !== 'object'))
     throw invalidOptions('backpressure must be an options object', 'backpressure')
@@ -193,6 +240,7 @@ function normalizeBackpressure(value: Partial<BackpressureOptions> | undefined):
   return Object.freeze({ highWaterMarkBytes, lowWaterMarkBytes })
 }
 
+/** 规范化页面活性租约并确保 timeout 大于 interval。 */
 function normalizeLease(value: Partial<LeaseOptions> | undefined): Readonly<LeaseOptions> {
   if (value !== undefined && (value === null || typeof value !== 'object'))
     throw invalidOptions('lease must be an options object', 'lease')
@@ -203,6 +251,7 @@ function normalizeLease(value: Partial<LeaseOptions> | undefined): Readonly<Leas
   return Object.freeze({ interval, timeout })
 }
 
+/** 规范化单条物理连接的资源上限。 */
 function normalizeLimits(value: Partial<ConnectionLimits> | undefined): Readonly<ConnectionLimits> {
   if (value !== undefined && (value === null || typeof value !== 'object'))
     throw invalidOptions('limits must be an options object', 'limits')
@@ -212,6 +261,7 @@ function normalizeLimits(value: Partial<ConnectionLimits> | undefined): Readonly
   })
 }
 
+/** 将页面 lifecycle 选项转换为 Worker 可复用的有限回放配置。 */
 export function normalizeRestoreOptions(value: CreateWebSocketOptions['lifecycle']): Readonly<NormalizedRestoreOptions> {
   const restore = value?.restore
   if (restore === undefined || restore === false)
@@ -230,6 +280,7 @@ export function normalizeRestoreOptions(value: CreateWebSocketOptions['lifecycle
   })
 }
 
+/** 解析 raw、JSON 或 custom adapter，并生成共享协议描述。 */
 function normalizeProtocol<Incoming, Outgoing, Auth>(
   protocol: CreateWebSocketOptions<Incoming, Outgoing, Auth>['protocol'],
 ): { descriptor: NormalizedProtocolDescriptor, adapter: ProtocolAdapter<Incoming, Outgoing, Auth> | null } {
@@ -261,6 +312,7 @@ function normalizeProtocol<Incoming, Outgoing, Auth>(
   }
 }
 
+/** 将创建选项拆分为共享配置与页面本地配置。 */
 export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
   url: string | URL,
   options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
@@ -315,6 +367,7 @@ export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = Sock
   })
 }
 
+/** 比较两个规范化配置是否会在同一 id 下冲突。 */
 export function hasConfigConflict(
   current: Pick<NormalizedWebSocketConfig<unknown, unknown, unknown>, 'configCanonical'>,
   incoming: Pick<NormalizedWebSocketConfig<unknown, unknown, unknown>, 'configCanonical'>,
@@ -322,6 +375,7 @@ export function hasConfigConflict(
   return current.configCanonical !== incoming.configCanonical
 }
 
+/** 判断 custom adapter id 是否符合稳定命名约束。 */
 export function isValidAdapterId(value: string): boolean {
   return adapterIdPattern.test(value)
 }

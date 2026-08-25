@@ -1,16 +1,18 @@
-# Interface: ConnectionDiagnostics
+# 接口: ConnectionDiagnostics
 
-Defined in: [core/src/shared/types.ts:197](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L197)
+定义于: [core/src/shared/types.ts:279](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L279)
 
-Sanitized point-in-time metrics for a logical and physical connection.
+一个逻辑 client 与物理连接的已脱敏瞬时指标。
 
-## Properties
+## 属性
 
 ### transport
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-Defined in: [core/src/shared/types.ts:198](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L198)
+定义于: [core/src/shared/types.ts:281](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L281)
+
+页面当前选择的传输状态。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:198](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **logicalState**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/shared/types.ts:199](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L199)
+定义于: [core/src/shared/types.ts:283](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L283)
+
+当前页面逻辑 client 状态。
 
 ***
 
@@ -26,7 +30,9 @@ Defined in: [core/src/shared/types.ts:199](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **physicalState**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/shared/types.ts:200](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L200)
+定义于: [core/src/shared/types.ts:285](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L285)
+
+物理 socket 状态。
 
 ***
 
@@ -34,7 +40,9 @@ Defined in: [core/src/shared/types.ts:200](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **workerInstanceHash**: `string` \| `null`
 
-Defined in: [core/src/shared/types.ts:201](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L201)
+定义于: [core/src/shared/types.ts:287](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L287)
+
+SharedWorker 实例 id 的稳定 hash；direct 时为 `null`。
 
 ***
 
@@ -42,7 +50,9 @@ Defined in: [core/src/shared/types.ts:201](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **controlProtocolMajor**: `number`
 
-Defined in: [core/src/shared/types.ts:202](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L202)
+定义于: [core/src/shared/types.ts:289](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L289)
+
+已协商的控制协议 major 版本。
 
 ***
 
@@ -50,7 +60,9 @@ Defined in: [core/src/shared/types.ts:202](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **idHash**: `string`
 
-Defined in: [core/src/shared/types.ts:203](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L203)
+定义于: [core/src/shared/types.ts:291](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L291)
+
+连接 `id` 的稳定 hash，不暴露原值。
 
 ***
 
@@ -58,7 +70,9 @@ Defined in: [core/src/shared/types.ts:203](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **configFingerprint**: `string`
 
-Defined in: [core/src/shared/types.ts:204](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L204)
+定义于: [core/src/shared/types.ts:293](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L293)
+
+共享配置的稳定 fingerprint。
 
 ***
 
@@ -66,7 +80,9 @@ Defined in: [core/src/shared/types.ts:204](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **endpointOrigin**: `string`
 
-Defined in: [core/src/shared/types.ts:205](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L205)
+定义于: [core/src/shared/types.ts:295](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L295)
+
+endpoint 的 origin；不含 path、query 或凭据。
 
 ***
 
@@ -74,7 +90,9 @@ Defined in: [core/src/shared/types.ts:205](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **retryAttempt**: `number`
 
-Defined in: [core/src/shared/types.ts:206](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L206)
+定义于: [core/src/shared/types.ts:297](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L297)
+
+当前重连尝试次数。
 
 ***
 
@@ -82,7 +100,9 @@ Defined in: [core/src/shared/types.ts:206](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **nextRetryDelay**: `number` \| `null`
 
-Defined in: [core/src/shared/types.ts:207](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L207)
+定义于: [core/src/shared/types.ts:299](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L299)
+
+下次重试延迟，单位为毫秒；没有计划时为 `null`。
 
 ***
 
@@ -90,7 +110,9 @@ Defined in: [core/src/shared/types.ts:207](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **lastSafeCloseCode**: `number` \| `null`
 
-Defined in: [core/src/shared/types.ts:208](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L208)
+定义于: [core/src/shared/types.ts:301](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L301)
+
+最近一次可安全公开的 close code；未知时为 `null`。
 
 ***
 
@@ -98,7 +120,9 @@ Defined in: [core/src/shared/types.ts:208](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **attachedClientCount**: `number`
 
-Defined in: [core/src/shared/types.ts:209](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L209)
+定义于: [core/src/shared/types.ts:303](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L303)
+
+附着到该物理连接的逻辑 client 数量。
 
 ***
 
@@ -106,7 +130,9 @@ Defined in: [core/src/shared/types.ts:209](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **queueMessages**: `number`
 
-Defined in: [core/src/shared/types.ts:210](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L210)
+定义于: [core/src/shared/types.ts:305](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L305)
+
+当前出站队列消息数。
 
 ***
 
@@ -114,7 +140,9 @@ Defined in: [core/src/shared/types.ts:210](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **queueBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:211](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L211)
+定义于: [core/src/shared/types.ts:307](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L307)
+
+当前出站队列编码后字节数。
 
 ***
 
@@ -122,7 +150,9 @@ Defined in: [core/src/shared/types.ts:211](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **bufferedAmount**: `number`
 
-Defined in: [core/src/shared/types.ts:212](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L212)
+定义于: [core/src/shared/types.ts:309](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L309)
+
+原生 socket 当前 bufferedAmount，单位为字节。
 
 ***
 
@@ -130,7 +160,9 @@ Defined in: [core/src/shared/types.ts:212](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **outboundHighWater**: `boolean`
 
-Defined in: [core/src/shared/types.ts:213](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L213)
+定义于: [core/src/shared/types.ts:311](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L311)
+
+是否已处于出站高水位。
 
 ***
 
@@ -138,4 +170,6 @@ Defined in: [core/src/shared/types.ts:213](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **lastErrorCode**: `string` \| `null`
 
-Defined in: [core/src/shared/types.ts:214](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L214)
+定义于: [core/src/shared/types.ts:313](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L313)
+
+最近可公开错误码；无错误时为 `null`。

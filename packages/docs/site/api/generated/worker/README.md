@@ -1,6 +1,6 @@
 # worker
 
-## Interfaces
+## 接口
 
 - [WorkerResourceLimits](interfaces/WorkerResourceLimits.md)
 - [MessagePortLike](interfaces/MessagePortLike.md)
@@ -8,7 +8,7 @@
 - [SharedWebSocketRuntime](interfaces/SharedWebSocketRuntime.md)
 - [SharedWorkerGlobalLike](interfaces/SharedWorkerGlobalLike.md)
 
-## Functions
+## 函数
 
 - [createSharedWebSocketRuntime](functions/createSharedWebSocketRuntime.md)
 - [exposeSharedWebSocketWorker](functions/exposeSharedWebSocketWorker.md)

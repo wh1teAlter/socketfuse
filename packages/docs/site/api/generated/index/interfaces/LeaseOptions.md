@@ -1,16 +1,18 @@
-# Interface: LeaseOptions
+# 接口: LeaseOptions
 
-Defined in: [core/src/shared/types.ts:79](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L79)
+定义于: [core/src/shared/types.ts:96](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L96)
 
-Shared page-client liveness lease, in milliseconds.
+共享页面 client 的活性租约；时间字段单位均为毫秒。
 
-## Properties
+## 属性
 
 ### interval
 
 > **interval**: `number`
 
-Defined in: [core/src/shared/types.ts:80](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L80)
+定义于: [core/src/shared/types.ts:98](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L98)
+
+页面向 Worker 报活的间隔。
 
 ***
 
@@ -18,4 +20,6 @@ Defined in: [core/src/shared/types.ts:80](https://github.com/wh1teAlter/wws/blob
 
 > **timeout**: `number`
 
-Defined in: [core/src/shared/types.ts:81](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L81)
+定义于: [core/src/shared/types.ts:100](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L100)
+
+Worker 判定异常页面已失活并回收端口的时限。

@@ -1,22 +1,24 @@
-# Interface: DecodeContext
+# 接口: DecodeContext
 
-Defined in: [core/src/shared/types.ts:258](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L258)
+定义于: [core/src/shared/types.ts:373](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L373)
 
-Timestamp supplied to protocol adapter operations.
+调用适配器 `decode` 时附加的上下文。
 
-## Extends
+## 继承
 
 - [`ProtocolContext`](ProtocolContext.md)
 
-## Properties
+## 属性
 
 ### now
 
 > `readonly` **now**: `number`
 
-Defined in: [core/src/shared/types.ts:251](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L251)
+定义于: [core/src/shared/types.ts:363](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L363)
 
-#### Inherited from
+操作发生时的 Unix 时间戳，单位为毫秒。
+
+#### 继承自
 
 [`ProtocolContext`](ProtocolContext.md).[`now`](ProtocolContext.md#now)
 
@@ -26,4 +28,6 @@ Defined in: [core/src/shared/types.ts:251](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **receivedAt**: `number`
 
-Defined in: [core/src/shared/types.ts:259](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L259)
+定义于: [core/src/shared/types.ts:375](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L375)
+
+收到原始 socket payload 的 Unix 时间戳，单位为毫秒。

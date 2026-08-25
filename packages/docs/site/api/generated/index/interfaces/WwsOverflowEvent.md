@@ -1,20 +1,22 @@
-# Interface: WwsOverflowEvent
+# 接口: WwsOverflowEvent
 
-Defined in: [core/src/shared/types.ts:178](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L178)
+定义于: [core/src/shared/types.ts:252](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L252)
 
-Bounded queue or replay overflow notification.
+出站队列、入站 credit 或回放缓冲触及边界时的通知。
 
-## Extends
+## 继承
 
 - `Event`
 
-## Properties
+## 属性
 
 ### direction
 
 > `readonly` **direction**: `"outbound"` \| `"inbound"` \| `"replay"`
 
-Defined in: [core/src/shared/types.ts:179](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L179)
+定义于: [core/src/shared/types.ts:254](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L254)
+
+发生溢出的数据方向。
 
 ***
 
@@ -22,7 +24,9 @@ Defined in: [core/src/shared/types.ts:179](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **strategy**: `"reject-newest"` \| `"drop-newest"` \| `"drop-oldest"`
 
-Defined in: [core/src/shared/types.ts:180](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L180)
+定义于: [core/src/shared/types.ts:256](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L256)
+
+为保持有界内存所采用的丢弃策略。
 
 ***
 
@@ -30,7 +34,9 @@ Defined in: [core/src/shared/types.ts:180](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **droppedMessages**: `number`
 
-Defined in: [core/src/shared/types.ts:181](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L181)
+定义于: [core/src/shared/types.ts:258](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L258)
+
+本次通知累计丢弃的消息数。
 
 ***
 
@@ -38,4 +44,6 @@ Defined in: [core/src/shared/types.ts:181](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **droppedBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:182](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L182)
+定义于: [core/src/shared/types.ts:260](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L260)
+
+本次通知累计丢弃的字节数。

@@ -1,7 +1,7 @@
-# Raw protocol
+# 原始协议
 
-`raw` is the default protocol. Incoming and outgoing values are native
-WebSocket data: strings, `Blob`, `ArrayBuffer` or typed array views.
+`raw` 是默认协议。入站和出站值都是原生 WebSocket 数据：字符串、`Blob`、`ArrayBuffer`
+或类型化数组视图。
 
 ```ts
 const ws = createWebSocket('wss://api.example.com/raw', {
@@ -10,6 +10,5 @@ const ws = createWebSocket('wss://api.example.com/raw', {
 })
 ```
 
-The socket becomes ready when its native `open` event fires. Raw mode supports
-no protocol-level auth update or ping/pong template; it remains a useful base
-when the server owns authentication and liveness outside WebSocket messages.
+原生 `open` 事件触发时，socket 即视为 ready。原始模式不支持协议级认证更新或 ping/pong 模板；
+当服务端在 WebSocket 消息之外处理认证和保活时，它仍是实用的基础模式。

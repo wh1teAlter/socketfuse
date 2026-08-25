@@ -1,3 +1,4 @@
+/** 验证 canonical 序列化、稳定 hash 和结构化克隆字节估算。 */
 import { describe, expect, it } from 'vitest'
 import { estimateStructuredCloneBytes } from './structured'
 

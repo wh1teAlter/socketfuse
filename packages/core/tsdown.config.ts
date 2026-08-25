@@ -1,3 +1,4 @@
+/** @wws/core 私有实现包的 TypeScript 构建配置。 */
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({

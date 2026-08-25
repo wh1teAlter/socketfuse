@@ -1,17 +1,17 @@
-# Type Alias: WwsLogger
+# 类型别名: WwsLogger
 
 > **WwsLogger** = (`event`) => `void`
 
-Defined in: [core/src/shared/types.ts:194](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L194)
+定义于: [core/src/shared/types.ts:276](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L276)
 
-Receives sanitized diagnostics and must not be used as a message listener.
+接收已脱敏诊断的回调；不能被当作业务消息监听器。
 
-## Parameters
+## 参数
 
 ### event
 
 `Readonly`\<[`WwsDiagnosticEvent`](../interfaces/WwsDiagnosticEvent.md)\>
 
-## Returns
+## 返回
 
 `void`

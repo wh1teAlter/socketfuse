@@ -1,3 +1,4 @@
+/** 验证 endpoint/auth revision 的单调更新和冲突行为。 */
 import { describe, expect, it } from 'vitest'
 import { assertRevision, AuthRevisionRegister, EndpointRevisionRegister } from './revision'
 import { WwsError } from '../shared/errors'

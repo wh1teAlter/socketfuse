@@ -1,3 +1,4 @@
+/** 验证物理连接控制器的连接、协议、revision、重连和连接池行为。 */
 import { describe, expect, it, vi } from 'vitest'
 import type { WebSocketLike } from '../transport/socket'
 import type { SocketData } from '../shared/types'
@@ -5,41 +6,54 @@ import { normalizeWebSocketOptions } from '../config/normalize'
 import { DirectTransport } from '../transport/direct'
 import { ConnectionController } from './controller'
 
+/** 可手动触发生命周期的连接控制器测试 socket。 */
 class FakeSocket implements WebSocketLike {
+  /** 测试 binaryType。 */
   binaryType: 'arraybuffer' | 'blob' = 'arraybuffer'
+  /** 测试 bufferedAmount。 */
   bufferedAmount = 0
+  /** 可手动推进的 readyState。 */
   readyState = 0
+  /** 记录发送 payload。 */
   sent: SocketData[] = []
+  /** socket 事件监听器。 */
   private readonly listeners = new Map<string, ((event: unknown) => void)[]>()
 
+  /** 注册 socket 事件。 */
   addEventListener(type: string, listener: (event: unknown) => void): void {
     const current = this.listeners.get(type) ?? []
     current.push(listener)
     this.listeners.set(type, current)
   }
 
+  /** 移除 socket 事件。 */
   removeEventListener(type: string, listener: (event: unknown) => void): void {
     this.listeners.set(type, (this.listeners.get(type) ?? []).filter(item => item !== listener))
   }
 
+  /** 记录发送 payload。 */
   send(data: SocketData): void {
     this.sent.push(data)
   }
 
+  /** 关闭 socket 并派发 close。 */
   close(code = 1000): void {
     this.readyState = 3
     this.emit('close', { code, wasClean: code === 1000 })
   }
 
+  /** 手动触发 open。 */
   open(): void {
     this.readyState = 1
     this.emit('open', {})
   }
 
+  /** 手动触发入站 message。 */
   message(data: SocketData): void {
     this.emit('message', { data })
   }
 
+  /** 向监听器派发 socket 事件。 */
   private emit(type: string, event: unknown): void {
     for (const listener of this.listeners.get(type) ?? [])
       listener(event)

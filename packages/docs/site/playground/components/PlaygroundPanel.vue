@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Playground 页面组合组件。
+ *
+ * 连接状态由 composable 持有，表单和消息列表通过 props/events 通信；本组件只负责
+ * 组合布局与指标展示，不直接操作 Worker 或 WebSocket。
+ */
 import { usePlaygroundConnection } from '../composables/usePlaygroundConnection'
 import PlaygroundConnectionForm from './PlaygroundConnectionForm.vue'
 import PlaygroundMessages from './PlaygroundMessages.vue'
@@ -51,16 +57,16 @@ const {
       aria-live="polite"
     >
       <div class="playground-metric">
-        <span>Transport</span><strong id="transport">{{ transport }}</strong>
+        <span>传输方式</span><strong id="transport">{{ transport }}</strong>
       </div>
       <div class="playground-metric">
-        <span>Status</span><strong id="status">{{ status }}</strong>
+        <span>状态</span><strong id="status">{{ status }}</strong>
       </div>
       <div class="playground-metric">
-        <span>Physical clients</span><strong id="clients">{{ clients }}</strong>
+        <span>物理客户端数</span><strong id="clients">{{ clients }}</strong>
       </div>
       <div class="playground-metric">
-        <span>Messages</span><strong id="message-count">{{ messageCount }}</strong>
+        <span>消息数</span><strong id="message-count">{{ messageCount }}</strong>
       </div>
     </section>
 

@@ -1,16 +1,18 @@
-# Interface: ConnectionLimits
+# 接口: ConnectionLimits
 
-Defined in: [core/src/shared/types.ts:85](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L85)
+定义于: [core/src/shared/types.ts:104](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L104)
 
-Limits that belong to one shared physical WebSocket connection.
+仅属于一条共享物理 WebSocket 的资源上限。
 
-## Properties
+## 属性
 
 ### maxClientsPerConnection
 
 > **maxClientsPerConnection**: `number`
 
-Defined in: [core/src/shared/types.ts:86](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L86)
+定义于: [core/src/shared/types.ts:106](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L106)
+
+同一连接可同时附着的逻辑 client 上限。
 
 ***
 
@@ -18,4 +20,6 @@ Defined in: [core/src/shared/types.ts:86](https://github.com/wh1teAlter/wws/blob
 
 > **maxEncodedMessageBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:87](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L87)
+定义于: [core/src/shared/types.ts:108](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L108)
+
+单条编码出站消息允许的最大字节数。

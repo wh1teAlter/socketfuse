@@ -1,7 +1,7 @@
-# Type Alias: Transport
+# 类型别名: Transport
 
 > **Transport** = `"pending"` \| `"shared-worker"` \| `"direct"`
 
-Defined in: [core/src/shared/types.ts:24](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L24)
+定义于: [core/src/shared/types.ts:31](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L31)
 
-Transport currently selected for the page client.
+当前为页面 client 选定的传输通道。

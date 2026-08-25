@@ -1,16 +1,18 @@
-# Interface: WorkerResourceLimits
+# 接口: WorkerResourceLimits
 
-Defined in: [core/src/shared/types.ts:91](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L91)
+定义于: [core/src/shared/types.ts:112](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L112)
 
-Static limits that protect one SharedWorker control plane.
+保护一个 SharedWorker 控制平面的静态资源上限。
 
-## Properties
+## 属性
 
 ### maxPorts
 
 > **maxPorts**: `number`
 
-Defined in: [core/src/shared/types.ts:92](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L92)
+定义于: [core/src/shared/types.ts:114](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L114)
+
+Worker 可接受的 MessagePort 总数上限。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:92](https://github.com/wh1teAlter/wws/blob
 
 > **maxControlEnvelopeBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:93](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L93)
+定义于: [core/src/shared/types.ts:116](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L116)
+
+单个 page-to-Worker 控制 envelope 的最大结构化克隆字节数。
 
 ***
 
@@ -26,4 +30,6 @@ Defined in: [core/src/shared/types.ts:93](https://github.com/wh1teAlter/wws/blob
 
 > **unattachedPortTimeoutMs**: `number`
 
-Defined in: [core/src/shared/types.ts:94](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L94)
+定义于: [core/src/shared/types.ts:118](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L118)
+
+端口建立后未完成 hello 时的回收时限，单位为毫秒。

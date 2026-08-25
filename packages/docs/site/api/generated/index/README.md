@@ -1,10 +1,10 @@
 # index
 
-## Classes
+## 类
 
 - [WwsError](classes/WwsError.md)
 
-## Interfaces
+## 接口
 
 - [ProtocolCapabilities](interfaces/ProtocolCapabilities.md)
 - [ReconnectOptions](interfaces/ReconnectOptions.md)
@@ -29,7 +29,7 @@
 - [CreateWebSocketOptions](interfaces/CreateWebSocketOptions.md)
 - [WebSocketClient](interfaces/WebSocketClient.md)
 
-## Type Aliases
+## 类型别名
 
 - [WwsErrorCode](type-aliases/WwsErrorCode.md)
 - [SocketData](type-aliases/SocketData.md)
@@ -44,11 +44,11 @@
 - [JsonValue](type-aliases/JsonValue.md)
 - [JsonMatcher](type-aliases/JsonMatcher.md)
 
-## Variables
+## 变量
 
 - [WWS\_ERROR\_CODES](variables/WWS_ERROR_CODES.md)
 
-## Functions
+## 函数
 
 - [isWwsError](functions/isWwsError.md)
 - [createWebSocket](functions/createWebSocket.md)

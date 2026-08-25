@@ -1,7 +1,6 @@
-# JSON protocol
+# JSON 协议
 
-Use the declarative JSON protocol when a server sends JSON frames for readiness,
-auth and heartbeat.
+服务端使用 JSON 帧表达就绪、认证和心跳时，请使用声明式 JSON 协议。
 
 ```ts
 const ws = createWebSocket(url, {
@@ -20,7 +19,6 @@ const ws = createWebSocket(url, {
 })
 ```
 
-Matcher keys support dot and bracket paths such as `meta.code` and
-`items[0].kind`. Values are structurally compared. `$auth` and `$auth.path`
-placeholders resolve from the most recent auth revision. Protocol frames are
-handled internally; only application data reaches `onMessage` and `ws.data`.
+匹配器键支持点号与方括号路径，例如 `meta.code` 和 `items[0].kind`，值将做结构化比较。
+`$auth` 与 `$auth.path` 占位符从最新认证 revision 中解析。协议帧由内部处理；只有应用数据会
+到达 `onMessage` 和 `ws.data`。

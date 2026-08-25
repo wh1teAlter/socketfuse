@@ -1,16 +1,18 @@
-# Interface: ConnectionSnapshot
+# 接口: ConnectionSnapshot
 
-Defined in: [core/src/shared/types.ts:139](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L139)
+定义于: [core/src/shared/types.ts:198](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L198)
 
-Immutable connection state returned when `open()` resolves.
+`open()` 成功 resolve 时返回的不可变连接快照。
 
-## Properties
+## 属性
 
 ### state
 
 > `readonly` **state**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-Defined in: [core/src/shared/types.ts:140](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L140)
+定义于: [core/src/shared/types.ts:200](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L200)
+
+当前详细生命周期状态。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:140](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **status**: [`WebSocketStatus`](../type-aliases/WebSocketStatus.md)
 
-Defined in: [core/src/shared/types.ts:141](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L141)
+定义于: [core/src/shared/types.ts:202](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L202)
+
+由详细状态推导的紧凑状态。
 
 ***
 
@@ -26,7 +30,9 @@ Defined in: [core/src/shared/types.ts:141](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **readyState**: [`ReadyState`](../type-aliases/ReadyState.md)
 
-Defined in: [core/src/shared/types.ts:142](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L142)
+定义于: [core/src/shared/types.ts:204](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L204)
+
+原生 WebSocket 兼容的数值状态。
 
 ***
 
@@ -34,7 +40,9 @@ Defined in: [core/src/shared/types.ts:142](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-Defined in: [core/src/shared/types.ts:143](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L143)
+定义于: [core/src/shared/types.ts:206](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L206)
+
+当前 socket 所属传输通道。
 
 ***
 
@@ -42,7 +50,9 @@ Defined in: [core/src/shared/types.ts:143](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **attempt**: `number`
 
-Defined in: [core/src/shared/types.ts:144](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L144)
+定义于: [core/src/shared/types.ts:208](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L208)
+
+当前物理连接尝试的单调计数。
 
 ***
 
@@ -50,4 +60,6 @@ Defined in: [core/src/shared/types.ts:144](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **connectedAt**: `number`
 
-Defined in: [core/src/shared/types.ts:145](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L145)
+定义于: [core/src/shared/types.ts:210](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L210)
+
+最近一次成功打开的 Unix 时间戳，单位为毫秒；未打开时为 `0`。

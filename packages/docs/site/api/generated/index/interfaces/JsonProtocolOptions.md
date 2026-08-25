@@ -1,16 +1,18 @@
-# Interface: JsonProtocolOptions
+# 接口: JsonProtocolOptions
 
-Defined in: [core/src/shared/types.ts:239](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L239)
+定义于: [core/src/shared/types.ts:343](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L343)
 
-Declarative JSON protocol definition shared by every tab using an `id`.
+同一 `id` 的每个标签页共享的声明式 JSON 协议定义。
 
-## Properties
+## 属性
 
 ### type
 
 > `readonly` **type**: `"json"`
 
-Defined in: [core/src/shared/types.ts:240](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L240)
+定义于: [core/src/shared/types.ts:345](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L345)
+
+固定为 JSON 协议选择器。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:240](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **id?**: `string`
 
-Defined in: [core/src/shared/types.ts:241](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L241)
+定义于: [core/src/shared/types.ts:347](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L347)
+
+可选的稳定适配器 id；默认使用内置 JSON id。
 
 ***
 
@@ -26,7 +30,9 @@ Defined in: [core/src/shared/types.ts:241](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **version?**: `number`
 
-Defined in: [core/src/shared/types.ts:242](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L242)
+定义于: [core/src/shared/types.ts:349](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L349)
+
+可选的适配器 major 版本；变更会触发共享配置冲突。
 
 ***
 
@@ -34,7 +40,9 @@ Defined in: [core/src/shared/types.ts:242](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **ready?**: `Readonly`\<`Record`\<`string`, [`JsonValue`](../type-aliases/JsonValue.md)\>\>
 
-Defined in: [core/src/shared/types.ts:243](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L243)
+定义于: [core/src/shared/types.ts:351](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L351)
+
+将入站帧标记为 ready 的匹配器。
 
 ***
 
@@ -42,7 +50,9 @@ Defined in: [core/src/shared/types.ts:243](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **auth?**: [`JsonAuthTemplate`](JsonAuthTemplate.md)
 
-Defined in: [core/src/shared/types.ts:244](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L244)
+定义于: [core/src/shared/types.ts:353](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L353)
+
+根据最新 auth revision 生成认证帧的模板。
 
 ***
 
@@ -50,7 +60,9 @@ Defined in: [core/src/shared/types.ts:244](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **heartbeat?**: [`JsonHeartbeatTemplate`](JsonHeartbeatTemplate.md)
 
-Defined in: [core/src/shared/types.ts:245](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L245)
+定义于: [core/src/shared/types.ts:355](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L355)
+
+该协议的应用层心跳定义。
 
 ***
 
@@ -58,4 +70,6 @@ Defined in: [core/src/shared/types.ts:245](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` `optional` **ignore?**: readonly `Readonly`\<`Record`\<`string`, [`JsonValue`](../type-aliases/JsonValue.md)\>\>[]
 
-Defined in: [core/src/shared/types.ts:246](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L246)
+定义于: [core/src/shared/types.ts:357](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L357)
+
+被协议消费、不会派发给业务的入站帧匹配器。

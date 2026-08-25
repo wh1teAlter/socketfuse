@@ -1,3 +1,4 @@
+/** 验证 Worker runtime 的共享、attach 事务、回放 credit 与资源回收。 */
 import { describe, expect, it, vi } from 'vitest'
 import type { WebSocketLike } from '../transport/socket'
 import type { SocketData } from '../shared/types'
@@ -6,21 +7,28 @@ import { SharedWorkerTransport } from '../transport/shared-worker'
 import { normalizeWebSocketOptions } from '../config/normalize'
 import { isClientControlMessage } from './control'
 
+/** 双向连接的测试 MessagePort，模拟异步结构化克隆投递。 */
 class LinkedPort implements MessagePortLike {
+  /** 对端 port；仅测试拓扑使用，不属于产品 ownership。 */
   peer: LinkedPort | undefined
+  /** 是否已关闭测试通道。 */
   closed = false
+  /** 事件类型到监听器的测试映射。 */
   private readonly listeners = new Map<string, ((event: { readonly data: unknown }) => void)[]>()
 
+  /** 注册测试消息监听器。 */
   addEventListener(type: 'message' | 'messageerror', listener: (event: { readonly data: unknown }) => void): void {
     const values = this.listeners.get(type) ?? []
     values.push(listener)
     this.listeners.set(type, values)
   }
 
+  /** 移除测试消息监听器。 */
   removeEventListener(type: 'message' | 'messageerror', listener: (event: { readonly data: unknown }) => void): void {
     this.listeners.set(type, (this.listeners.get(type) ?? []).filter(value => value !== listener))
   }
 
+  /** 将消息异步转发到对端 port。 */
   postMessage(message: unknown): void {
     const peer = this.peer
     if (this.closed || peer === undefined)
@@ -28,12 +36,15 @@ class LinkedPort implements MessagePortLike {
     queueMicrotask(() => peer.emit('message', structuredClone(message)))
   }
 
+  /** 标记 port 关闭。 */
   close(): void {
     this.closed = true
   }
 
+  /** 测试 port 无需显式启动。 */
   start(): void {}
 
+  /** 向当前 port 的监听器派发事件。 */
   private emit(type: string, data: unknown): void {
     if (this.closed)
       return
@@ -42,47 +53,61 @@ class LinkedPort implements MessagePortLike {
   }
 }
 
+/** 可手动触发 open/message/close 的测试 WebSocket。 */
 class FakeSocket implements WebSocketLike {
+  /** 浏览器 binaryType 的测试默认值。 */
   binaryType: 'arraybuffer' | 'blob' = 'arraybuffer'
+  /** 测试 bufferedAmount，默认没有积压。 */
   bufferedAmount = 0
+  /** 可手动推进的 readyState。 */
   readyState = 0
+  /** 记录发送顺序的测试数组。 */
   sent: SocketData[] = []
+  /** socket 事件监听器。 */
   private readonly listeners = new Map<string, ((event: unknown) => void)[]>()
 
+  /** 注册测试 socket 事件。 */
   addEventListener(type: string, listener: (event: unknown) => void): void {
     const values = this.listeners.get(type) ?? []
     values.push(listener)
     this.listeners.set(type, values)
   }
 
+  /** 移除测试 socket 事件。 */
   removeEventListener(type: string, listener: (event: unknown) => void): void {
     this.listeners.set(type, (this.listeners.get(type) ?? []).filter(value => value !== listener))
   }
 
+  /** 记录发送 payload。 */
   send(data: SocketData): void {
     this.sent.push(data)
   }
 
+  /** 关闭 socket 并派发 close。 */
   close(code = 1000): void {
     this.readyState = 3
     this.emit('close', { code, wasClean: code === 1000 })
   }
 
+  /** 手动触发 open。 */
   open(): void {
     this.readyState = 1
     this.emit('open', {})
   }
 
+  /** 手动触发入站 message。 */
   message(data: SocketData): void {
     this.emit('message', { data })
   }
 
+  /** 向 socket 监听器派发事件。 */
   private emit(type: string, event: unknown): void {
     for (const listener of this.listeners.get(type) ?? [])
       listener(event)
   }
 }
 
+/** 创建一对互相连接的测试 MessagePort。 */
 function createPortPair(): readonly [LinkedPort, LinkedPort] {
   const page = new LinkedPort()
   const worker = new LinkedPort()
@@ -91,6 +116,7 @@ function createPortPair(): readonly [LinkedPort, LinkedPort] {
   return [page, worker]
 }
 
+/** 等待异步 Worker 投递满足条件。 */
 async function waitFor(check: () => boolean): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
     if (check())

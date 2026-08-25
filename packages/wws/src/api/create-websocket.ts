@@ -1,3 +1,9 @@
+/**
+ * 页面 facade 的连接创建实现。
+ *
+ * 本模块负责同步校验页面环境、选择 SharedWorker/direct transport，并把 Worker
+ * 初始化失败转换为配置允许的降级结果；网络故障不会触发 transport 偷换。
+ */
 import { type CreateWebSocketOptions, DirectTransport, type JsonProtocolOptions, type JsonValue,
   normalizeWebSocketOptions,
   PageWebSocketClient,
@@ -8,6 +14,7 @@ import { type CreateWebSocketOptions, DirectTransport, type JsonProtocolOptions,
   WwsError } from '@wws/core'
 import { INLINE_WORKER_SOURCE } from '../worker/source.generated'
 
+/** 在当前页面环境创建 direct transport，供明确允许的 Worker 初始化降级使用。 */
 function createDirectFallback<Incoming, Outgoing, Auth>(
   config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
   clientId: string,
@@ -17,10 +24,12 @@ function createDirectFallback<Incoming, Outgoing, Auth>(
   return new DirectTransport({ clientId, config })
 }
 
+/** 将内联 Worker 源码转换为稳定的 data URL。 */
 function createInlineWorkerUrl(): string {
   return `data:text/javascript;charset=utf-8,${encodeURIComponent(INLINE_WORKER_SOURCE)}`
 }
 
+/** 创建 SharedWorker transport，并保留只在初始化失败时使用的 fallback 工厂。 */
 function createSharedTransport<Incoming, Outgoing, Auth>(
   config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
   clientId: string,
@@ -45,6 +54,7 @@ function createSharedTransport<Incoming, Outgoing, Auth>(
   })
 }
 
+/** 生成只在当前页面实例内使用的 client id。 */
 function createClientId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
@@ -52,19 +62,20 @@ function createClientId(): string {
 }
 
 /**
- * Create a page-local client backed by a same-origin SharedWorker connection.
+ * 创建由同源 SharedWorker 连接驱动的页面本地客户端。
  *
- * The function returns synchronously. With `immediate: true` (the default),
- * opening starts in the background; call `open()` when the caller needs an
- * awaitable connection snapshot. Worker setup failures use the configured
- * direct/error fallback, while socket and protocol failures remain on the
- * selected transport.
+ * 函数同步返回。`immediate: true`（默认值）时会在后台开始打开；需要可等待的
+ * 连接快照时调用 `open()`。Worker 建立失败遵循配置的 direct/error 降级策略，
+ * socket 和协议错误则始终留在已选 transport 中处理。
  *
- * @typeParam Incoming Decoded business payload delivered to `onMessage`.
- * @typeParam Outgoing Application value accepted by `sendMessage`.
- * @typeParam Auth Revisioned authentication value accepted by `updateAuth`.
- * @param url Initial absolute `ws:` or `wss:` endpoint.
- * @param options Shared connection and page-local behavior.
+ * @typeParam Incoming 由 `onMessage` 接收的已解码业务 payload。
+ * @typeParam Outgoing `sendMessage` 可接受的应用值。
+ * @typeParam Auth `updateAuth` 可接受的带 revision 认证值。
+ * @param url 初始的绝对 `ws:` 或 `wss:` endpoint。
+ * @param options 共享连接与页面本地行为。
+ * @returns 稳定的页面本地客户端；`immediate` 为 true 时首次打开会在后台进行。
+ * @throws 在非浏览器页面 realm、选项无效、`fallback` 为 `error` 且 Worker 不可用，
+ * 或 direct WebSocket 降级不可用时，同步抛出 `WwsError`。
  */
 export function createWebSocket(
   url: string | URL,

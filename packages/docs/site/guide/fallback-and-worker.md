@@ -1,29 +1,24 @@
-# Fallback and Worker
+# 降级与 Worker
 
-## Default inline Worker
+## 默认内联 Worker
 
-By default WWS creates one build-generated inline SharedWorker and uses it to
-own the socket. This is zero configuration and works when the application CSP
-allows a `data:` Worker source.
+默认情况下，WWS 会创建一个构建产出的内联 SharedWorker，由它持有 socket。这是零配置方案，
+适用于应用 CSP 允许 `data:` Worker 源码的场景。
 
-`fallback: 'direct'` is the default. It uses a direct, page-local WebSocket
-only when SharedWorker support, construction, loading or initialization fails.
-It does not turn network, authentication, heartbeat or server-close failures
-into a different transport. A malformed Worker control response is an error,
-not a reason to silently downgrade. After a SharedWorker has been selected,
-lifecycle recovery recreates only that shared transport and never changes it
-to direct.
+`fallback: 'direct'` 是默认值。仅在 SharedWorker 支持、构造、加载或初始化失败时，它才会
+使用直接的页面本地 WebSocket。网络、认证、心跳或服务端关闭失败不会切换到其他 transport。
+不合法的 Worker 控制响应是错误，而非静默降级的理由。选定 SharedWorker 后，生命周期恢复
+只会重建该共享 transport，绝不会改为 direct。
 
-Set `fallback: 'error'` for a hard single-connection policy:
+需要严格的单连接策略时，请设为 `fallback: 'error'`：
 
 ```ts
 const ws = createWebSocket(url, { fallback: 'error', id: 'critical-feed' })
 ```
 
-## Custom Worker
+## 自定义 Worker
 
-Use a stable same-origin Worker URL when CSP disallows `data:`, when a custom
-protocol adapter is needed, or when deployment policy requires a static asset.
+CSP 禁止 `data:`、需要自定义协议适配器或部署策略要求静态资源时，请使用稳定的同源 Worker URL。
 
 ```ts
 const ws = createWebSocket(url, {
@@ -32,9 +27,8 @@ const ws = createWebSocket(url, {
 })
 ```
 
-That Worker must call `exposeSharedWebSocketWorker()`. All SPAs intended to
-share must use exactly the same Worker URL and origin. WWS does not create Blob
-URLs or load Worker source from a CDN.
+该 Worker 必须调用 `exposeSharedWebSocketWorker()`。所有需要共享的 SPA 必须使用完全一致的
+Worker URL 和 origin。WWS 不会创建 Blob URL，也不会从 CDN 加载 Worker 源码。
 
-See [compatibility and security](../reference/compatibility-and-security) for
-CSP, cookies, SameSite and `Origin: null` implications.
+有关 CSP、cookie、SameSite 和 `Origin: null` 的影响，请参阅
+[兼容性与安全](../reference/compatibility-and-security)。

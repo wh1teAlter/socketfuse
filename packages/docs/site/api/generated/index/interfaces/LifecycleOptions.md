@@ -1,13 +1,15 @@
-# Interface: LifecycleOptions
+# 接口: LifecycleOptions
 
-Defined in: [core/src/shared/types.ts:108](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L108)
+定义于: [core/src/shared/types.ts:132](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L132)
 
-Page-local browser lifecycle integration. Disabled by default.
+页面本地的浏览器 freeze/restore 集成；默认关闭。
 
-## Properties
+## 属性
 
 ### restore?
 
 > `optional` **restore?**: `boolean` \| [`RestoreOptions`](RestoreOptions.md)
 
-Defined in: [core/src/shared/types.ts:109](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L109)
+定义于: [core/src/shared/types.ts:134](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L134)
+
+是否启用恢复；对象形式额外指定有限回放边界。

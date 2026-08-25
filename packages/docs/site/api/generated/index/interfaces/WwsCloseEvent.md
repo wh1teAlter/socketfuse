@@ -1,20 +1,22 @@
-# Interface: WwsCloseEvent
+# 接口: WwsCloseEvent
 
-Defined in: [core/src/shared/types.ts:161](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L161)
+定义于: [core/src/shared/types.ts:226](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L226)
 
-Logical close notification for this page client.
+当前页面逻辑 client 的关闭通知。
 
-## Extends
+## 继承
 
 - `Event`
 
-## Properties
+## 属性
 
 ### code
 
 > `readonly` **code**: `number`
 
-Defined in: [core/src/shared/types.ts:162](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L162)
+定义于: [core/src/shared/types.ts:228](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L228)
+
+经安全化后暴露的 WebSocket close code。
 
 ***
 
@@ -22,7 +24,9 @@ Defined in: [core/src/shared/types.ts:162](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **wasClean**: `boolean`
 
-Defined in: [core/src/shared/types.ts:163](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L163)
+定义于: [core/src/shared/types.ts:230](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L230)
+
+原生 close 事件是否标记为 clean。
 
 ***
 
@@ -30,7 +34,9 @@ Defined in: [core/src/shared/types.ts:163](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **terminal**: `boolean`
 
-Defined in: [core/src/shared/types.ts:164](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L164)
+定义于: [core/src/shared/types.ts:232](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L232)
+
+是否已进入不会再次打开的终态。
 
 ***
 
@@ -38,4 +44,6 @@ Defined in: [core/src/shared/types.ts:164](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **willReconnect**: `boolean`
 
-Defined in: [core/src/shared/types.ts:165](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L165)
+定义于: [core/src/shared/types.ts:234](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L234)
+
+当前共享连接是否将自行发起重连。

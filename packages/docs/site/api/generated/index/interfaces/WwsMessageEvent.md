@@ -1,28 +1,28 @@
-# Interface: WwsMessageEvent\<Data\>
+# 接口: WwsMessageEvent\<Data\>
 
-Defined in: [core/src/shared/types.ts:149](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L149)
+定义于: [core/src/shared/types.ts:214](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L214)
 
-Business message delivered to page listeners. Protocol control frames are excluded.
+派发给页面监听器的业务消息；协议控制帧不会出现在这里。
 
-## Extends
+## 继承
 
 - `Event`
 
-## Type Parameters
+## 类型参数
 
 ### Data
 
 `Data`
 
-## Properties
+## 属性
 
 ### data
 
 > `readonly` **data**: `Data`
 
-Defined in: [core/src/shared/types.ts:151](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L151)
+定义于: [core/src/shared/types.ts:216](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L216)
 
-Decoded application payload.
+协议适配器解码后的应用 payload。
 
 ***
 
@@ -30,9 +30,9 @@ Decoded application payload.
 
 > `readonly` **receivedAt**: `number`
 
-Defined in: [core/src/shared/types.ts:153](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L153)
+定义于: [core/src/shared/types.ts:218](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L218)
 
-Receive timestamp in milliseconds since the Unix epoch.
+Worker 或 direct transport 接收消息的 Unix 时间戳，单位为毫秒。
 
 ***
 
@@ -40,9 +40,9 @@ Receive timestamp in milliseconds since the Unix epoch.
 
 > `readonly` **transport**: `"shared-worker"` \| `"direct"`
 
-Defined in: [core/src/shared/types.ts:155](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L155)
+定义于: [core/src/shared/types.ts:220](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L220)
 
-Transport that received the message.
+实际接收消息的已选定传输通道。
 
 ***
 
@@ -50,6 +50,6 @@ Transport that received the message.
 
 > `readonly` **replayed**: `boolean`
 
-Defined in: [core/src/shared/types.ts:157](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L157)
+定义于: [core/src/shared/types.ts:222](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L222)
 
-Whether lifecycle restore replayed this message.
+是否由页面生命周期恢复回放，而非实时派发。

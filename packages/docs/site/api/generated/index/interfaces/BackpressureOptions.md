@@ -1,16 +1,18 @@
-# Interface: BackpressureOptions
+# 接口: BackpressureOptions
 
-Defined in: [core/src/shared/types.ts:73](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L73)
+定义于: [core/src/shared/types.ts:88](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L88)
 
-Shared WebSocket buffered-amount thresholds, in bytes.
+共享 WebSocket 的 `bufferedAmount` 背压阈值，单位为字节。
 
-## Properties
+## 属性
 
 ### highWaterMarkBytes
 
 > **highWaterMarkBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:74](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L74)
+定义于: [core/src/shared/types.ts:90](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L90)
+
+达到此值后拒绝或按队列策略处理新发送。
 
 ***
 
@@ -18,4 +20,6 @@ Defined in: [core/src/shared/types.ts:74](https://github.com/wh1teAlter/wws/blob
 
 > **lowWaterMarkBytes**: `number`
 
-Defined in: [core/src/shared/types.ts:75](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L75)
+定义于: [core/src/shared/types.ts:92](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L92)
+
+下降到此值后恢复队列冲刷；必须小于高水位。

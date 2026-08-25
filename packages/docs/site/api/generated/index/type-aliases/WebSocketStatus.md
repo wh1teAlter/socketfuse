@@ -1,7 +1,7 @@
-# Type Alias: WebSocketStatus
+# 类型别名: WebSocketStatus
 
 > **WebSocketStatus** = `"OPEN"` \| `"CONNECTING"` \| `"CLOSED"`
 
-Defined in: [core/src/shared/types.ts:8](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L8)
+定义于: [core/src/shared/types.ts:15](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L15)
 
-Compact, VueUse-style status derived from the detailed connection state.
+由详细连接状态推导出的紧凑 VueUse 风格状态。

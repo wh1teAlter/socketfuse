@@ -1,8 +1,7 @@
-# Lifecycle and replay
+# 生命周期与回放
 
-Browser pages can be hidden, frozen, restored from back/forward cache, or
-terminated. WWS can coordinate a best-effort local pause and replay buffer for
-the first three states.
+浏览器页面可能隐藏、冻结、从后退/前进缓存恢复或终止。WWS 可以为前三种状态协调尽力而为的
+本地暂停与回放缓冲区。
 
 ```ts
 const ws = createWebSocket(url, {
@@ -13,25 +12,19 @@ const ws = createWebSocket(url, {
 })
 ```
 
-## How it works
+## 工作方式
 
-With restore enabled, WWS observes visibility, pagehide/pageshow and browser
-freeze/resume signals. A BFCache `pagehide` suspends the current page rather
-than detaching it; an ordinary `pagehide` detaches automatically unless
-`autoClose: false` is set. While suspended, neither direct nor SharedWorker
-transport dispatches live messages. With replay enabled, they are buffered
-locally/per-port and later reach normal `onMessage` listeners in FIFO order
-with `event.replayed === true`.
+启用 restore 后，WWS 会观察 visibility、pagehide/pageshow 以及浏览器 freeze/resume 信号。
+BFCache 的 `pagehide` 会暂停当前页面而不是将其分离；普通 `pagehide` 则会自动分离，除非设置
+`autoClose: false`。暂停期间，direct 和 SharedWorker transport 都不会派发实时消息。启用回放后，
+消息会在本地/每个 port 中缓冲，随后按 FIFO 顺序通过正常 `onMessage` 监听器派发，并带有
+`event.replayed === true`。
 
-The Worker only dispatches events; it never waits for page handlers. This
-preserves the physical connection's throughput even if a tab is busy.
+Worker 只派发事件，绝不等待页面处理器。这能保证物理连接的吞吐不会因某个繁忙标签页而受阻。
 
-## Boundaries
+## 边界
 
-Replay is disabled by default and bounded. On overflow, the oldest buffered
-entry is discarded and an `overflow` event is emitted. On restore, WWS probes a
-selected SharedWorker and recreates only that shared transport when the Worker
-is gone, then reapplies the newest endpoint/auth revisions. Worker restart, a
-missed lease, page termination and a server-side reconnect are still not
-reliable message recovery boundaries. Use application-level cursors or durable
-delivery when messages must not be lost.
+回放默认关闭且受上限约束。发生溢出时，最早缓存的条目会被丢弃，并派发 `overflow` 事件。
+恢复时，WWS 会探测已选 SharedWorker；若 Worker 已消失，只重建该共享 transport，并重新应用
+最新 endpoint/auth revision。Worker 重启、错过租约、页面终止和服务端重连都不是可靠的消息恢复
+边界。消息不得丢失时，请在应用协议中使用游标或持久化投递。

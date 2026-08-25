@@ -1,16 +1,18 @@
-# Interface: SafeCloseInfo
+# 接口: SafeCloseInfo
 
-Defined in: [core/src/shared/types.ts:275](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L275)
+定义于: [core/src/shared/types.ts:397](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L397)
 
-Sanitized close data supplied to adapter retry decisions.
+提供给适配器重连决策的已脱敏 close 信息。
 
-## Properties
+## 属性
 
 ### code
 
 > `readonly` **code**: `number`
 
-Defined in: [core/src/shared/types.ts:276](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L276)
+定义于: [core/src/shared/types.ts:399](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L399)
+
+原生 WebSocket close code。
 
 ***
 
@@ -18,7 +20,9 @@ Defined in: [core/src/shared/types.ts:276](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **wasClean**: `boolean`
 
-Defined in: [core/src/shared/types.ts:277](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L277)
+定义于: [core/src/shared/types.ts:401](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L401)
+
+close 是否为 clean。
 
 ***
 
@@ -26,4 +30,6 @@ Defined in: [core/src/shared/types.ts:277](https://github.com/wh1teAlter/wws/blo
 
 > `readonly` **terminal**: `boolean`
 
-Defined in: [core/src/shared/types.ts:278](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/shared/types.ts#L278)
+定义于: [core/src/shared/types.ts:403](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L403)
+
+WWS 是否已判定当前连接进入终态。

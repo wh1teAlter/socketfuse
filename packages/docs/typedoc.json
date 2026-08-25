@@ -10,6 +10,7 @@
   "excludeInternal": true,
   "hideBreadcrumbs": true,
   "hidePageHeader": true,
+  "lang": "zh",
   "name": "wws API",
   "out": "site/api/generated",
   "plugin": ["typedoc-plugin-markdown"],

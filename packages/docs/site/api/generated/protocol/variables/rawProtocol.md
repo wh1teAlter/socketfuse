@@ -1,7 +1,7 @@
-# Variable: rawProtocol
+# 变量: rawProtocol
 
 > `const` **rawProtocol**: [`ProtocolAdapter`](../interfaces/ProtocolAdapter.md)\<[`SocketData`](../../index/type-aliases/SocketData.md), [`SocketData`](../../index/type-aliases/SocketData.md)\>
 
-Defined in: [core/src/protocol/adapter.ts:23](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/core/src/protocol/adapter.ts#L23)
+定义于: [core/src/protocol/adapter.ts:28](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/protocol/adapter.ts#L28)
 
-Pass WebSocket payloads through unchanged and become ready on socket open.
+raw 协议：原样透传 WebSocket payload，并在 socket open 时 ready。

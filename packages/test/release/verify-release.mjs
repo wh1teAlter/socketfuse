@@ -1,3 +1,10 @@
+/**
+ * 发布包验收脚本。
+ *
+ * 它检查 tarball 白名单、source map 路径、私有 workspace 引用以及真实消费者的
+ * 类型检查、Vite 构建和 SSR import。临时目录在 finally 中清理，避免 artifact
+ * 冲突或失败重试污染仓库。
+ */
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve, win32 } from 'node:path'
 import { execFile } from 'node:child_process'
@@ -6,13 +13,17 @@ import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 
+/** 可 await 的子进程执行函数。 */
 const run = promisify(execFile)
+/** 验收脚本、workspace 根和待验证发布包路径。 */
 const testDir = resolve(import.meta.dirname, '..')
 const root = resolve(testDir, '..', '..')
 const packageDir = resolve(root, 'packages/wws')
+/** 本次验收独占的临时根目录及其消费者/解压子目录。 */
 const temporary = await mkdtemp(resolve(tmpdir(), 'wws-release-'))
 const consumerDir = resolve(temporary, 'consumer')
 const archiveDir = resolve(temporary, 'archive')
+/** 发布包必须包含的三个公开入口及其声明/source map。 */
 const requiredEntries = [
   'package/dist/index.js',
   'package/dist/index.d.ts',
@@ -24,9 +35,12 @@ const requiredEntries = [
   'package/dist/worker.d.ts',
   'package/dist/worker.js.map',
 ]
+/** 根目录允许的发布元数据。 */
 const rootEntries = new Set(['package/LICENSE', 'package/README.md', 'package/package.json'])
+/** dist 允许的构建 artifact 命名模式。 */
 const distEntryPattern = /^package\/dist\/[A-Za-z0-9_-]+\.(?:js|d\.ts)(?:\.map)?$/
 
+/** 拒绝路径穿越和未批准的发布 artifact。 */
 function assertSafeEntryName(entry) {
   if (!entry.startsWith('package/') || entry.split('/').includes('..'))
     throw new Error(`Tarball contains an unsafe path: ${entry}`)
@@ -34,6 +48,7 @@ function assertSafeEntryName(entry) {
     throw new Error(`Tarball contains an unrelated build artifact: ${entry}`)
 }
 
+/** 验证 source map 不携带工作区绝对路径或 file URL。 */
 async function verifySourceMap(entry) {
   const file = resolve(archiveDir, entry)
   const content = await readFile(file, 'utf8')
@@ -49,6 +64,7 @@ async function verifySourceMap(entry) {
   }
 }
 
+/** 解压并验证 tarball 内容、必需入口和私有 import 隔离。 */
 async function verifyArchive(entries, tarball) {
   for (const entry of entries)
     assertSafeEntryName(entry)
@@ -67,6 +83,7 @@ async function verifyArchive(entries, tarball) {
   }
 }
 
+/** 在独立目录中模拟消费者，验证公开入口运行时和类型可用。 */
 async function verifyConsumer(tarball) {
   await mkdir(consumerDir, { recursive: true })
   await writeFile(resolve(consumerDir, 'package.json'), JSON.stringify({

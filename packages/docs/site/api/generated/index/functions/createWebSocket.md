@@ -1,85 +1,99 @@
-# Function: createWebSocket()
+# 函数: createWebSocket()
 
-## Call Signature
+`wws` 浏览器端公开入口。
+
+这里只转出稳定 facade 与类型，不让消费者依赖私有 `@wws/core` 包或 Worker 内部实现。
+
+## 调用签名
 
 > **createWebSocket**(`url`, `options`): [`WebSocketClient`](../interfaces/WebSocketClient.md)\<[`JsonValue`](../type-aliases/JsonValue.md), [`JsonValue`](../type-aliases/JsonValue.md), `unknown`\>
 
-Defined in: [wws/src/api/create-websocket.ts:69](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/wws/src/api/create-websocket.ts#L69)
+定义于: [wws/src/api/create-websocket.ts:80](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/wws/src/api/create-websocket.ts#L80)
 
-Create a page-local client backed by a same-origin SharedWorker connection.
+创建由同源 SharedWorker 连接驱动的页面本地客户端。
 
-The function returns synchronously. With `immediate: true` (the default),
-opening starts in the background; call `open()` when the caller needs an
-awaitable connection snapshot. Worker setup failures use the configured
-direct/error fallback, while socket and protocol failures remain on the
-selected transport.
+函数同步返回。`immediate: true`（默认值）时会在后台开始打开；需要可等待的
+连接快照时调用 `open()`。Worker 建立失败遵循配置的 direct/error 降级策略，
+socket 和协议错误则始终留在已选 transport 中处理。
 
-### Parameters
+### 参数
 
 #### url
 
 `string` \| `URL`
 
-Initial absolute `ws:` or `wss:` endpoint.
+初始的绝对 `ws:` 或 `wss:` endpoint。
 
 #### options
 
 [`CreateWebSocketOptions`](../interfaces/CreateWebSocketOptions.md)\<[`JsonValue`](../type-aliases/JsonValue.md), [`JsonValue`](../type-aliases/JsonValue.md), `unknown`\> & `object`
 
-Shared connection and page-local behavior.
+共享连接与页面本地行为。
 
-### Returns
+### 返回
 
 [`WebSocketClient`](../interfaces/WebSocketClient.md)\<[`JsonValue`](../type-aliases/JsonValue.md), [`JsonValue`](../type-aliases/JsonValue.md), `unknown`\>
 
-## Call Signature
+稳定的页面本地客户端；`immediate` 为 true 时首次打开会在后台进行。
+
+### 抛出
+
+在非浏览器页面 realm、选项无效、`fallback` 为 `error` 且 Worker 不可用，
+或 direct WebSocket 降级不可用时，同步抛出 `WwsError`。
+
+## 调用签名
 
 > **createWebSocket**\<`Incoming`, `Outgoing`, `Auth`\>(`url`, `options`): [`WebSocketClient`](../interfaces/WebSocketClient.md)\<`Incoming`, `Outgoing`, `Auth`\>
 
-Defined in: [wws/src/api/create-websocket.ts:73](https://github.com/wh1teAlter/wws/blob/ebad801c00f7d9b7e43a22c375cc094a8f3f6cc5/packages/wws/src/api/create-websocket.ts#L73)
+定义于: [wws/src/api/create-websocket.ts:84](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/wws/src/api/create-websocket.ts#L84)
 
-Create a page-local client backed by a same-origin SharedWorker connection.
+创建由同源 SharedWorker 连接驱动的页面本地客户端。
 
-The function returns synchronously. With `immediate: true` (the default),
-opening starts in the background; call `open()` when the caller needs an
-awaitable connection snapshot. Worker setup failures use the configured
-direct/error fallback, while socket and protocol failures remain on the
-selected transport.
+函数同步返回。`immediate: true`（默认值）时会在后台开始打开；需要可等待的
+连接快照时调用 `open()`。Worker 建立失败遵循配置的 direct/error 降级策略，
+socket 和协议错误则始终留在已选 transport 中处理。
 
-### Type Parameters
+### 类型参数
 
 #### Incoming
 
 `Incoming` = [`SocketData`](../type-aliases/SocketData.md)
 
-Decoded business payload delivered to `onMessage`.
+由 `onMessage` 接收的已解码业务 payload。
 
 #### Outgoing
 
 `Outgoing` = [`SocketData`](../type-aliases/SocketData.md)
 
-Application value accepted by `sendMessage`.
+`sendMessage` 可接受的应用值。
 
 #### Auth
 
 `Auth` = `unknown`
 
-Revisioned authentication value accepted by `updateAuth`.
+`updateAuth` 可接受的带 revision 认证值。
 
-### Parameters
+### 参数
 
 #### url
 
 `string` \| `URL`
 
-Initial absolute `ws:` or `wss:` endpoint.
+初始的绝对 `ws:` 或 `wss:` endpoint。
 
 #### options
 
 [`CreateWebSocketOptions`](../interfaces/CreateWebSocketOptions.md)\<`Incoming`, `Outgoing`, `Auth`\>
 
-Shared connection and page-local behavior.
+共享连接与页面本地行为。
 
-### Returns
+### 返回
 
 [`WebSocketClient`](../interfaces/WebSocketClient.md)\<`Incoming`, `Outgoing`, `Auth`\>
+
+稳定的页面本地客户端；`immediate` 为 true 时首次打开会在后台进行。
+
+### 抛出
+
+在非浏览器页面 realm、选项无效、`fallback` 为 `error` 且 Worker 不可用，
+或 direct WebSocket 降级不可用时，同步抛出 `WwsError`。
