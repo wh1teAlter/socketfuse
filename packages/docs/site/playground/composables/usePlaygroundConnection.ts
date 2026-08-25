@@ -4,8 +4,11 @@
  * 组件只通过 props/events 读写这些 refs；连接创建、生命周期监听、测试控制句柄和
  * 错误格式化集中在此处，避免展示组件持有 transport 状态。
  */
-import { createWebSocket, type JsonValue, type WebSocketClient, type WwsError, WwsError as WwsErrorClass } from 'wws'
+import { type ConnectionState, createWebSocket, type JsonValue, type WebSocketClient, type WwsError, WwsError as WwsErrorClass } from 'wws'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
+
+/** Worker 诊断通过 MessagePort 异步返回时，演练场刷新指标的间隔，单位为毫秒。 */
+const DIAGNOSTICS_REFRESH_INTERVAL_MS = 500
 
 /** Playground 列表中展示的一条消息。 */
 export interface PlaygroundMessage {
@@ -59,36 +62,74 @@ function formatMessage(value: unknown): string {
   }
 }
 
+/** 将物理连接状态映射为当前页面观测到的已打开 WebSocket 数量。 */
+function physicalConnectionCount(physicalState: ConnectionState): '0' | '1' {
+  return physicalState === 'open' ? '1' : '0'
+}
+
 /** 创建 playground 页面使用的连接状态、操作和测试钩子。 */
 export function usePlaygroundConnection() {
   const client = shallowRef<PlaygroundClient>()
-  const clients = shallowRef('-')
   const connectionId = shallowRef('playground')
   const error = shallowRef('')
   const fallback = shallowRef<'direct' | 'error'>('direct')
   const isConnected = shallowRef(false)
   const messages = shallowRef<readonly PlaygroundMessage[]>([])
+  /** 当前页面观测到的已打开物理 WebSocket 数量。 */
+  const physicalConnections = shallowRef('-')
   const replayWhileHidden = shallowRef(false)
+  /** 当前 SharedWorker 物理连接附着的逻辑页面 client 数量。 */
+  const sharedClients = shallowRef('-')
   const simulateWorkerFailure = shallowRef(false)
   const status = shallowRef('CLOSED')
   const transport = shallowRef('pending')
-  const url = shallowRef('ws://localhost:8787/socket')
+  const url = shallowRef('ws://127.0.0.1:8787/socket')
+  /** 仅在当前页面参与连接期间运行的 Worker diagnostics 刷新 timer。 */
+  let metricsRefreshTimer: ReturnType<typeof globalThis.setInterval> | undefined
   let nextMessageId = 0
   let restartableWorker: WorkerTerminationHandle | undefined
 
   const messageCount = computed(() => messages.value.length)
 
+  /** 清空已脱离页面不能再可靠观测的连接指标，并保留本地 client 状态。 */
+  function clearMetrics(current: PlaygroundClient | undefined = client.value): void {
+    physicalConnections.value = '-'
+    sharedClients.value = '-'
+    status.value = current?.status ?? 'CLOSED'
+    transport.value = current?.transport ?? 'pending'
+  }
+
   /** 从当前 client 快照刷新页面指标。 */
   function refreshMetrics(current = client.value): void {
-    if (current === undefined) {
-      clients.value = '-'
-      status.value = 'CLOSED'
-      transport.value = 'pending'
+    if (current === undefined || !isConnected.value) {
+      clearMetrics(current)
       return
     }
-    clients.value = String(current.diagnostics().attachedClientCount)
+    const diagnostics = current.diagnostics()
+    physicalConnections.value = physicalConnectionCount(diagnostics.physicalState)
+    sharedClients.value = String(diagnostics.attachedClientCount)
     status.value = current.status
     transport.value = current.transport
+  }
+
+  /** 停止当前页面对异步 Worker diagnostics 的低频刷新。 */
+  function stopMetricsRefresh(): void {
+    if (metricsRefreshTimer !== undefined)
+      globalThis.clearInterval(metricsRefreshTimer)
+    metricsRefreshTimer = undefined
+  }
+
+  /** 在页面参与连接期间刷新 Worker 侧指标，避免首次缓存快照长期停留在初始值。 */
+  function startMetricsRefresh(current: PlaygroundClient): void {
+    stopMetricsRefresh()
+    refreshMetrics(current)
+    metricsRefreshTimer = globalThis.setInterval(() => {
+      if (current !== client.value || !isConnected.value) {
+        stopMetricsRefresh()
+        return
+      }
+      refreshMetrics(current)
+    }, DIAGNOSTICS_REFRESH_INTERVAL_MS)
   }
 
   /** 追加一条已格式化的消息并分配页面内序号。 */
@@ -110,10 +151,12 @@ export function usePlaygroundConnection() {
   /** 释放旧 client，保证重新连接不会残留页面 port。 */
   async function disposeCurrentClient(): Promise<void> {
     const current = client.value
+    stopMetricsRefresh()
     client.value = undefined
     isConnected.value = false
     if (current !== undefined)
       await current.dispose().catch(() => undefined)
+    clearMetrics()
   }
 
   /** 记录已脱敏的 client 错误并同步指标。 */
@@ -174,12 +217,13 @@ export function usePlaygroundConnection() {
       client.value = current
       await current.open()
       isConnected.value = true
-      refreshMetrics(current)
+      startMetricsRefresh(current)
     }
     catch (value) {
+      stopMetricsRefresh()
       error.value = formatError(value)
       isConnected.value = false
-      refreshMetrics()
+      clearMetrics()
     }
   }
 
@@ -188,11 +232,12 @@ export function usePlaygroundConnection() {
     const current = client.value
     if (current === undefined)
       return
+    stopMetricsRefresh()
     await current.close().catch((value) => {
       error.value = formatError(value)
     })
     isConnected.value = false
-    refreshMetrics(current)
+    clearMetrics(current)
   }
 
   /** 发送文本样本；失败只更新展示错误，不抛出到模板事件。 */
@@ -251,7 +296,6 @@ export function usePlaygroundConnection() {
 
   return {
     clearMessages,
-    clients,
     connect,
     connectionId,
     disconnect,
@@ -261,10 +305,12 @@ export function usePlaygroundConnection() {
     messageCount,
     messages,
     openAnotherTab,
+    physicalConnections,
     replayWhileHidden,
     applyRevisionsForE2E,
     sendBinaryMessage,
     sendMessage,
+    sharedClients,
     simulateWorkerFailure,
     status,
     terminateWorkerForE2E,

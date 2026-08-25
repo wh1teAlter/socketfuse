@@ -1,6 +1,6 @@
 # 接口: SharedWorkerGlobalLike
 
-定义于: [core/src/worker/runtime.ts:616](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L616)
+定义于: [core/src/worker/runtime.ts:616](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L616)
 
 `exposeSharedWebSocketWorker` 接受的最小 SharedWorker global scope。
 
@@ -10,6 +10,6 @@
 
 > **onconnect**: ((`event`) => `void`) \| `null`
 
-定义于: [core/src/worker/runtime.ts:618](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L618)
+定义于: [core/src/worker/runtime.ts:618](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L618)
 
 当前 Worker 的连接入口。

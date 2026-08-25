@@ -1,6 +1,6 @@
 # 类: WwsError
 
-定义于: [core/src/shared/errors.ts:78](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L78)
+定义于: [core/src/shared/errors.ts:78](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L78)
 
 异步操作 reject 与 error callback 使用的错误契约。
 
@@ -17,7 +17,7 @@
 
 > **new WwsError**(`code`, `message`, `options?`): `WwsError`
 
-定义于: [core/src/shared/errors.ts:99](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L99)
+定义于: [core/src/shared/errors.ts:99](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L99)
 
 创建本地错误对象。
 
@@ -55,7 +55,7 @@
 
 > `readonly` **name**: `"WwsError"`
 
-定义于: [core/src/shared/errors.ts:80](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L80)
+定义于: [core/src/shared/errors.ts:80](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L80)
 
 便于跨 realm 判断的稳定错误名称。
 
@@ -69,7 +69,7 @@
 
 > `readonly` **code**: `"INVALID_OPTIONS"` \| `"ENVIRONMENT_UNSUPPORTED"` \| `"CLIENT_DISPOSED"` \| `"CLIENT_DISCONNECTED"` \| `"ABORTED"` \| `"WORKER_UNSUPPORTED"` \| `"WORKER_CONSTRUCTION_FAILED"` \| `"WORKER_LOAD_FAILED"` \| `"WORKER_INIT_TIMEOUT"` \| `"WORKER_DISCONNECTED"` \| `"PROTOCOL_VERSION_MISMATCH"` \| `"ADAPTER_NOT_REGISTERED"` \| `"INVALID_CONTROL_MESSAGE"` \| `"CONNECTION_CONFIG_CONFLICT"` \| `"CONNECTION_TIMEOUT"` \| `"SOCKET_ERROR"` \| `"CLOSE_NOT_RETRYABLE"` \| `"RETRY_EXHAUSTED"` \| `"HEARTBEAT_TIMEOUT"` \| `"AUTH_FAILED"` \| `"STALE_REVISION"` \| `"SEND_WHILE_DISCONNECTED"` \| `"QUEUE_FULL"` \| `"QUEUE_BYTES_EXCEEDED"` \| `"BACKPRESSURE"` \| `"MESSAGE_TOO_LARGE"` \| `"RESOURCE_LIMIT_EXCEEDED"` \| `"ENCODE_FAILED"` \| `"DECODE_FAILED"` \| `"PROTOCOL_ERROR"` \| `"CAPABILITY_UNSUPPORTED"` \| `"INBOUND_OVERFLOW"` \| `"INTERNAL_STATE_ERROR"`
 
-定义于: [core/src/shared/errors.ts:82](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L82)
+定义于: [core/src/shared/errors.ts:82](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L82)
 
 面向调用方的稳定错误码。
 
@@ -79,7 +79,7 @@
 
 > `readonly` **retryable**: `boolean`
 
-定义于: [core/src/shared/errors.ts:84](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L84)
+定义于: [core/src/shared/errors.ts:84](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L84)
 
 是否允许当前操作自动或手动重试。
 
@@ -89,7 +89,7 @@
 
 > `readonly` **fatal**: `boolean`
 
-定义于: [core/src/shared/errors.ts:86](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L86)
+定义于: [core/src/shared/errors.ts:86](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L86)
 
 是否表示 client 不应再尝试恢复。
 
@@ -99,7 +99,7 @@
 
 > `readonly` **details**: `Readonly`\<`Record`\<`string`, `unknown`\>\> \| `undefined`
 
-定义于: [core/src/shared/errors.ts:88](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L88)
+定义于: [core/src/shared/errors.ts:88](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L88)
 
 本地可选的已脱敏诊断详情。
 
@@ -109,7 +109,7 @@
 
 > `readonly` **cause**: `unknown`
 
-定义于: [core/src/shared/errors.ts:90](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/errors.ts#L90)
+定义于: [core/src/shared/errors.ts:90](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/errors.ts#L90)
 
 本地原始异常原因；不得序列化到控制协议。
 

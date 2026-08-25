@@ -16,6 +16,7 @@
     "docs:dev": "pnpm --filter @wws/docs dev",
     "lint": "eslint . --cache --concurrency=auto",
     "lint:fix": "eslint . --cache --concurrency=auto --fix",
+    "playground:server": "pnpm --filter @wws/test playground:server",
     "release:verify": "pnpm --filter @wws/test release:verify",
     "test": "pnpm --filter @wws/core test",
     "test:e2e": "pnpm --filter @wws/test test:e2e",

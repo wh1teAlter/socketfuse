@@ -1,6 +1,6 @@
 # 接口: WwsCloseEvent
 
-定义于: [core/src/shared/types.ts:226](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L226)
+定义于: [core/src/shared/types.ts:226](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L226)
 
 当前页面逻辑 client 的关闭通知。
 
@@ -14,7 +14,7 @@
 
 > `readonly` **code**: `number`
 
-定义于: [core/src/shared/types.ts:228](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L228)
+定义于: [core/src/shared/types.ts:228](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L228)
 
 经安全化后暴露的 WebSocket close code。
 
@@ -24,7 +24,7 @@
 
 > `readonly` **wasClean**: `boolean`
 
-定义于: [core/src/shared/types.ts:230](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L230)
+定义于: [core/src/shared/types.ts:230](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L230)
 
 原生 close 事件是否标记为 clean。
 
@@ -34,7 +34,7 @@
 
 > `readonly` **terminal**: `boolean`
 
-定义于: [core/src/shared/types.ts:232](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L232)
+定义于: [core/src/shared/types.ts:232](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L232)
 
 是否已进入不会再次打开的终态。
 
@@ -44,6 +44,6 @@
 
 > `readonly` **willReconnect**: `boolean`
 
-定义于: [core/src/shared/types.ts:234](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L234)
+定义于: [core/src/shared/types.ts:234](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L234)
 
 当前共享连接是否将自行发起重连。

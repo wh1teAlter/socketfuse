@@ -1,6 +1,6 @@
 # 接口: WebSocketClient\<Incoming, Outgoing, Auth\>
 
-定义于: [core/src/shared/types.ts:550](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L550)
+定义于: [core/src/shared/types.ts:550](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L550)
 
 SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
@@ -37,7 +37,7 @@ SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
 > `readonly` **data**: `Incoming` \| `null`
 
-定义于: [core/src/shared/types.ts:552](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L552)
+定义于: [core/src/shared/types.ts:552](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L552)
 
 最近一次已派发业务 payload；首条消息前为 `null`。
 
@@ -47,7 +47,7 @@ SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
 > `readonly` **status**: [`WebSocketStatus`](../type-aliases/WebSocketStatus.md)
 
-定义于: [core/src/shared/types.ts:554](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L554)
+定义于: [core/src/shared/types.ts:554](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L554)
 
 紧凑的 `CONNECTING`、`OPEN` 或 `CLOSED` 状态。
 
@@ -57,7 +57,7 @@ SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
 > `readonly` **state**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-定义于: [core/src/shared/types.ts:556](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L556)
+定义于: [core/src/shared/types.ts:556](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L556)
 
 页面逻辑 client 的详细生命周期状态。
 
@@ -67,7 +67,7 @@ SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
 > `readonly` **readyState**: [`ReadyState`](../type-aliases/ReadyState.md)
 
-定义于: [core/src/shared/types.ts:558](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L558)
+定义于: [core/src/shared/types.ts:558](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L558)
 
 原生 WebSocket 兼容的数值 readyState。
 
@@ -77,7 +77,7 @@ SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-定义于: [core/src/shared/types.ts:560](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L560)
+定义于: [core/src/shared/types.ts:560](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L560)
 
 当前选定的 transport。
 
@@ -87,7 +87,7 @@ SharedWorker 所有或 direct WebSocket 的页面本地代理。
 
 > `readonly` **workerMode**: [`WorkerMode`](../type-aliases/WorkerMode.md)
 
-定义于: [core/src/shared/types.ts:562](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L562)
+定义于: [core/src/shared/types.ts:562](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L562)
 
 inline、custom 或 direct/no Worker 部署方式。
 
@@ -97,7 +97,7 @@ inline、custom 或 direct/no Worker 部署方式。
 
 > `readonly` **capabilities**: [`ProtocolCapabilities`](ProtocolCapabilities.md)
 
-定义于: [core/src/shared/types.ts:564](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L564)
+定义于: [core/src/shared/types.ts:564](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L564)
 
 选定协议 adapter 声明的能力。
 
@@ -107,7 +107,7 @@ inline、custom 或 direct/no Worker 部署方式。
 
 > **open**: (`options?`) => `Promise`\<[`ConnectionSnapshot`](ConnectionSnapshot.md)\>
 
-定义于: [core/src/shared/types.ts:572](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L572)
+定义于: [core/src/shared/types.ts:572](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L572)
 
 在未 dispose 阶段打开逻辑 client；并发调用共享同一次物理 open。
 
@@ -137,7 +137,7 @@ socket 与协议均 ready 时的连接快照。
 
 > **close**: () => `Promise`\<`void`\>
 
-定义于: [core/src/shared/types.ts:579](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L579)
+定义于: [core/src/shared/types.ts:579](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L579)
 
 关闭当前页面的逻辑参与，但不 dispose 实例；close 后允许再次 `open`。
 
@@ -157,7 +157,7 @@ transport 控制失败时以 `WwsError` reject。
 
 > **sendMessage**: (`data`, `options?`) => `Promise`\<[`SendReceipt`](../type-aliases/SendReceipt.md)\>
 
-定义于: [core/src/shared/types.ts:588](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L588)
+定义于: [core/src/shared/types.ts:588](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L588)
 
 在已创建且未 dispose 阶段提交一条业务消息，或在配置允许时将其有界入队。
 
@@ -191,7 +191,7 @@ transport 控制失败时以 `WwsError` reject。
 
 > **onMessage**: (`handler`) => () => `void`
 
-定义于: [core/src/shared/types.ts:595](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L595)
+定义于: [core/src/shared/types.ts:595](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L595)
 
 在 client 存活阶段添加一个页面本地业务消息 handler。
 
@@ -215,7 +215,7 @@ transport 控制失败时以 `WwsError` reject。
 
 > **updateAuth**: (`auth`, `options`) => `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
 
-定义于: [core/src/shared/types.ts:604](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L604)
+定义于: [core/src/shared/types.ts:604](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L604)
 
 以更大的单调 revision 应用认证数据；仅在 adapter 声明 auth 能力时可用。
 
@@ -251,7 +251,7 @@ applied、stale 或 unchanged revision 回执。
 
 > **clearAuth**: (`options`) => `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
 
-定义于: [core/src/shared/types.ts:612](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L612)
+定义于: [core/src/shared/types.ts:612](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L612)
 
 以更大的 revision 清除认证与该页面拥有的待发业务数据。
 
@@ -281,7 +281,7 @@ applied、stale 或 unchanged revision 回执。
 
 > **updateUrl**: (`url`, `options`) => `Promise`\<[`RevisionReceipt`](../type-aliases/RevisionReceipt.md)\>
 
-定义于: [core/src/shared/types.ts:621](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L621)
+定义于: [core/src/shared/types.ts:621](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L621)
 
 以更大的 revision 更新共享 endpoint；必要时取消旧连接尝试并重连。
 
@@ -317,7 +317,7 @@ applied、stale 或 unchanged revision 回执。
 
 > **reconnect**: (`options?`) => `Promise`\<`void`\>
 
-定义于: [core/src/shared/types.ts:629](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L629)
+定义于: [core/src/shared/types.ts:629](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L629)
 
 在 client 未 dispose 时显式开始新的共享连接尝试。
 
@@ -347,7 +347,7 @@ applied、stale 或 unchanged revision 回执。
 
 > **diagnostics**: () => `Readonly`\<[`ConnectionDiagnostics`](ConnectionDiagnostics.md)\>
 
-定义于: [core/src/shared/types.ts:635](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L635)
+定义于: [core/src/shared/types.ts:635](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L635)
 
 返回当前已脱敏运行指标；任意 client 状态均可调用。
 
@@ -363,7 +363,7 @@ applied、stale 或 unchanged revision 回执。
 
 > **dispose**: () => `Promise`\<`void`\>
 
-定义于: [core/src/shared/types.ts:642](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L642)
+定义于: [core/src/shared/types.ts:642](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L642)
 
 永久释放该页面 client、handler 与 transport 参与；dispose 后不能再次 open。
 

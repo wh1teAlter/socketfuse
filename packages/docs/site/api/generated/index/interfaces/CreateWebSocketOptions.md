@@ -1,6 +1,6 @@
 # 接口: CreateWebSocketOptions\<Incoming, Outgoing, Auth\>
 
-定义于: [core/src/shared/types.ts:493](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L493)
+定义于: [core/src/shared/types.ts:493](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L493)
 
 页面 client 及其共享物理连接的创建配置。
 
@@ -28,7 +28,7 @@
 
 > **id**: `string`
 
-定义于: [core/src/shared/types.ts:495](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L495)
+定义于: [core/src/shared/types.ts:495](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L495)
 
 同源标签页共享连接的稳定业务 identity；不能为空，且不得包含凭据。
 
@@ -38,7 +38,7 @@
 
 > `optional` **protocols?**: `string` \| readonly `string`[]
 
-定义于: [core/src/shared/types.ts:497](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L497)
+定义于: [core/src/shared/types.ts:497](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L497)
 
 原生 WebSocket subprotocol token 或有序 token 列表；默认不传。
 
@@ -48,7 +48,7 @@
 
 > `optional` **worker?**: () => `SharedWorker`
 
-定义于: [core/src/shared/types.ts:499](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L499)
+定义于: [core/src/shared/types.ts:499](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L499)
 
 页面本地 custom SharedWorker 工厂；默认使用内置 inline Worker。
 
@@ -62,7 +62,7 @@
 
 > `optional` **protocol?**: `ProtocolSelector`\<`Incoming`, `Outgoing`, `Auth`\>
 
-定义于: [core/src/shared/types.ts:501](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L501)
+定义于: [core/src/shared/types.ts:501](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L501)
 
 消息协议；默认 raw 适配器。自定义 adapter 必须同时静态注册在 Worker。
 
@@ -72,7 +72,7 @@
 
 > `optional` **fallback?**: `"direct"` \| `"error"`
 
-定义于: [core/src/shared/types.ts:503](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L503)
+定义于: [core/src/shared/types.ts:503](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L503)
 
 Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
@@ -82,7 +82,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **immediate?**: `boolean`
 
-定义于: [core/src/shared/types.ts:505](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L505)
+定义于: [core/src/shared/types.ts:505](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L505)
 
 创建后是否立即异步打开；页面本地，默认 `true`。
 
@@ -92,7 +92,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **autoClose?**: `boolean`
 
-定义于: [core/src/shared/types.ts:507](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L507)
+定义于: [core/src/shared/types.ts:507](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L507)
 
 普通页面卸载时是否自动 detach；页面本地，默认 `true`。
 
@@ -102,7 +102,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **autoReconnect?**: `boolean` \| `Partial`\<[`ReconnectOptions`](ReconnectOptions.md)\>
 
-定义于: [core/src/shared/types.ts:509](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L509)
+定义于: [core/src/shared/types.ts:509](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L509)
 
 共享重连策略；`true` 或省略使用指数退避默认值。
 
@@ -112,7 +112,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **connectionTimeout?**: `number`
 
-定义于: [core/src/shared/types.ts:511](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L511)
+定义于: [core/src/shared/types.ts:511](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L511)
 
 共享 socket open 与 adapter handshake 共用的超时，单位毫秒，默认 `10000`。
 
@@ -122,7 +122,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **binaryType?**: `"arraybuffer"` \| `"blob"`
 
-定义于: [core/src/shared/types.ts:513](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L513)
+定义于: [core/src/shared/types.ts:513](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L513)
 
 共享二进制接收表示，默认 `arraybuffer`。
 
@@ -132,7 +132,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **heartbeat?**: `boolean` \| `Partial`\<[`HeartbeatOptions`](HeartbeatOptions.md)\>
 
-定义于: [core/src/shared/types.ts:515](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L515)
+定义于: [core/src/shared/types.ts:515](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L515)
 
 共享心跳策略；默认关闭，且必须由协议 adapter 声明支持。
 
@@ -142,7 +142,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **queue?**: `boolean` \| `Partial`\<[`QueueOptions`](QueueOptions.md)\>
 
-定义于: [core/src/shared/types.ts:517](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L517)
+定义于: [core/src/shared/types.ts:517](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L517)
 
 共享有界出站队列策略；默认不允许离线或背压入队。
 
@@ -152,7 +152,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **backpressure?**: `Partial`\<[`BackpressureOptions`](BackpressureOptions.md)\>
 
-定义于: [core/src/shared/types.ts:519](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L519)
+定义于: [core/src/shared/types.ts:519](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L519)
 
 共享原生 socket `bufferedAmount` 阈值。
 
@@ -162,7 +162,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **lease?**: `Partial`\<[`LeaseOptions`](LeaseOptions.md)\>
 
-定义于: [core/src/shared/types.ts:521](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L521)
+定义于: [core/src/shared/types.ts:521](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L521)
 
 共享 client 活性租约。
 
@@ -172,7 +172,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **lifecycle?**: [`LifecycleOptions`](LifecycleOptions.md)
 
-定义于: [core/src/shared/types.ts:523](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L523)
+定义于: [core/src/shared/types.ts:523](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L523)
 
 页面本地 freeze/restore 处理；默认关闭。
 
@@ -182,7 +182,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **limits?**: `Partial`\<[`ConnectionLimits`](ConnectionLimits.md)\>
 
-定义于: [core/src/shared/types.ts:525](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L525)
+定义于: [core/src/shared/types.ts:525](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L525)
 
 共享物理连接资源上限；不含 Worker 级控制平面上限。
 
@@ -192,7 +192,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **idleGraceMs?**: `number`
 
-定义于: [core/src/shared/types.ts:527](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L527)
+定义于: [core/src/shared/types.ts:527](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L527)
 
 最后一个 client 离开后关闭物理 socket 前的宽限期，单位毫秒，默认 `5000`。
 
@@ -202,7 +202,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **logger?**: [`WwsLogger`](../type-aliases/WwsLogger.md)
 
-定义于: [core/src/shared/types.ts:529](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L529)
+定义于: [core/src/shared/types.ts:529](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L529)
 
 接收已脱敏运行诊断的页面本地 sink。
 
@@ -212,7 +212,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **onConnected?**: (`client`, `snapshot`) => `void`
 
-定义于: [core/src/shared/types.ts:531](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L531)
+定义于: [core/src/shared/types.ts:531](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L531)
 
 逻辑 client open 后调用的页面本地回调。
 
@@ -236,7 +236,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **onDisconnected?**: (`client`, `event`) => `void`
 
-定义于: [core/src/shared/types.ts:533](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L533)
+定义于: [core/src/shared/types.ts:533](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L533)
 
 逻辑 client close 后调用的页面本地回调。
 
@@ -260,7 +260,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **onError?**: (`client`, `error`) => `void`
 
-定义于: [core/src/shared/types.ts:535](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L535)
+定义于: [core/src/shared/types.ts:535](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L535)
 
 收到已脱敏 `WwsError` 时调用的页面本地回调。
 
@@ -284,7 +284,7 @@ Worker 构造或初始化失败时的页面本地策略；默认 `direct`。
 
 > `optional` **onMessage?**: (`client`, `event`) => `void`
 
-定义于: [core/src/shared/types.ts:537](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L537)
+定义于: [core/src/shared/types.ts:537](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L537)
 
 初始业务消息回调；创建后仍可通过 `onMessage` 动态增加。
 

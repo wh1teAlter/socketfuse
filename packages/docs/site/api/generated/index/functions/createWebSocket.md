@@ -8,7 +8,7 @@
 
 > **createWebSocket**(`url`, `options`): [`WebSocketClient`](../interfaces/WebSocketClient.md)\<[`JsonValue`](../type-aliases/JsonValue.md), [`JsonValue`](../type-aliases/JsonValue.md), `unknown`\>
 
-定义于: [wws/src/api/create-websocket.ts:80](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/wws/src/api/create-websocket.ts#L80)
+定义于: [wws/src/api/create-websocket.ts:80](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/wws/src/api/create-websocket.ts#L80)
 
 创建由同源 SharedWorker 连接驱动的页面本地客户端。
 
@@ -45,7 +45,7 @@ socket 和协议错误则始终留在已选 transport 中处理。
 
 > **createWebSocket**\<`Incoming`, `Outgoing`, `Auth`\>(`url`, `options`): [`WebSocketClient`](../interfaces/WebSocketClient.md)\<`Incoming`, `Outgoing`, `Auth`\>
 
-定义于: [wws/src/api/create-websocket.ts:84](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/wws/src/api/create-websocket.ts#L84)
+定义于: [wws/src/api/create-websocket.ts:84](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/wws/src/api/create-websocket.ts#L84)
 
 创建由同源 SharedWorker 连接驱动的页面本地客户端。
 

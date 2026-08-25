@@ -1,6 +1,6 @@
 # 接口: WwsStateChangeEvent
 
-定义于: [core/src/shared/types.ts:238](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L238)
+定义于: [core/src/shared/types.ts:238](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L238)
 
 页面逻辑状态改变时的详细通知。
 
@@ -14,7 +14,7 @@
 
 > `readonly` **previous**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-定义于: [core/src/shared/types.ts:240](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L240)
+定义于: [core/src/shared/types.ts:240](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L240)
 
 迁移前状态。
 
@@ -24,7 +24,7 @@
 
 > `readonly` **state**: [`ConnectionState`](../type-aliases/ConnectionState.md)
 
-定义于: [core/src/shared/types.ts:242](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L242)
+定义于: [core/src/shared/types.ts:242](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L242)
 
 迁移后状态。
 
@@ -34,7 +34,7 @@
 
 > `readonly` **transport**: [`Transport`](../type-aliases/Transport.md)
 
-定义于: [core/src/shared/types.ts:244](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L244)
+定义于: [core/src/shared/types.ts:244](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L244)
 
 发生迁移时当前选定的传输通道。
 
@@ -44,7 +44,7 @@
 
 > `readonly` **attempt**: `number`
 
-定义于: [core/src/shared/types.ts:246](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L246)
+定义于: [core/src/shared/types.ts:246](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L246)
 
 关联的物理连接尝试计数。
 
@@ -54,6 +54,6 @@
 
 > `readonly` `optional` **reasonCode?**: `string`
 
-定义于: [core/src/shared/types.ts:248](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L248)
+定义于: [core/src/shared/types.ts:248](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L248)
 
 可安全暴露的状态迁移原因码。

@@ -2,7 +2,7 @@
 
 > **createSharedWebSocketRuntime**(`options?`): [`SharedWebSocketRuntime`](../interfaces/SharedWebSocketRuntime.md)
 
-定义于: [core/src/worker/runtime.ts:230](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/worker/runtime.ts#L230)
+定义于: [core/src/worker/runtime.ts:230](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L230)
 
 创建不安装全局 onconnect 的 Worker-side runtime。
 

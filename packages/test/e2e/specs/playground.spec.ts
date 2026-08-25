@@ -73,11 +73,20 @@ test('shares one physical WebSocket across two tabs', async ({ browser, request 
   await expect.poll(async () => {
     return (await stats(request, testNamespace)).activeConnections
   }).toBe(1)
+  await expect(first.locator('#clients')).toHaveText('1')
+  await expect(second.locator('#clients')).toHaveText('1')
+  await expect(first.locator('#shared-clients')).toHaveText('2')
+  await expect(second.locator('#shared-clients')).toHaveText('2')
 
   await first.getByPlaceholder('消息内容').fill('shared-message')
   await first.getByRole('button', { name: '发送', exact: true }).click()
   await expect(first.locator('#messages li')).toContainText('shared-message')
   await expect(second.locator('#messages li')).toContainText('shared-message')
+  await first.getByRole('button', { name: '断开连接', exact: true }).click()
+  await expect(first.locator('#clients')).toHaveText('-')
+  await expect(first.locator('#shared-clients')).toHaveText('-')
+  await expect(second.locator('#clients')).toHaveText('1')
+  await expect(second.locator('#shared-clients')).toHaveText('1')
   await context.close()
 })
 

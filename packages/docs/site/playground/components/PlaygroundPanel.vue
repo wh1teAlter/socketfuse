@@ -11,7 +11,6 @@ import PlaygroundMessages from './PlaygroundMessages.vue'
 
 const {
   clearMessages,
-  clients,
   connect,
   connectionId,
   disconnect,
@@ -21,9 +20,11 @@ const {
   messageCount,
   messages,
   openAnotherTab,
+  physicalConnections,
   replayWhileHidden,
   sendBinaryMessage,
   sendMessage,
+  sharedClients,
   simulateWorkerFailure,
   status,
   transport,
@@ -63,7 +64,10 @@ const {
         <span>状态</span><strong id="status">{{ status }}</strong>
       </div>
       <div class="playground-metric">
-        <span>物理客户端数</span><strong id="clients">{{ clients }}</strong>
+        <span>物理连接数</span><strong id="clients">{{ physicalConnections }}</strong>
+      </div>
+      <div class="playground-metric">
+        <span>共享页面数</span><strong id="shared-clients">{{ sharedClients }}</strong>
       </div>
       <div class="playground-metric">
         <span>消息数</span><strong id="message-count">{{ messageCount }}</strong>
@@ -99,7 +103,7 @@ const {
 .playground-metrics {
   display: grid;
   gap: 0.5rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
 }
 
 .playground-metric {
@@ -131,9 +135,4 @@ const {
   min-height: 1.5rem;
 }
 
-@media (max-width: 640px) {
-  .playground-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 </style>

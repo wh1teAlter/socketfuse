@@ -2,7 +2,7 @@
 
 > **ProtocolFrame**\<`Data`\> = \{ `type`: `"data"`; `data`: `Data`; \} \| \{ `type`: `"ready"`; \} \| \{ `type`: `"ping"`; `data`: `Data`; \} \| \{ `type`: `"pong"`; \} \| \{ `type`: `"ignore"`; \} \| \{ `type`: `"fatal"`; `code?`: `string`; \}
 
-定义于: [core/src/shared/types.ts:407](https://github.com/wh1teAlter/wws/blob/cba440556efdd7dc7fded160f027961f41c71d24/packages/core/src/shared/types.ts#L407)
+定义于: [core/src/shared/types.ts:407](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L407)
 
 将业务数据与协议控制帧分开的分类结果。
 

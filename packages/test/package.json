@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "playground:server": "node ./server/ws-server.mjs",
     "release:verify": "node ./release/verify-release.mjs",
     "test:e2e": "playwright test -c playwright.config.ts",
     "typecheck": "tsc -p tsconfig.json"
