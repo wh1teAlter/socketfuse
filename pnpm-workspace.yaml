@@ -1,3 +1,9 @@
+packages:
+  - packages/*
+
+catalog:
+  tsdown: 0.22.14
+  typescript: 6.0.3
 catalogMode: strict
 cleanupUnusedCatalogs: true
 linkWorkspacePackages: false
@@ -5,9 +11,3 @@ saveWorkspaceProtocol: rolling
 shellEmulator: true
 strictPeerDependencies: false
 trustPolicy: no-downgrade
-packages:
-  - packages/*
-
-catalog:
-  tsdown: 0.22.14
-  typescript: 6.0.3

@@ -1,6 +1,6 @@
 # 接口: ProtocolAdapter\<Incoming, Outgoing, Auth\>
 
-定义于: [core/src/shared/types.ts:453](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L453)
+定义于: [core/src/shared/types.ts:453](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L453)
 
 定义一个应用协议的编码与控制帧语义。
 
@@ -34,7 +34,7 @@ capabilities、ready 语义与 `sharedConfig` 共同构成共享连接身份；�
 
 > `readonly` **id**: `string`
 
-定义于: [core/src/shared/types.ts:455](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L455)
+定义于: [core/src/shared/types.ts:455](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L455)
 
 在 Worker 注册表中查找适配器的稳定 id。
 
@@ -44,7 +44,7 @@ capabilities、ready 语义与 `sharedConfig` 共同构成共享连接身份；�
 
 > `readonly` **version**: `number`
 
-定义于: [core/src/shared/types.ts:457](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L457)
+定义于: [core/src/shared/types.ts:457](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L457)
 
 参与共享配置冲突检测的正整数版本。
 
@@ -54,7 +54,7 @@ capabilities、ready 语义与 `sharedConfig` 共同构成共享连接身份；�
 
 > `readonly` **capabilities**: [`ProtocolCapabilities`](../../index/interfaces/ProtocolCapabilities.md)
 
-定义于: [core/src/shared/types.ts:459](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L459)
+定义于: [core/src/shared/types.ts:459](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L459)
 
 声明可用的 auth、heartbeat 与 binary 能力。
 
@@ -64,7 +64,7 @@ capabilities、ready 语义与 `sharedConfig` 共同构成共享连接身份；�
 
 > `readonly` `optional` **sharedConfig?**: `Readonly`\<`Record`\<`string`, `unknown`\>\>
 
-定义于: [core/src/shared/types.ts:461](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L461)
+定义于: [core/src/shared/types.ts:461](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L461)
 
 参与共享身份的可结构化克隆静态配置；不得含页面秘密。
 
@@ -74,7 +74,7 @@ capabilities、ready 语义与 `sharedConfig` 共同构成共享连接身份；�
 
 > `readonly` `optional` **readyWhen?**: `"socket-open"` \| `"adapter-frame"`
 
-定义于: [core/src/shared/types.ts:463](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L463)
+定义于: [core/src/shared/types.ts:463](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L463)
 
 socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
@@ -84,7 +84,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > **encode**: (`data`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<[`SocketData`](../../index/type-aliases/SocketData.md)\>
 
-定义于: [core/src/shared/types.ts:465](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L465)
+定义于: [core/src/shared/types.ts:465](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L465)
 
 编码一次 `sendMessage`；失败会以 `ENCODE_FAILED` 拒绝调用。
 
@@ -108,7 +108,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > **decode**: (`data`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Incoming`\>
 
-定义于: [core/src/shared/types.ts:467](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L467)
+定义于: [core/src/shared/types.ts:467](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L467)
 
 解码一个原始 socket payload；失败会以 `DECODE_FAILED` 处理。
 
@@ -132,7 +132,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > **classify**: (`data`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<[`ProtocolFrame`](../type-aliases/ProtocolFrame.md)\<`Incoming`\>\>
 
-定义于: [core/src/shared/types.ts:469](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L469)
+定义于: [core/src/shared/types.ts:469](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L469)
 
 将已解码 payload 分类为业务帧或协议控制帧。
 
@@ -156,7 +156,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > `optional` **createAuth?**: (`auth`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Outgoing` \| readonly `Outgoing`[]\>
 
-定义于: [core/src/shared/types.ts:471](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L471)
+定义于: [core/src/shared/types.ts:471](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L471)
 
 在 open 前根据最新 auth revision 生成认证帧；缺失时不支持 auth 更新。
 
@@ -180,7 +180,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > `optional` **createPing?**: (`context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Outgoing`\>
 
-定义于: [core/src/shared/types.ts:473](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L473)
+定义于: [core/src/shared/types.ts:473](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L473)
 
 生成主动心跳帧；缺失时不支持 WWS heartbeat。
 
@@ -200,7 +200,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > `optional` **createPong?**: (`ping`, `context`) => [`MaybePromise`](../type-aliases/MaybePromise.md)\<`Outgoing`\>
 
-定义于: [core/src/shared/types.ts:475](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L475)
+定义于: [core/src/shared/types.ts:475](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L475)
 
 对分类出的服务端 ping 生成响应；缺失时不自动回复。
 
@@ -224,7 +224,7 @@ socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。
 
 > `optional` **shouldReconnect?**: (`close`) => `boolean`
 
-定义于: [core/src/shared/types.ts:477](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L477)
+定义于: [core/src/shared/types.ts:477](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L477)
 
 根据已脱敏 close 信息决定是否允许重连；缺失时使用默认策略。
 

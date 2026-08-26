@@ -13,6 +13,13 @@ WWS 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 共享�
 3. 新建模块，或改变模块职责、公开 API、依赖或使用方式时，同步创建或更新该模块的 `README.md`。README 只描述职责、公开 API、依赖、使用方式和边界，不复制内部实现。
 4. 保持依赖方向：`shared` → `config/protocol/connection` → `transport/worker/page` → `wws` public facade。`connection` 不得依赖 `page` 或 `worker`；docs 只依赖公开 `wws` 入口；`ws` 及其类型只留在 `packages/test`。
 5. 保护现有工作树。不得重置、覆盖或删除无关改动；不得修改 `docs/review/1.md` 与 `docs/review/2.md`。
+6. 面向用户的 `wws` 改动必须提交 Changeset；不得在业务 PR 中直接改版本或 CHANGELOG。只有 release workflow
+   创建的 Version Packages PR 可以消费 Changeset，只有该 PR 合并后的版本提交可以发布。
+7. 唯一可发布 workspace 是 `wws`。不得本地发布、递归发布或在 workflow 中使用长期 npm token；Trusted
+   Publishing 必须由 `.github/workflows/release.yml`、受保护的 `npm` environment 与 OIDC 完成。
+8. Version Packages PR 必须使用最小权限 GitHub App token 创建，以触发专用发布包验收；不得退回内置
+   `GITHUB_TOKEN`，否则 GitHub 不会触发新的 pull request workflow。发布前必须同时校验该 App 身份、标题、
+   专用分支与文件白名单，手工版本提交必须拒绝。
 
 ## 中文文档与注释
 
@@ -46,3 +53,4 @@ git diff --check
 ```
 
 使用 pnpm workspace 命令，不把局部依赖提升到根目录；catalog 只用于多个 workspace 重复使用的依赖。
+本地 `lint` 必须只读；自动修复只允许通过 `lint:fix` 或 lint-staged。

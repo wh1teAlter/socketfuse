@@ -1,0 +1,7 @@
+# 本地提交防线只检查类型和已暂存文件，完整构建与浏览器验证由 CI 承担。
+# CI 与显式 HUSKY=0 必须跳过，避免重复执行或阻碍紧急恢复。
+[ "$CI" = "true" ] && exit 0
+[ "$HUSKY" = "0" ] && exit 0
+
+pnpm typecheck || exit 1
+pnpm exec lint-staged

@@ -1,7 +1,7 @@
 /** `wws` 三个公开入口的发布构建与类型声明配置。 */
 import { defineConfig } from 'tsdown'
 
-/** 三个入口共用的 browser ESM、dts 和内联 core 构建边界。 */
+/** 三个入口共用的 browser ESM、dts 和内联 core 构建边界。包结构由独立 publint 脚本验收，避免 publish 生命周期内嵌套 pack。 */
 const shared = {
   clean: true,
   deps: {
@@ -10,7 +10,6 @@ const shared = {
   dts: { sourcemap: true },
   format: ['esm'],
   platform: 'browser',
-  publint: { level: 'error' },
   sourcemap: true,
   target: 'es2022',
 } as const

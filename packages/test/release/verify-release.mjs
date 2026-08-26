@@ -25,6 +25,7 @@ const consumerDir = resolve(temporary, 'consumer')
 const archiveDir = resolve(temporary, 'archive')
 /** 发布包必须包含的三个公开入口及其声明/source map。 */
 const requiredEntries = [
+  'package/CHANGELOG.md',
   'package/dist/index.js',
   'package/dist/index.d.ts',
   'package/dist/index.js.map',
@@ -36,7 +37,7 @@ const requiredEntries = [
   'package/dist/worker.js.map',
 ]
 /** 根目录允许的发布元数据。 */
-const rootEntries = new Set(['package/LICENSE', 'package/README.md', 'package/package.json'])
+const rootEntries = new Set(['package/CHANGELOG.md', 'package/LICENSE', 'package/README.md', 'package/package.json'])
 /** dist 允许的构建 artifact 命名模式。 */
 const distEntryPattern = /^package\/dist\/[A-Za-z0-9_-]+\.(?:js|d\.ts)(?:\.map)?$/
 

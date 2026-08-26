@@ -1,6 +1,6 @@
 # 接口: EncodeContext
 
-定义于: [core/src/shared/types.ts:367](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L367)
+定义于: [core/src/shared/types.ts:367](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L367)
 
 调用适配器 `encode` 时附加的上下文。
 
@@ -14,7 +14,7 @@
 
 > `readonly` **now**: `number`
 
-定义于: [core/src/shared/types.ts:363](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L363)
+定义于: [core/src/shared/types.ts:363](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L363)
 
 操作发生时的 Unix 时间戳，单位为毫秒。
 
@@ -28,6 +28,6 @@
 
 > `readonly` **messageId**: `string`
 
-定义于: [core/src/shared/types.ts:369](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/shared/types.ts#L369)
+定义于: [core/src/shared/types.ts:369](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/shared/types.ts#L369)
 
 WWS 本地分配的发送标识；不代表服务端确认。

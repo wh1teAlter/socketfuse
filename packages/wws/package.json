@@ -1,9 +1,27 @@
 {
   "name": "wws",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.0.1-beta.1",
   "description": "Share WebSocket connections across same-origin browser tabs with SharedWorker.",
+  "keywords": [
+    "sharedworker",
+    "websocket",
+    "browser",
+    "multi-tab"
+  ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wh1teAlter/wws.git",
+    "directory": "packages/wws"
+  },
+  "bugs": {
+    "url": "https://github.com/wh1teAlter/wws/issues"
+  },
+  "homepage": "https://github.com/wh1teAlter/wws#readme",
+  "engines": {
+    "node": "^22.18.0 || >=24.11.0"
+  },
   "sideEffects": false,
   "exports": {
     ".": {
@@ -22,12 +40,15 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["LICENSE", "README.md", "dist"],
+  "files": ["CHANGELOG.md", "LICENSE", "README.md", "dist"],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true,
+    "tag": "beta"
   },
   "scripts": {
     "build": "node ./scripts/generate-inline-worker.mjs && tsdown",
+    "lint:package": "publint --strict",
     "prepack": "pnpm build",
     "typecheck": "tsc -p tsconfig.json"
   },

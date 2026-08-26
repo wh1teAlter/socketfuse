@@ -1,16 +1,24 @@
+# PR 的唯一合并门禁。业务 PR 验证运行时；Version Packages PR 只验收最终发布包，避免重复浏览器测试。
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, ready_for_review, reopened, synchronize]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  check:
+  verify:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    env:
+      # 分支名可被人工伪造；只有受信 GitHub App 创建的专用 PR 才能缩减为发布包验收。
+      IS_VERSION_PR: ${{ github.event.pull_request.head.ref == 'changeset-release/main' && github.event.pull_request.user.login == format('{0}[bot]', vars.RELEASE_APP_SLUG) }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -21,6 +29,16 @@ jobs:
           node-version: 22.18.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @wws/test exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm check
-      - run: pnpm test:e2e
+      - name: Check lint and types
+        run: pnpm check:static
+      - name: Verify a business pull request
+        if: env.IS_VERSION_PR != 'true'
+        run: pnpm check:runtime
+      - name: Verify business browser behavior
+        if: env.IS_VERSION_PR != 'true'
+        run: |
+          pnpm --filter @wws/test exec playwright install --with-deps chromium firefox webkit
+          pnpm test:e2e
+      - name: Verify a Version Packages pull request
+        if: env.IS_VERSION_PR == 'true'
+        run: pnpm release:verify

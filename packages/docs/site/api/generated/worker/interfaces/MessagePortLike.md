@@ -1,6 +1,6 @@
 # 接口: MessagePortLike
 
-定义于: [core/src/worker/runtime.ts:18](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L18)
+定义于: [core/src/worker/runtime.ts:18](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L18)
 
 自定义 Worker runtime 使用的最小 MessagePort 能力面。
 
@@ -10,7 +10,7 @@
 
 > **postMessage**: (`message`) => `void`
 
-定义于: [core/src/worker/runtime.ts:20](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L20)
+定义于: [core/src/worker/runtime.ts:20](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L20)
 
 发送结构化克隆控制消息。
 
@@ -30,7 +30,7 @@
 
 > `optional` **start?**: () => `void`
 
-定义于: [core/src/worker/runtime.ts:22](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L22)
+定义于: [core/src/worker/runtime.ts:22](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L22)
 
 开始接收事件。
 
@@ -44,7 +44,7 @@
 
 > `optional` **close?**: () => `void`
 
-定义于: [core/src/worker/runtime.ts:24](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L24)
+定义于: [core/src/worker/runtime.ts:24](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L24)
 
 关闭端口并释放其消息通道。
 
@@ -58,7 +58,7 @@
 
 > `optional` **addEventListener?**: (`type`, `listener`) => `void`
 
-定义于: [core/src/worker/runtime.ts:26](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L26)
+定义于: [core/src/worker/runtime.ts:26](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L26)
 
 注册消息或消息解析错误监听。
 
@@ -82,7 +82,7 @@
 
 > `optional` **removeEventListener?**: (`type`, `listener`) => `void`
 
-定义于: [core/src/worker/runtime.ts:28](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L28)
+定义于: [core/src/worker/runtime.ts:28](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L28)
 
 移除已注册监听。
 
@@ -106,7 +106,7 @@
 
 > `optional` **onmessage?**: ((`event`) => `void`) \| `null`
 
-定义于: [core/src/worker/runtime.ts:30](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L30)
+定义于: [core/src/worker/runtime.ts:30](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L30)
 
 不支持 addEventListener 时的消息回调。
 
@@ -116,6 +116,6 @@
 
 > `optional` **onmessageerror?**: ((`event`) => `void`) \| `null`
 
-定义于: [core/src/worker/runtime.ts:32](https://github.com/wh1teAlter/wws/blob/0f8b805b4ef7a28fc7d89804a150e375c03ab260/packages/core/src/worker/runtime.ts#L32)
+定义于: [core/src/worker/runtime.ts:32](https://github.com/wh1teAlter/wws/blob/7b6bd31a5ba45c5afbdf281cb7fb2bfbf1a2c549/packages/core/src/worker/runtime.ts#L32)
 
 不支持 addEventListener 时的消息错误回调。

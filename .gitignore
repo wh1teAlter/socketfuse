@@ -3,6 +3,7 @@
 .cache
 .DS_Store
 .eslintcache
+.husky/_/
 .idea
 .temp
 **/.vitepress/cache/
