@@ -8,6 +8,8 @@
 .temp
 **/.vitepress/cache/
 **/.vitepress/dist/
+# TypeDoc 在 dev/build 前生成，站点构建时消费，不作为源码提交。
+packages/docs/site/api/generated/
 coverage
 dist
 node_modules

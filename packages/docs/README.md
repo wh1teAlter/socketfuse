@@ -10,4 +10,4 @@ pnpm --filter @wws/docs build
 pnpm --filter @wws/docs api
 ```
 
-`api` 由源码 TSDoc 生成 `site/api/generated`；不要直接编辑该输出。文档示例只能依赖公开 `wws` 入口，不能导入 `@wws/core`。
+`api` 由源码 TSDoc 生成 `site/api/generated`；该目录是已忽略的构建产物，不应直接编辑或提交。`dev` 与 `build` 会在启动站点前自动执行生成，因此干净克隆无需预先保留 API Markdown。文档示例只能依赖公开 `wws` 入口，不能导入 `@wws/core`。
