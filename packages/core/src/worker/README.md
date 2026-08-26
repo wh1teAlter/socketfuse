@@ -4,4 +4,4 @@
 
 Worker 不等待页面的 `onMessage` handler；页面 receipt 只归还传输 credit，不构成业务确认。端口、未附着 timer、lease 和连接池条目都必须在失败与 dispose 时释放。
 
-自定义 Worker 应从 `wws/worker` 调用 `exposeSharedWebSocketWorker`，而不是导入此私有路径。
+自定义 Worker 应从 `socketfuse/worker` 调用 `exposeSharedWebSocketWorker`，而不是导入此私有路径。

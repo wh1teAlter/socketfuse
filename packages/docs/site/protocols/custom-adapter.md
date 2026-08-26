@@ -4,7 +4,7 @@
 因此自定义适配器必须在 Worker 入口注册，不能在每个页面中独立创建。
 
 ```ts
-import { exposeSharedWebSocketWorker } from 'wws/worker'
+import { exposeSharedWebSocketWorker } from 'socketfuse/worker'
 import { orderProtocol } from './order-protocol'
 
 exposeSharedWebSocketWorker({ protocols: [orderProtocol] })

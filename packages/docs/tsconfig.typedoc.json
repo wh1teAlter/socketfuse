@@ -1,10 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "include": [
-    "../wws/src/index.ts",
-    "../wws/src/protocol.ts",
-    "../wws/src/worker.ts",
-    "../wws/src/**/*.ts",
+    "../socketfuse/src/index.ts",
+    "../socketfuse/src/protocol.ts",
+    "../socketfuse/src/worker.ts",
+    "../socketfuse/src/**/*.ts",
     "../core/src/**/*.ts"
   ]
 }

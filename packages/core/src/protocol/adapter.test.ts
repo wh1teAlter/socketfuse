@@ -1,7 +1,7 @@
 /** 验证 raw、JSON 和 custom adapter 的编码、分类与顺序保证。 */
 import { describe, expect, it } from 'vitest'
 import { createJsonProtocolAdapter, decodeAndClassify, rawProtocol } from './adapter'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 describe('protocol adapters', () => {
   it('keeps raw data and classifies it as a business frame', () => {
@@ -35,6 +35,6 @@ describe('protocol adapters', () => {
   it('maps malformed JSON to a stable decode error', async () => {
     const adapter = createJsonProtocolAdapter({ type: 'json' })
     await expect(decodeAndClassify(adapter, '{', { now: 1, receivedAt: 1 })).rejects.toMatchObject({ code: 'DECODE_FAILED' })
-    expect(() => createJsonProtocolAdapter({ type: 'json', ready: { 'bad path': true } })).toThrowError(WwsError)
+    expect(() => createJsonProtocolAdapter({ type: 'json', ready: { 'bad path': true } })).toThrowError(SocketFuseError)
   })
 })

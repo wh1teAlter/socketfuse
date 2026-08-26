@@ -18,9 +18,9 @@ const run = promisify(execFile)
 /** 验收脚本、workspace 根和待验证发布包路径。 */
 const testDir = resolve(import.meta.dirname, '..')
 const root = resolve(testDir, '..', '..')
-const packageDir = resolve(root, 'packages/wws')
+const packageDir = resolve(root, 'packages/socketfuse')
 /** 本次验收独占的临时根目录及其消费者/解压子目录。 */
-const temporary = await mkdtemp(resolve(tmpdir(), 'wws-release-'))
+const temporary = await mkdtemp(resolve(tmpdir(), 'socketfuse-release-'))
 const consumerDir = resolve(temporary, 'consumer')
 const archiveDir = resolve(temporary, 'archive')
 /** 发布包必须包含的三个公开入口及其声明/source map。 */
@@ -79,7 +79,7 @@ async function verifyArchive(entries, tarball) {
     await verifySourceMap(entry)
   for (const entry of entries.filter(entry => entry.endsWith('.js') || entry.endsWith('.d.ts'))) {
     const content = await readFile(resolve(archiveDir, entry), 'utf8')
-    if (content.includes('@wws/core'))
+    if (content.includes('@socketfuse/core'))
       throw new Error(`${entry} references the private workspace runtime`)
   }
 }
@@ -88,10 +88,10 @@ async function verifyArchive(entries, tarball) {
 async function verifyConsumer(tarball) {
   await mkdir(consumerDir, { recursive: true })
   await writeFile(resolve(consumerDir, 'package.json'), JSON.stringify({
-    name: 'wws-tarball-consumer',
+    name: 'socketfuse-tarball-consumer',
     private: true,
     type: 'module',
-    dependencies: { wws: `file:${tarball}` },
+    dependencies: { socketfuse: `file:${tarball}` },
     devDependencies: { vite: '8.2.1' },
   }, null, 2))
   await writeFile(resolve(consumerDir, 'tsconfig.json'), JSON.stringify({
@@ -105,10 +105,10 @@ async function verifyConsumer(tarball) {
     include: ['index.ts'],
   }, null, 2))
   await writeFile(resolve(consumerDir, 'index.ts'), `
-import { createWebSocket, type JsonValue, type WebSocketClient } from 'wws'
-import { rawProtocol, type ProtocolAdapter } from 'wws/protocol'
-import type { SocketData } from 'wws'
-import { exposeSharedWebSocketWorker, type SharedWebSocketRuntime } from 'wws/worker'
+import { createWebSocket, type JsonValue, type WebSocketClient } from 'socketfuse'
+import { rawProtocol, type ProtocolAdapter } from 'socketfuse/protocol'
+import type { SocketData } from 'socketfuse'
+import { exposeSharedWebSocketWorker, type SharedWebSocketRuntime } from 'socketfuse/worker'
 
 const client: WebSocketClient = createWebSocket('wss://example.test/socket', { id: 'tarball-check' })
 const protocol: ProtocolAdapter<SocketData, SocketData> = rawProtocol
@@ -136,9 +136,9 @@ export default defineConfig({
 `, 'utf8')
   await mkdir(resolve(consumerDir, 'src'), { recursive: true })
   await writeFile(resolve(consumerDir, 'src/main.ts'), `
-import { createWebSocket } from 'wws'
-import { rawProtocol } from 'wws/protocol'
-import { exposeSharedWebSocketWorker } from 'wws/worker'
+import { createWebSocket } from 'socketfuse'
+import { rawProtocol } from 'socketfuse/protocol'
+import { exposeSharedWebSocketWorker } from 'socketfuse/worker'
 
 void createWebSocket
 void rawProtocol
@@ -148,11 +148,11 @@ void exposeSharedWebSocketWorker
   await run(execPath, [resolve(testDir, 'node_modules/typescript/bin/tsc'), '--project', resolve(consumerDir, 'tsconfig.json')])
   await run('pnpm', ['exec', 'vite', 'build'], { cwd: consumerDir })
   await run(execPath, ['--input-type=module', '--eval', `
-    const root = await import('wws')
-    const protocol = await import('wws/protocol')
-    const worker = await import('wws/worker')
+    const root = await import('socketfuse')
+    const protocol = await import('socketfuse/protocol')
+    const worker = await import('socketfuse/worker')
     if (!root.createWebSocket || !protocol.rawProtocol || !worker.exposeSharedWebSocketWorker)
-      throw new Error('A public WWS entry did not evaluate')
+      throw new Error('A public SocketFuse entry did not evaluate')
     globalThis.WebSocket = class { constructor() { throw new Error('must not connect') } }
     let code
     try { root.createWebSocket('wss://example.test/socket', { id: 'ssr-check', immediate: false }) }

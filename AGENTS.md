@@ -1,8 +1,8 @@
-# WWS 协作与实现约定
+# SocketFuse 协作与实现约定
 
 ## 目标与边界
 
-WWS 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 共享库。公开包名为 `wws`，公开入口固定为 `wws`、`wws/protocol` 与 `wws/worker`。Worker 只负责控制协议、连接所有权与事件派发，绝不等待页面业务处理器。
+SocketFuse 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 共享库。公开包名为 `socketfuse`，公开入口固定为 `socketfuse`、`socketfuse/protocol` 与 `socketfuse/worker`。Worker 只负责控制协议、连接所有权与事件派发，绝不等待页面业务处理器。
 
 除非任务明确授权，不新增框架绑定、RPC/request、topic、服务端 Ack、独立 playground 包、运行时依赖或抽象层。不能用“将来可能复用”作为新增类型、类、配置或目录的理由。
 
@@ -11,11 +11,11 @@ WWS 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 共享�
 1. 先阅读与改动范围相邻的 `README.md`、规格和 tickets；以公开 API、运行时语义、依赖或模块职责为边界安排工作。
 2. 需要新抽象、结构调整或刻意简化时，先在变更说明或对应 README 写清：现有复用能力为何不足、选择的意图、以及必须保持的不变量。未获批准不得扩大范围。
 3. 新建模块，或改变模块职责、公开 API、依赖或使用方式时，同步创建或更新该模块的 `README.md`。README 只描述职责、公开 API、依赖、使用方式和边界，不复制内部实现。
-4. 保持依赖方向：`shared` → `config/protocol/connection` → `transport/worker/page` → `wws` public facade。`connection` 不得依赖 `page` 或 `worker`；docs 只依赖公开 `wws` 入口；`ws` 及其类型只留在 `packages/test`。
+4. 保持依赖方向：`shared` → `config/protocol/connection` → `transport/worker/page` → `socketfuse` public facade。`connection` 不得依赖 `page` 或 `worker`；docs 只依赖公开 `socketfuse` 入口；`ws` 及其类型只留在 `packages/test`。
 5. 保护现有工作树。不得重置、覆盖或删除无关改动；不得修改 `docs/review/1.md` 与 `docs/review/2.md`。
-6. 面向用户的 `wws` 改动必须提交 Changeset；不得在业务 PR 中直接改版本或 CHANGELOG。只有 release workflow
+6. 面向用户的 `socketfuse` 改动必须提交 Changeset；不得在业务 PR 中直接改版本或 CHANGELOG。只有 release workflow
    创建的 Version Packages PR 可以消费 Changeset，只有该 PR 合并后的版本提交可以发布。
-7. 唯一可发布 workspace 是 `wws`。不得本地发布、递归发布或在 workflow 中使用长期 npm token；Trusted
+7. 唯一可发布 workspace 是 `socketfuse`。不得本地发布、递归发布或在 workflow 中使用长期 npm token；Trusted
    Publishing 必须由 `.github/workflows/release.yml`、受保护的 `npm` environment 与 OIDC 完成。
 8. Version Packages PR 必须使用最小权限 GitHub App token 创建，以触发专用发布包验收；不得退回内置
    `GITHUB_TOKEN`，否则 GitHub 不会触发新的 pull request workflow。发布前必须同时校验该 App 身份、标题、

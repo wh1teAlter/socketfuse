@@ -1,10 +1,10 @@
 /**
- * WWS 跨运行时的公开类型契约。
+ * SocketFuse 跨运行时的公开类型契约。
  *
  * 这里不拥有连接或页面生命周期，只定义页面、Worker 和协议适配器必须共同遵守的
  * 数据形状、单位和调用阶段；上层模块不得通过重复定义这些类型改变其语义。
  */
-import type { WwsError } from './errors'
+import type { SocketFuseError } from './errors'
 
 /** 浏览器原生 WebSocket 与 raw 协议可收发的 payload 类型。 */
 export type SocketData = string | Blob | ArrayBuffer | ArrayBufferView
@@ -150,7 +150,7 @@ export interface NormalizedRestoreOptions {
 export interface SendOptions {
   /** 覆盖本次发送是否可按共享队列策略入队。 */
   queue?: boolean
-  /** 随排队消息保留的业务幂等键；WWS 不将其解释为服务端 Ack。 */
+  /** 随排队消息保留的业务幂等键；SocketFuse 不将其解释为服务端 Ack。 */
   idempotencyKey?: string
 }
 
@@ -159,7 +159,7 @@ export type SendReceipt
   = | {
     /** 已直接交给原生 socket 的本地接纳结果。 */
     readonly status: 'accepted'
-    /** WWS 本地消息标识。 */
+    /** SocketFuse 本地消息标识。 */
     readonly messageId: string
     /** 原生 socket 当前 bufferedAmount，单位为字节。 */
     readonly bufferedAmount: number
@@ -167,7 +167,7 @@ export type SendReceipt
   | {
     /** 已进入有界出站队列的本地接纳结果。 */
     readonly status: 'queued'
-    /** WWS 本地消息标识。 */
+    /** SocketFuse 本地消息标识。 */
     readonly messageId: string
     /** 消息在 FIFO 队列中的位置。 */
     readonly position: number
@@ -211,7 +211,7 @@ export interface ConnectionSnapshot {
 }
 
 /** 派发给页面监听器的业务消息；协议控制帧不会出现在这里。 */
-export interface WwsMessageEvent<Data> extends Event {
+export interface SocketFuseMessageEvent<Data> extends Event {
   /** 协议适配器解码后的应用 payload。 */
   readonly data: Data
   /** Worker 或 direct transport 接收消息的 Unix 时间戳，单位为毫秒。 */
@@ -223,7 +223,7 @@ export interface WwsMessageEvent<Data> extends Event {
 }
 
 /** 当前页面逻辑 client 的关闭通知。 */
-export interface WwsCloseEvent extends Event {
+export interface SocketFuseCloseEvent extends Event {
   /** 经安全化后暴露的 WebSocket close code。 */
   readonly code: number
   /** 原生 close 事件是否标记为 clean。 */
@@ -235,7 +235,7 @@ export interface WwsCloseEvent extends Event {
 }
 
 /** 页面逻辑状态改变时的详细通知。 */
-export interface WwsStateChangeEvent extends Event {
+export interface SocketFuseStateChangeEvent extends Event {
   /** 迁移前状态。 */
   readonly previous: ConnectionState
   /** 迁移后状态。 */
@@ -249,7 +249,7 @@ export interface WwsStateChangeEvent extends Event {
 }
 
 /** 出站队列、入站 credit 或回放缓冲触及边界时的通知。 */
-export interface WwsOverflowEvent extends Event {
+export interface SocketFuseOverflowEvent extends Event {
   /** 发生溢出的数据方向。 */
   readonly direction: 'outbound' | 'inbound' | 'replay'
   /** 为保持有界内存所采用的丢弃策略。 */
@@ -261,7 +261,7 @@ export interface WwsOverflowEvent extends Event {
 }
 
 /** 传给可选 logger 的已脱敏运行事件。 */
-export interface WwsDiagnosticEvent {
+export interface SocketFuseDiagnosticEvent {
   /** 诊断事件类别。 */
   readonly type: string
   /** 产生事件的 Unix 时间戳，单位为毫秒。 */
@@ -273,7 +273,7 @@ export interface WwsDiagnosticEvent {
 }
 
 /** 接收已脱敏诊断的回调；不能被当作业务消息监听器。 */
-export type WwsLogger = (event: Readonly<WwsDiagnosticEvent>) => void
+export type SocketFuseLogger = (event: Readonly<SocketFuseDiagnosticEvent>) => void
 
 /** 一个逻辑 client 与物理连接的已脱敏瞬时指标。 */
 export interface ConnectionDiagnostics {
@@ -365,7 +365,7 @@ export interface ProtocolContext {
 
 /** 调用适配器 `encode` 时附加的上下文。 */
 export interface EncodeContext extends ProtocolContext {
-  /** WWS 本地分配的发送标识；不代表服务端确认。 */
+  /** SocketFuse 本地分配的发送标识；不代表服务端确认。 */
   readonly messageId: string
 }
 
@@ -399,7 +399,7 @@ export interface SafeCloseInfo {
   readonly code: number
   /** close 是否为 clean。 */
   readonly wasClean: boolean
-  /** WWS 是否已判定当前连接进入终态。 */
+  /** SocketFuse 是否已判定当前连接进入终态。 */
   readonly terminal: boolean
 }
 
@@ -469,7 +469,7 @@ export interface ProtocolAdapter<Incoming, Outgoing, Auth = unknown> {
   classify: (data: Incoming, context: ClassifyContext) => MaybePromise<ProtocolFrame<Incoming>>
   /** 在 open 前根据最新 auth revision 生成认证帧；缺失时不支持 auth 更新。 */
   createAuth?: (auth: Auth, context: AuthContext) => MaybePromise<Outgoing | readonly Outgoing[]>
-  /** 生成主动心跳帧；缺失时不支持 WWS heartbeat。 */
+  /** 生成主动心跳帧；缺失时不支持 SocketFuse heartbeat。 */
   createPing?: (context: HeartbeatContext) => MaybePromise<Outgoing>
   /** 对分类出的服务端 ping 生成响应；缺失时不自动回复。 */
   createPong?: (ping: ProtocolFrame<Incoming>, context: HeartbeatContext) => MaybePromise<Outgoing>
@@ -488,7 +488,7 @@ export type ProtocolSelector<Incoming, Outgoing, Auth>
  *
  * 只能在浏览器页面 realm 调用 `createWebSocket` 时传入。会改变物理 socket 的字段
  * 必须在同一 `id` 下完全一致；页面本地字段不参与共享 fingerprint。无效配置在创建
- * 阶段同步抛出 `WwsError`，Worker 构造/握手失败按 `fallback` 决定拒绝或降级。
+ * 阶段同步抛出 `SocketFuseError`，Worker 构造/握手失败按 `fallback` 决定拒绝或降级。
  */
 export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = SocketData, Auth = unknown> {
   /** 同源标签页共享连接的稳定业务 identity；不能为空，且不得包含凭据。 */
@@ -526,22 +526,22 @@ export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = Socket
   /** 最后一个 client 离开后关闭物理 socket 前的宽限期，单位毫秒，默认 `5000`。 */
   idleGraceMs?: number
   /** 接收已脱敏运行诊断的页面本地 sink。 */
-  logger?: WwsLogger
+  logger?: SocketFuseLogger
   /** 逻辑 client open 后调用的页面本地回调。 */
   onConnected?: (client: WebSocketClient<Incoming, Outgoing, Auth>, snapshot: ConnectionSnapshot) => void
   /** 逻辑 client close 后调用的页面本地回调。 */
-  onDisconnected?: (client: WebSocketClient<Incoming, Outgoing, Auth>, event: WwsCloseEvent) => void
-  /** 收到已脱敏 `WwsError` 时调用的页面本地回调。 */
-  onError?: (client: WebSocketClient<Incoming, Outgoing, Auth>, error: WwsError) => void
+  onDisconnected?: (client: WebSocketClient<Incoming, Outgoing, Auth>, event: SocketFuseCloseEvent) => void
+  /** 收到已脱敏 `SocketFuseError` 时调用的页面本地回调。 */
+  onError?: (client: WebSocketClient<Incoming, Outgoing, Auth>, error: SocketFuseError) => void
   /** 初始业务消息回调；创建后仍可通过 `onMessage` 动态增加。 */
-  onMessage?: (client: WebSocketClient<Incoming, Outgoing, Auth>, event: WwsMessageEvent<Incoming>) => void
+  onMessage?: (client: WebSocketClient<Incoming, Outgoing, Auth>, event: SocketFuseMessageEvent<Incoming>) => void
 }
 
 /**
  * SharedWorker 所有或 direct WebSocket 的页面本地代理。
  *
  * 所有方法仅能在 `createWebSocket` 成功返回后调用。除 `diagnostics` 外，异步方法会以
- * `WwsError` reject；调用方应按稳定 `code` 判断失败，而不是匹配 message。
+ * `SocketFuseError` reject；调用方应按稳定 `code` 判断失败，而不是匹配 message。
  *
  * @typeParam Incoming `onMessage` 派发的解码业务 payload。
  * @typeParam Outgoing `sendMessage` 接受的应用值。
@@ -574,7 +574,7 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, A
    * 关闭当前页面的逻辑参与，但不 dispose 实例；close 后允许再次 `open`。
    *
    * @returns detach 完成的 Promise。
-   * @throws transport 控制失败时以 `WwsError` reject。
+   * @throws transport 控制失败时以 `SocketFuseError` reject。
    */
   close: () => Promise<void>
   /**
@@ -592,7 +592,7 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, A
    * @param handler 接收业务帧与回放标记的回调；抛出不会阻塞其他 handler 或 Worker。
    * @returns 幂等移除函数；dispose 后仍可安全调用。
    */
-  onMessage: (handler: (event: WwsMessageEvent<Incoming>) => void) => () => void
+  onMessage: (handler: (event: SocketFuseMessageEvent<Incoming>) => void) => () => void
   /**
    * 以更大的单调 revision 应用认证数据；仅在 adapter 声明 auth 能力时可用。
    *
@@ -637,7 +637,7 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, A
    * 永久释放该页面 client、handler 与 transport 参与；dispose 后不能再次 open。
    *
    * @returns 本地清理与 detach 完成的 Promise。
-   * @throws transport 清理异常会以安全 `WwsError` reject，但本地终态仍保持 dispose。
+   * @throws transport 清理异常会以安全 `SocketFuseError` reject，但本地终态仍保持 dispose。
    */
   dispose: () => Promise<void>
 }

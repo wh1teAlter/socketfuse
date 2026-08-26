@@ -8,7 +8,7 @@ import PlaygroundPanel from './playground/components/PlaygroundPanel.vue'
 
 # 演练场
 
-使用本页观察两个同源标签页之间的 WWS 连接共享。默认 endpoint 是
+使用本页观察两个同源标签页之间的 SocketFuse 连接共享。默认 endpoint 是
 `ws://127.0.0.1:8787/socket`，只用于本地 E2E/演示服务；在仓库根目录的两个终端分别运行
 `pnpm dev` 和 `pnpm playground:server` 后即可使用。在本地开发环境之外，请填写你自己的
 WebSocket URL。

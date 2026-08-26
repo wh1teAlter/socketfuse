@@ -37,7 +37,7 @@ jobs:
       - name: Verify business browser behavior
         if: env.IS_VERSION_PR != 'true'
         run: |
-          pnpm --filter @wws/test exec playwright install --with-deps chromium firefox webkit
+          pnpm --filter @socketfuse/test exec playwright install --with-deps chromium firefox webkit
           pnpm test:e2e
       - name: Verify a Version Packages pull request
         if: env.IS_VERSION_PR == 'true'

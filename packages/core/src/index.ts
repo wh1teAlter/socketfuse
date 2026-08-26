@@ -1,5 +1,5 @@
 /**
- * @wws/core 的内部公共实现入口。
+ * @socketfuse/core 的内部公共实现入口。
  *
  * 该入口供公开 facade、inline Worker 和测试 workspace 复用；发布包通过 facade
  * 暴露受控的子集，避免页面直接依赖内部模块路径。

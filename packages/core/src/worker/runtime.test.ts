@@ -252,10 +252,10 @@ describe('shared worker runtime', () => {
       await waitFor(() => transport.diagnostics().attachedClientCount === 1)
       expect(transport.diagnostics()).toMatchObject({
         endpointOrigin: 'wss://example.test',
-        idHash: expect.stringMatching(/^wws1-/),
+        idHash: expect.stringMatching(/^socketfuse1-/),
         logicalState: 'open',
         transport: 'shared-worker',
-        workerInstanceHash: expect.stringMatching(/^wws1-/),
+        workerInstanceHash: expect.stringMatching(/^socketfuse1-/),
       })
     }
     finally {

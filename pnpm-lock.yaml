@@ -77,9 +77,9 @@ importers:
 
   packages/docs:
     dependencies:
-      wws:
+      socketfuse:
         specifier: workspace:*
-        version: link:../wws
+        version: link:../socketfuse
     devDependencies:
       typedoc:
         specifier: 0.28.20
@@ -100,6 +100,24 @@ importers:
         specifier: 3.3.10
         version: 3.3.10(typescript@6.0.3)
 
+  packages/socketfuse:
+    devDependencies:
+      '@socketfuse/core':
+        specifier: workspace:*
+        version: link:../core
+      publint:
+        specifier: 0.3.24
+        version: 0.3.24
+      rolldown:
+        specifier: 1.2.2
+        version: 1.2.2
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.14(@volar/typescript@2.4.28)(publint@0.3.24)(typescript@6.0.3)(vue-tsc@3.3.10(typescript@6.0.3))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
   packages/test:
     devDependencies:
       '@playwright/test':
@@ -117,24 +135,6 @@ importers:
       ws:
         specifier: 8.21.3
         version: 8.21.3
-
-  packages/wws:
-    devDependencies:
-      '@wws/core':
-        specifier: workspace:*
-        version: link:../core
-      publint:
-        specifier: 0.3.24
-        version: 0.3.24
-      rolldown:
-        specifier: 1.2.2
-        version: 1.2.2
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.14(@volar/typescript@2.4.28)(publint@0.3.24)(typescript@6.0.3)(vue-tsc@3.3.10(typescript@6.0.3))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
 packages:
 

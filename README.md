@@ -1,15 +1,15 @@
-# wws
+# SocketFuse
 
 > 以 SharedWorker 为首选，在同源浏览器标签页之间复用 WebSocket 物理连接。
 
-`wws` 是一个框架无关的浏览器端 WebSocket 库。多个同源页面使用相同连接 `id` 和共享配置时，会通过
+`socketfuse` 是一个框架无关的浏览器端 WebSocket 库。多个同源页面使用相同连接 `id` 和共享配置时，会通过
 一个 SharedWorker 接入同一个物理 WebSocket；每个页面仍拥有独立的 client、事件处理器、生命周期和错误边界。
 它适用于即时通信、行情、协作编辑、通知流等需要多标签页实时连接的场景。
 
-当前仓库正在准备 `wws@0.0.1-beta.1` 首发，npm 使用 `beta` dist-tag；公开包名、入口与 API 已固定为
-`wws`、`wws/protocol` 和 `wws/worker`。
+当前仓库正在准备 `socketfuse@0.0.1-beta.1` 首发，npm 使用 `beta` dist-tag；公开包名、入口与 API 已固定为
+`socketfuse`、`socketfuse/protocol` 和 `socketfuse/worker`。
 
-## 为什么使用 wws
+## 为什么使用 SocketFuse
 
 - 降低连接数：同一浏览器、同一源、相同 `id` 的页面最多复用一个物理 WebSocket。
 - 保持页面隔离：每个页面获得稳定的 `WebSocketClient` 实例，可动态注册 `onMessage` 处理器。
@@ -37,13 +37,13 @@ flowchart LR
 首次发布后可安装公开包：
 
 ```sh
-pnpm add wws
+pnpm add socketfuse
 ```
 
 在浏览器页面中创建并打开连接：
 
 ```ts
-import { createWebSocket } from 'wws'
+import { createWebSocket } from 'socketfuse'
 
 const ws = createWebSocket('wss://api.example.com/realtime', {
   id: 'realtime:user-42',
@@ -81,9 +81,9 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 
 | 入口 | 用途 |
 | --- | --- |
-| `wws` | `createWebSocket`、client、配置、状态、事件和错误类型。 |
-| `wws/protocol` | `rawProtocol` 与自定义 `ProtocolAdapter` 契约。 |
-| `wws/worker` | 自定义 SharedWorker 部署所需的 runtime 创建与暴露函数。 |
+| `socketfuse` | `createWebSocket`、client、配置、状态、事件和错误类型。 |
+| `socketfuse/protocol` | `rawProtocol` 与自定义 `ProtocolAdapter` 契约。 |
+| `socketfuse/worker` | 自定义 SharedWorker 部署所需的 runtime 创建与暴露函数。 |
 
 `createWebSocket(url, options)` 返回一个稳定的 `WebSocketClient`。常用成员包括：
 
@@ -115,8 +115,7 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 - [配置参考](packages/docs/site/reference/configuration.md)：连接、队列、背压、重连和生命周期选项。
 - [API 参考](packages/docs/site/api/index.md)：从 TypeDoc 生成的公开签名与说明。
 - [演练场](packages/docs/site/playground.md)：在本地测试共享连接、降级、回放和二进制消息。
-- [v1 技术规格](docs/specs/wws-v1-spec.md)：公开语义和不变量。
-- [工程与发布规格](docs/specs/wws-engineering-and-release-spec.md)：提交、CI、Changesets 和 Trusted Publishing 流程。
+- [SocketFuse 更名规格](docs/specs/socketfuse-renaming-spec.md)：包名、入口和外部平台的迁移边界。
 
 ## 本地开发
 
@@ -137,22 +136,22 @@ pnpm test:e2e       # Chromium、Firefox、WebKit
 pnpm check          # static + runtime
 ```
 
-不要并行运行 `pnpm check` 与 `pnpm test:e2e`：两者都构建 `packages/wws/dist`，本地同时执行会干扰
+不要并行运行 `pnpm check` 与 `pnpm test:e2e`：两者都构建 `packages/socketfuse/dist`，本地同时执行会干扰
 Playground 的开发服务器。
 
 仓库实现边界、中文注释约定和模块依赖方向见 [AGENTS.md](AGENTS.md) 与 [CLAUDE.md](CLAUDE.md)。私有运行时、
-文档与测试工程分别见 [@wws/core](packages/core/README.md)、[文档 workspace](packages/docs/README.md) 和
+文档与测试工程分别见 [@socketfuse/core](packages/core/README.md)、[文档 workspace](packages/docs/README.md) 和
 [测试 workspace](packages/test/README.md)。
 
 ## 贡献与发布
 
-面向使用者的 `wws` 改动需要随业务 PR 提交 Changeset。Changeset 合并后，release workflow 会创建
-`chore(release): version wws` Version Packages PR；该 PR 通过发布包验收并合并后，受保护的 GitHub `npm`
-Environment 才会通过 npm Trusted Publishing/OIDC 发布 `wws`。
+面向使用者的 `socketfuse` 改动需要随业务 PR 提交 Changeset。Changeset 合并后，release workflow 会创建
+`chore(release): version socketfuse` Version Packages PR；该 PR 通过发布包验收并合并后，受保护的 GitHub `npm`
+Environment 才会通过 npm Trusted Publishing/OIDC 发布 `socketfuse`。
 
 仓库不保存长期 npm token，也不支持本地或递归发布。贡献要求、required check、GitHub App、npm Trusted Publisher
 和首次发布配置见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 
-[MIT](packages/wws/LICENSE)
+[MIT](packages/socketfuse/LICENSE)

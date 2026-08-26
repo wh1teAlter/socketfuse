@@ -1,6 +1,6 @@
 /** 将连接状态迁移限制在合法图中，并映射为 WebSocket 兼容状态。 */
 import type { ConnectionState, ReadyState, WebSocketStatus } from '../shared/types'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 /** 连接状态机允许的有向迁移图；未列出的边必须失败。 */
 const transitions: Readonly<Record<ConnectionState, readonly ConnectionState[]>> = {
@@ -35,7 +35,7 @@ export class ConnectionStateMachine {
     if (next === this.current)
       return { previous: this.current, state: next }
     if (!transitions[this.current].includes(next)) {
-      throw new WwsError('INTERNAL_STATE_ERROR', `Invalid connection transition ${this.current} -> ${next}`, {
+      throw new SocketFuseError('INTERNAL_STATE_ERROR', `Invalid connection transition ${this.current} -> ${next}`, {
         fatal: true,
         details: { from: this.current, to: next },
       })

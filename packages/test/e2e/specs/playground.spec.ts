@@ -152,8 +152,8 @@ test('rebuilds a terminated SharedWorker after BFCache restore without direct fa
   await connect(page, socketUrl(testNamespace), `worker-restart-${testNamespace}`)
   await dispatchPageTransition(page, 'pagehide', true)
   await page.evaluate(() => {
-    const playground = window as unknown as { __wwsPlaygroundTerminateWorker: () => void }
-    playground.__wwsPlaygroundTerminateWorker()
+    const playground = window as unknown as { __socketfusePlaygroundTerminateWorker: () => void }
+    playground.__socketfusePlaygroundTerminateWorker()
   })
   await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(0)
   await dispatchPageTransition(page, 'pageshow', true)
@@ -170,15 +170,15 @@ test('replays the latest URL and auth revisions after Worker restart', async ({ 
   await page.getByLabel('页面隐藏时回放').check()
   await connect(page, initialUrl, `revision-replay-${testNamespace}`)
   await page.evaluate((url) => {
-    const playground = window as unknown as { __wwsPlaygroundApplyRevisions: (nextUrl: string) => Promise<void> }
-    return playground.__wwsPlaygroundApplyRevisions(url)
+    const playground = window as unknown as { __socketfusePlaygroundApplyRevisions: (nextUrl: string) => Promise<void> }
+    return playground.__socketfusePlaygroundApplyRevisions(url)
   }, revisedUrl)
   await expect.poll(async () => (await stats(request, testNamespace)).lastUrl).toContain('revision=2')
   await expect.poll(async () => (await stats(request, testNamespace)).totalMessages).toBe(1)
   await dispatchPageTransition(page, 'pagehide', true)
   await page.evaluate(() => {
-    const playground = window as unknown as { __wwsPlaygroundTerminateWorker: () => void }
-    playground.__wwsPlaygroundTerminateWorker()
+    const playground = window as unknown as { __socketfusePlaygroundTerminateWorker: () => void }
+    playground.__socketfusePlaygroundTerminateWorker()
   })
   await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(0)
   await dispatchPageTransition(page, 'pageshow', true)

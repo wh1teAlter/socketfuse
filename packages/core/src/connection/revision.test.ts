@@ -1,7 +1,7 @@
 /** 验证 endpoint/auth revision 的单调更新和冲突行为。 */
 import { describe, expect, it } from 'vitest'
 import { assertRevision, AuthRevisionRegister, EndpointRevisionRegister } from './revision'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 describe('revision registers', () => {
   it('applies newer auth revisions and rejects stale/equal values', () => {
@@ -16,12 +16,12 @@ describe('revision registers', () => {
     const register = new EndpointRevisionRegister('wss://example.test/one')
     expect(register.update('wss://example.test/one', 1)).toEqual({ revision: 1, status: 'applied' })
     expect(register.update('wss://example.test/one', 1)).toEqual({ revision: 1, status: 'unchanged' })
-    expect(() => register.update('wss://example.test/two', 1)).toThrowError(WwsError)
+    expect(() => register.update('wss://example.test/two', 1)).toThrowError(SocketFuseError)
     expect(register.update('wss://example.test/two', 2)).toEqual({ revision: 2, status: 'applied' })
   })
 
   it('validates positive revisions', () => {
-    expect(() => assertRevision(0)).toThrowError(WwsError)
-    expect(() => assertRevision(Number.POSITIVE_INFINITY)).toThrowError(WwsError)
+    expect(() => assertRevision(0)).toThrowError(SocketFuseError)
+    expect(() => assertRevision(Number.POSITIVE_INFINITY)).toThrowError(SocketFuseError)
   })
 })

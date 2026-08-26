@@ -1,5 +1,5 @@
 {
-  "name": "wws",
+  "name": "socketfuse",
   "type": "module",
   "version": "0.0.1-beta.1",
   "description": "Share WebSocket connections across same-origin browser tabs with SharedWorker.",
@@ -12,13 +12,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wh1teAlter/wws.git",
-    "directory": "packages/wws"
+    "url": "git+https://github.com/wh1teAlter/socketfuse.git",
+    "directory": "packages/socketfuse"
   },
   "bugs": {
-    "url": "https://github.com/wh1teAlter/wws/issues"
+    "url": "https://github.com/wh1teAlter/socketfuse/issues"
   },
-  "homepage": "https://github.com/wh1teAlter/wws#readme",
+  "homepage": "https://github.com/wh1teAlter/socketfuse#readme",
   "engines": {
     "node": "^22.18.0 || >=24.11.0"
   },
@@ -53,7 +53,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@wws/core": "workspace:*",
+    "@socketfuse/core": "workspace:*",
     "publint": "0.3.24",
     "rolldown": "1.2.2",
     "tsdown": "catalog:",

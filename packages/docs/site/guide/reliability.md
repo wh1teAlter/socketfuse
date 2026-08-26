@@ -12,7 +12,7 @@
 
 ## 队列与背压
 
-`sendMessage()` 返回本地接纳回执，不代表服务器已处理消息；WWS 没有服务端 Ack 协议。
+`sendMessage()` 返回本地接纳回执，不代表服务器已处理消息；SocketFuse 没有服务端 Ack 协议。
 
 ```ts
 const receipt = await ws.sendMessage(payload, { queue: true })
@@ -21,12 +21,12 @@ const receipt = await ws.sendMessage(payload, { queue: true })
 ```
 
 可按消息或通过 `queue` 启用排队。FIFO 队列同时受消息数和字节数限制。断开连接或超过
-高水位线时，不能入队的发送会以 `SEND_WHILE_DISCONNECTED` 或 `BACKPRESSURE` 拒绝。WWS 会在
+高水位线时，不能入队的发送会以 `SEND_WHILE_DISCONNECTED` 或 `BACKPRESSURE` 拒绝。SocketFuse 会在
 低水位线以下恢复清空队列，绝不会让队列无上限增长。
 
 ## 心跳
 
-WWS 心跳是由适配器定义的应用消息。原始协议没有心跳能力，因此将 `heartbeat` 与
+SocketFuse 心跳是由适配器定义的应用消息。原始协议没有心跳能力，因此将 `heartbeat` 与
 `protocol: 'raw'` 一起使用会在配置阶段被拒绝。声明式 JSON 和自定义适配器可以描述
 ping/pong 帧。心跳是共享连接行为，因此所有标签页都会看到相同的重连结果。服务端负责保活时，
 请选择 `heartbeat: false`；配置 interval/pong timeout 前应先确认服务端协议。

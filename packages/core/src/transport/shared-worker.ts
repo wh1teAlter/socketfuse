@@ -13,7 +13,7 @@ import type { ConnectionSink } from '../connection/controller'
 import type { MessagePortLike } from '../worker/runtime'
 import type { ClientTransport } from './direct'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, isWorkerControlMessage } from '../worker/control'
-import { createSafePublicError, WwsError } from '../shared/errors'
+import { createSafePublicError, SocketFuseError } from '../shared/errors'
 import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
 
 export interface SharedWorkerLike {
@@ -40,7 +40,7 @@ interface PendingRequest {
   /** 控制请求成功回调。 */
   readonly resolve: (value: ControlResponseValue) => void
   /** 控制请求失败回调。 */
-  readonly reject: (error: WwsError) => void
+  readonly reject: (error: SocketFuseError) => void
   /** 请求超时 timer。 */
   readonly timer: TimerHandle
 }
@@ -49,7 +49,7 @@ interface PendingRequest {
 function canFallbackFromWorkerError(error: unknown, workerInstanceId: string | null): boolean {
   if (workerInstanceId !== null)
     return false
-  if (!(error instanceof WwsError))
+  if (!(error instanceof SocketFuseError))
     return true
   return [
     'ADAPTER_NOT_REGISTERED',
@@ -70,15 +70,15 @@ function createId(): string {
 }
 
 /** 将 Worker 控制错误转换为页面安全错误。 */
-function deserializeError(value: ControlError): WwsError {
+function deserializeError(value: ControlError): SocketFuseError {
   return createSafePublicError(value.code, { fatal: value.fatal, retryable: value.retryable })
 }
 
 /** 将任意 hello 失败归一化为 Worker 初始化错误。 */
-function toInitError(error: unknown): WwsError {
-  if (error instanceof WwsError)
+function toInitError(error: unknown): SocketFuseError {
+  if (error instanceof SocketFuseError)
     return error
-  return new WwsError('WORKER_LOAD_FAILED', 'SharedWorker initialization failed', { cause: error })
+  return new SocketFuseError('WORKER_LOAD_FAILED', 'SharedWorker initialization failed', { cause: error })
 }
 
 /** 构造尚未收到 Worker diagnostics 时的安全初始快照。 */
@@ -133,7 +133,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   constructor(readonly options: SharedWorkerTransportOptions<Incoming, Outgoing, Auth>) {
     this.port = options.worker.port
     const onMessage = (event: { readonly data: unknown }): void => this.handleMessage(event.data)
-    const onMessageError = (): void => this.handleDisconnect(new WwsError('WORKER_DISCONNECTED', 'SharedWorker port reported a message error', { retryable: true }))
+    const onMessageError = (): void => this.handleDisconnect(new SocketFuseError('WORKER_DISCONNECTED', 'SharedWorker port reported a message error', { retryable: true }))
     if (this.port.addEventListener !== undefined) {
       this.port.addEventListener('message', onMessage)
       this.port.addEventListener('messageerror', onMessageError)
@@ -181,7 +181,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   async open(signal?: AbortSignal): Promise<ConnectionSnapshot> {
     this.assertUsable()
     if (signal?.aborted)
-      throw new WwsError('ABORTED', 'Open wait was aborted')
+      throw new SocketFuseError('ABORTED', 'Open wait was aborted')
     try {
       await this.ensureHello()
     }
@@ -192,7 +192,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
       if (this.sink !== undefined)
         this.fallback?.attach(this.sink)
       if (this.fallback === undefined)
-        throw toInitError(new WwsError('WORKER_DISCONNECTED', 'SharedWorker initialization failed'))
+        throw toInitError(new SocketFuseError('WORKER_DISCONNECTED', 'SharedWorker initialization failed'))
       return this.fallback.open(signal)
     }
     return await this.request({ requestId: createId(), type: 'open' }) as ConnectionSnapshot
@@ -267,12 +267,12 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
     this.assertUsable()
     await this.ensureHello()
     if (this.fallbackActive)
-      throw new WwsError('WORKER_DISCONNECTED', 'SharedWorker transport is no longer selected')
+      throw new SocketFuseError('WORKER_DISCONNECTED', 'SharedWorker transport is no longer selected')
     const value = await this.request({ requestId: createId(), type: 'probe' }, 1_000)
     if (value === null || typeof value !== 'object' || !('workerInstanceId' in value) || typeof value.workerInstanceId !== 'string')
-      throw new WwsError('INVALID_CONTROL_MESSAGE', 'SharedWorker probe returned an invalid response')
+      throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'SharedWorker probe returned an invalid response')
     if (this.workerInstanceId !== null && this.workerInstanceId !== value.workerInstanceId)
-      throw new WwsError('WORKER_DISCONNECTED', 'SharedWorker instance changed', { retryable: true })
+      throw new SocketFuseError('WORKER_DISCONNECTED', 'SharedWorker instance changed', { retryable: true })
     return value.workerInstanceId
   }
 
@@ -333,7 +333,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
       // A failed port still gets closed below.
     }
     this.port.close?.()
-    this.rejectAll(new WwsError('CLIENT_DISPOSED', 'SharedWorker transport was disposed'))
+    this.rejectAll(new SocketFuseError('CLIENT_DISPOSED', 'SharedWorker transport was disposed'))
     this.disposed = true
     this.fallback?.dispose()
   }
@@ -359,7 +359,7 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
       url: this.options.config.url,
     }, this.options.initTimeout ?? 5_000).then((value) => {
       if (value === null || typeof value !== 'object' || !('workerInstanceId' in value))
-        throw new WwsError('INVALID_CONTROL_MESSAGE', 'SharedWorker returned an invalid welcome response')
+        throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'SharedWorker returned an invalid welcome response')
       this.workerInstanceId = String(value.workerInstanceId)
       this.leaseTimer = globalThis.setInterval(() => this.post({ type: 'lease' }), this.options.config.shared.lease.interval)
     })
@@ -388,11 +388,11 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   /** 发送一个带超时的控制请求。 */
   private request(message: ClientControlMessage, timeout = 10_000): Promise<ControlResponseValue> {
     if (!('requestId' in message))
-      return Promise.reject(new WwsError('INVALID_CONTROL_MESSAGE', 'Control request is missing requestId'))
+      return Promise.reject(new SocketFuseError('INVALID_CONTROL_MESSAGE', 'Control request is missing requestId'))
     const promise = new Promise<ControlResponseValue>((resolve, reject) => {
       const timer = globalThis.setTimeout(() => {
         this.requests.delete(message.requestId)
-        reject(new WwsError(message.type === 'hello' ? 'WORKER_INIT_TIMEOUT' : 'WORKER_DISCONNECTED', 'SharedWorker request timed out', { retryable: true }))
+        reject(new SocketFuseError(message.type === 'hello' ? 'WORKER_INIT_TIMEOUT' : 'WORKER_DISCONNECTED', 'SharedWorker request timed out', { retryable: true }))
       }, timeout)
       this.requests.set(message.requestId, { reject, resolve, timer })
     })
@@ -406,14 +406,14 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
       this.port.postMessage(message)
     }
     catch (cause) {
-      this.handleDisconnect(new WwsError('WORKER_DISCONNECTED', 'Unable to post to SharedWorker', { cause, retryable: true }))
+      this.handleDisconnect(new SocketFuseError('WORKER_DISCONNECTED', 'Unable to post to SharedWorker', { cause, retryable: true }))
     }
   }
 
   /** 校验并分派 Worker 控制消息，receipt 在业务 handler 前发送以释放 credit。 */
   private handleMessage(value: unknown): void {
     if (!isWorkerControlMessage(value)) {
-      this.handleDisconnect(new WwsError('INVALID_CONTROL_MESSAGE', 'SharedWorker sent an invalid control message'))
+      this.handleDisconnect(new SocketFuseError('INVALID_CONTROL_MESSAGE', 'SharedWorker sent an invalid control message'))
       return
     }
     if (value.type === 'response') {
@@ -457,13 +457,13 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   }
 
   /** 处理端口断开并拒绝全部待决请求。 */
-  private handleDisconnect(error: WwsError): void {
+  private handleDisconnect(error: SocketFuseError): void {
     this.rejectAll(error)
     this.sink?.onError?.(error)
   }
 
   /** 统一清理所有待决请求及其 timer。 */
-  private rejectAll(error: WwsError): void {
+  private rejectAll(error: SocketFuseError): void {
     for (const request of this.requests.values()) {
       globalThis.clearTimeout(request.timer)
       request.reject(error)
@@ -490,13 +490,13 @@ export class SharedWorkerTransport<Incoming, Outgoing, Auth = unknown> implement
   /** 返回已创建的 fallback，否则抛出 Worker disconnected。 */
   private requireFallback(): ClientTransport<Incoming, Outgoing, Auth> {
     if (this.fallback === undefined)
-      throw new WwsError('WORKER_DISCONNECTED', 'Direct fallback is not configured')
+      throw new SocketFuseError('WORKER_DISCONNECTED', 'Direct fallback is not configured')
     return this.fallback
   }
 
   /** 拒绝已 dispose transport 的后续调用。 */
   private assertUsable(): void {
     if (this.disposed)
-      throw new WwsError('CLIENT_DISPOSED', 'SharedWorker transport has been disposed')
+      throw new SocketFuseError('CLIENT_DISPOSED', 'SharedWorker transport has been disposed')
   }
 }

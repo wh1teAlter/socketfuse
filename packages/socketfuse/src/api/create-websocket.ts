@@ -10,8 +10,8 @@ import { type CreateWebSocketOptions, DirectTransport, type JsonProtocolOptions,
   type SharedWorkerLike,
   SharedWorkerTransport,
   type SocketData,
-  type WebSocketClient,
-  WwsError } from '@wws/core'
+  SocketFuseError,
+  type WebSocketClient } from '@socketfuse/core'
 import { INLINE_WORKER_SOURCE } from '../worker/source.generated'
 
 /** 在当前页面环境创建 direct transport，供明确允许的 Worker 初始化降级使用。 */
@@ -42,7 +42,7 @@ function createSharedTransport<Incoming, Outgoing, Auth>(
   const createFallback = (): DirectTransport<Incoming, Outgoing, Auth> => {
     const fallback = createDirectFallback(config, clientId)
     if (fallback === undefined)
-      throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
+      throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
     return fallback
   }
   return new SharedWorkerTransport({
@@ -75,7 +75,7 @@ function createClientId(): string {
  * @param options 共享连接与页面本地行为。
  * @returns 稳定的页面本地客户端；`immediate` 为 true 时首次打开会在后台进行。
  * @throws 在非浏览器页面 realm、选项无效、`fallback` 为 `error` 且 Worker 不可用，
- * 或 direct WebSocket 降级不可用时，同步抛出 `WwsError`。
+ * 或 direct WebSocket 降级不可用时，同步抛出 `SocketFuseError`。
  */
 export function createWebSocket(
   url: string | URL,
@@ -90,7 +90,7 @@ export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Au
   options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
 ): WebSocketClient<Incoming, Outgoing, Auth> {
   if (typeof window === 'undefined' || typeof document === 'undefined')
-    throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WWS clients require a browser page environment')
+    throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'SocketFuse clients require a browser page environment')
   const config = normalizeWebSocketOptions(url, options)
   const clientId = createClientId()
   let transport: DirectTransport<Incoming, Outgoing, Auth> | SharedWorkerTransport<Incoming, Outgoing, Auth>
@@ -98,13 +98,13 @@ export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Au
   const createFallback = (): DirectTransport<Incoming, Outgoing, Auth> => {
     const fallback = createDirectFallback(config, clientId)
     if (fallback === undefined)
-      throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
+      throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
     return fallback
   }
 
   if (typeof SharedWorker === 'undefined') {
     if (config.local.fallback === 'error')
-      throw new WwsError('WORKER_UNSUPPORTED', 'SharedWorker is not available in this environment')
+      throw new SocketFuseError('WORKER_UNSUPPORTED', 'SharedWorker is not available in this environment')
     transport = createFallback()
   }
   else {
@@ -113,12 +113,12 @@ export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Au
     }
     catch (cause) {
       if (config.local.fallback === 'error')
-        throw new WwsError('WORKER_CONSTRUCTION_FAILED', 'Unable to construct SharedWorker', { cause })
+        throw new SocketFuseError('WORKER_CONSTRUCTION_FAILED', 'Unable to construct SharedWorker', { cause })
       try {
         transport = createFallback()
       }
       catch (fallbackCause) {
-        throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback', { cause: fallbackCause })
+        throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback', { cause: fallbackCause })
       }
     }
   }

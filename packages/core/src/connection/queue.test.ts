@@ -1,6 +1,6 @@
 /** 验证有界出站 FIFO 队列的顺序、字节和 owner 清理。 */
 import { describe, expect, it } from 'vitest'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 import { OutboundQueue } from './queue'
 
 describe('outboundQueue', () => {
@@ -16,10 +16,10 @@ describe('outboundQueue', () => {
   it('enforces both message and byte limits without evicting entries', () => {
     const queue = new OutboundQueue(1, 4)
     queue.enqueue('a', 'one', 'm1')
-    expect(() => queue.enqueue('a', 'two', 'm2')).toThrowError(WwsError)
+    expect(() => queue.enqueue('a', 'two', 'm2')).toThrowError(SocketFuseError)
     expect(queue.size).toBe(1)
     queue.shift()
-    expect(() => queue.enqueue('a', '12345', 'm3')).toThrowError(WwsError)
+    expect(() => queue.enqueue('a', '12345', 'm3')).toThrowError(SocketFuseError)
   })
 
   it('removes only an owner or all entries as requested', () => {

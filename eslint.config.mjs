@@ -22,7 +22,7 @@ export default defineConfig(
     '**/node_modules/**',
     '**/playwright-report/**',
     '**/test-results/**',
-    'packages/wws/src/worker/source.generated.ts',
+    'packages/socketfuse/src/worker/source.generated.ts',
   ]),
   ...jsonc.configs['flat/recommended-with-jsonc'],
   {
@@ -69,7 +69,7 @@ export default defineConfig(
     },
   },
   {
-    files: ['packages/{core,wws}/src/**/*.ts'],
+    files: ['packages/{core,socketfuse}/src/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.browser,

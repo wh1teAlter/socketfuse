@@ -24,9 +24,9 @@ import { addSocketListener, browserWebSocketFactory, SOCKET_CONNECTING, SOCKET_O
 import { AuthRevisionRegister, EndpointRevisionRegister } from './revision'
 import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
 import { encodeWithAdapter, OrderedProtocol } from '../protocol/adapter'
+import { SocketFuseError, toSocketFuseError } from '../shared/errors'
 import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
 import { assertEncodedMessageSize } from '../shared/bytes'
-import { toWwsError, WwsError } from '../shared/errors'
 import { BackpressureTracker } from './backpressure'
 import { HeartbeatController } from './heartbeat'
 import { stableHash } from '../shared/structured'
@@ -47,7 +47,7 @@ export interface ConnectionSink<Incoming> {
   /** 安全 close 信息通知。 */
   readonly onClose?: (event: SafeCloseInfo & { readonly willReconnect: boolean }) => void
   /** 本地连接错误通知；跨 Worker 前仍需脱敏。 */
-  readonly onError?: (error: WwsError) => void
+  readonly onError?: (error: SocketFuseError) => void
 }
 
 export interface ConnectionControllerOptions<Incoming, Outgoing, Auth> {
@@ -71,7 +71,7 @@ interface OpenWaiter {
   /** ready 后返回连接快照。 */
   readonly resolve: (snapshot: ConnectionSnapshot) => void
   /** 终态、关闭或 abort 时拒绝。 */
-  readonly reject: (error: WwsError) => void
+  readonly reject: (error: SocketFuseError) => void
 }
 
 /** 将原生 close 事件裁剪为不含 reason 的安全信息。 */
@@ -95,7 +95,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 function createOperationId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
-  return `wws-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  return `socketfuse-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
 /** 只保留 endpoint origin，拒绝向诊断暴露 path/query/凭据。 */
@@ -166,8 +166,8 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private nextRetryDelay: number | null = null
   /** 最近安全 close code。 */
   private lastSafeCloseCode: number | null = null
-  /** 最近本地 WWS 错误；跨边界前必须脱敏。 */
-  private lastError: WwsError | null = null
+  /** 最近本地 SocketFuse 错误；跨边界前必须脱敏。 */
+  private lastError: SocketFuseError | null = null
   /** close 是否由当前控制器主动发起。 */
   private intentionalClose = false
   /** close 完成后是否必须立即开始显式重连。 */
@@ -298,7 +298,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   attach(sink: ConnectionSink<Incoming>): void {
     this.assertUsable()
     if (!this.sinks.has(sink.id) && this.sinks.size >= this.options.config.shared.limits.maxClientsPerConnection)
-      throw new WwsError('RESOURCE_LIMIT_EXCEEDED', 'Maximum clients for this connection has been reached')
+      throw new SocketFuseError('RESOURCE_LIMIT_EXCEEDED', 'Maximum clients for this connection has been reached')
     this.sinks.set(sink.id, sink)
     this.idleNotified = false
     this.idleCloseRequested = false
@@ -320,7 +320,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   open(signal?: AbortSignal): Promise<ConnectionSnapshot> {
     this.assertUsable()
     if (signal?.aborted)
-      return Promise.reject(new WwsError('ABORTED', 'Open wait was aborted'))
+      return Promise.reject(new SocketFuseError('ABORTED', 'Open wait was aborted'))
     if (this.state === 'open')
       return Promise.resolve(this.snapshot())
     if (this.state === 'failed' || this.state === 'closed')
@@ -335,7 +335,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
           const index = this.waiters.findIndex(waiter => waiter.resolve === resolve)
           if (index >= 0)
             this.waiters.splice(index, 1)
-          reject(new WwsError('ABORTED', 'Open wait was aborted'))
+          reject(new SocketFuseError('ABORTED', 'Open wait was aborted'))
         }
         signal.addEventListener('abort', onAbort, { once: true })
       }
@@ -360,7 +360,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     else if (this.state !== 'idle' && this.state !== 'closed') {
       this.transition('closed', 'CLIENT_DISCONNECTED')
     }
-    this.rejectWaiters(new WwsError('CLIENT_DISCONNECTED', 'Connection was closed'))
+    this.rejectWaiters(new SocketFuseError('CLIENT_DISCONNECTED', 'Connection was closed'))
     this.queue.clear()
   }
 
@@ -376,13 +376,13 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       assertEncodedMessageSize(encoded, this.options.config.shared.limits.maxEncodedMessageBytes)
       if (this.socket === null || this.state !== 'open') {
         if (!queueAllowed || (!this.options.config.shared.queue.whenDisconnected && queueSetting !== true))
-          throw new WwsError('SEND_WHILE_DISCONNECTED', 'Cannot send while the connection is not open', { retryable: true })
+          throw new SocketFuseError('SEND_WHILE_DISCONNECTED', 'Cannot send while the connection is not open', { retryable: true })
         return this.enqueue(ownerId, encoded, messageId, options.idempotencyKey)
       }
       const highWater = this.backpressure.update(this.socket.bufferedAmount)
       if (highWater) {
         if (!queueAllowed || (!this.options.config.shared.queue.whenBackpressured && queueSetting !== true))
-          throw new WwsError('BACKPRESSURE', 'Socket bufferedAmount is above the high-water mark', { retryable: true })
+          throw new SocketFuseError('BACKPRESSURE', 'Socket bufferedAmount is above the high-water mark', { retryable: true })
         return this.enqueue(ownerId, encoded, messageId, options.idempotencyKey)
       }
       this.socket.send(encoded)
@@ -396,7 +396,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   async updateAuth(value: Auth, revision: number): Promise<RevisionReceipt> {
     this.assertUsable()
     if (!this.options.config.adapter.capabilities.auth || this.options.config.adapter.createAuth === undefined)
-      throw new WwsError('CAPABILITY_UNSUPPORTED', 'The selected protocol does not support auth updates')
+      throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'The selected protocol does not support auth updates')
     const receipt = this.auth.update(value, revision)
     if (receipt.status === 'applied' && this.isAttemptActive())
       await this.reconnect('AUTH_REVISION_UPDATED')
@@ -423,10 +423,10 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       parsed = new URL(url)
     }
     catch (cause) {
-      throw new WwsError('INVALID_OPTIONS', 'url must be a valid absolute URL', { cause })
+      throw new SocketFuseError('INVALID_OPTIONS', 'url must be a valid absolute URL', { cause })
     }
     if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
-      throw new WwsError('INVALID_OPTIONS', 'url must use ws: or wss:')
+      throw new SocketFuseError('INVALID_OPTIONS', 'url must use ws: or wss:')
     const receipt = this.endpoint.update(parsed.href, revision)
     if (receipt.status === 'applied' && this.isAttemptActive())
       await this.reconnect('ENDPOINT_UPDATED')
@@ -494,7 +494,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       socket = this.socketFactory(this.endpoint.value, this.options.config.shared.protocols, this.options.config.shared.binaryType)
     }
     catch (cause) {
-      this.fail(new WwsError('SOCKET_ERROR', 'Unable to construct WebSocket', { cause, retryable: true }))
+      this.fail(new SocketFuseError('SOCKET_ERROR', 'Unable to construct WebSocket', { cause, retryable: true }))
       return
     }
     this.socket = socket
@@ -502,12 +502,12 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.socketCleanups = [
       addSocketListener(socket, 'open', () => this.handleOpen(socket, attempt)),
       addSocketListener(socket, 'message', (event: { readonly data: SocketData }) => this.handleMessage(socket, attempt, event.data)),
-      addSocketListener(socket, 'error', () => this.handleError(new WwsError('SOCKET_ERROR', 'WebSocket reported an error', { retryable: true }), socket, attempt)),
+      addSocketListener(socket, 'error', () => this.handleError(new SocketFuseError('SOCKET_ERROR', 'WebSocket reported an error', { retryable: true }), socket, attempt)),
       addSocketListener(socket, 'close', (event: { readonly code: number, readonly wasClean: boolean }) => this.handleClose(socket, attempt, event)),
     ]
     this.connectTimer = this.setTimer(() => {
       if (this.isCurrentAttempt(socket, attempt) && this.state !== 'open') {
-        this.lastError = new WwsError('CONNECTION_TIMEOUT', 'WebSocket connection timed out', { retryable: true })
+        this.lastError = new SocketFuseError('CONNECTION_TIMEOUT', 'WebSocket connection timed out', { retryable: true })
         socket.close(1000)
       }
     }, this.options.config.shared.connectionTimeout)
@@ -546,7 +546,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       }
     }
     catch (cause) {
-      const error = toWwsError(cause, 'AUTH_FAILED', 'Protocol auth frame failed', { fatal: true, retryable: false })
+      const error = toSocketFuseError(cause, 'AUTH_FAILED', 'Protocol auth frame failed', { fatal: true, retryable: false })
       if (this.isCurrentAttempt(socket, attempt)) {
         this.handleError(error)
         this.lastError = error
@@ -581,7 +581,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       await this.handleFrame(socket, attempt, frame)
     }
     catch (cause) {
-      this.handleError(toWwsError(cause, 'PROTOCOL_ERROR', 'Protocol frame processing failed', { retryable: false }))
+      this.handleError(toSocketFuseError(cause, 'PROTOCOL_ERROR', 'Protocol frame processing failed', { retryable: false }))
     }
   }
 
@@ -618,7 +618,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       return
     }
     if (frame.type === 'fatal') {
-      const error = new WwsError('PROTOCOL_ERROR', 'Protocol rejected the connection', { fatal: true })
+      const error = new SocketFuseError('PROTOCOL_ERROR', 'Protocol rejected the connection', { fatal: true })
       this.handleError(error)
       this.lastError = error
       this.rejectWaiters(error)
@@ -642,7 +642,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   }
 
   /** 记录错误并通知 sink；不等待页面 handler。 */
-  private handleError(error: WwsError, socket?: WebSocketLike, attempt?: number): void {
+  private handleError(error: SocketFuseError, socket?: WebSocketLike, attempt?: number): void {
     if (socket !== undefined && attempt !== undefined && !this.isCurrentAttempt(socket, attempt))
       return
     this.lastError = error
@@ -694,7 +694,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       else {
         this.transition('failed', 'RETRY_EXHAUSTED')
         this.emitState('RETRY_EXHAUSTED')
-        this.rejectWaiters(new WwsError('RETRY_EXHAUSTED', 'Reconnect retry budget was exhausted', { fatal: true }))
+        this.rejectWaiters(new SocketFuseError('RETRY_EXHAUSTED', 'Reconnect retry budget was exhausted', { fatal: true }))
       }
     }
     else {
@@ -708,7 +708,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
         this.transition('closed', info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
       if (!this.lastError?.fatal) {
         this.emitState(info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
-        this.rejectWaiters(new WwsError(info.terminal ? 'CLOSE_NOT_RETRYABLE' : 'CLIENT_DISCONNECTED', 'WebSocket closed'))
+        this.rejectWaiters(new SocketFuseError(info.terminal ? 'CLOSE_NOT_RETRYABLE' : 'CLIENT_DISCONNECTED', 'WebSocket closed'))
       }
     }
     for (const sink of this.sinks.values())
@@ -720,7 +720,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   }
 
   /** 在 socket 构造失败等无 close 事件路径进入终态。 */
-  private fail(error: WwsError): void {
+  private fail(error: SocketFuseError): void {
     this.handleError(error)
     if (this.socket !== null)
       this.cleanupSocket()
@@ -748,7 +748,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
           return true
         }
         catch (cause) {
-          this.handleError(toWwsError(cause, 'SOCKET_ERROR', 'Queued message send failed', { retryable: true }))
+          this.handleError(toSocketFuseError(cause, 'SOCKET_ERROR', 'Queued message send failed', { retryable: true }))
           return false
         }
       })
@@ -807,7 +807,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
 
   /** 将心跳超时转换为可重试连接错误并关闭 socket。 */
   private handleHeartbeatTimeout(): void {
-    const error = new WwsError('HEARTBEAT_TIMEOUT', 'Heartbeat timed out', { retryable: true })
+    const error = new SocketFuseError('HEARTBEAT_TIMEOUT', 'Heartbeat timed out', { retryable: true })
     this.handleError(error)
     this.lastError = error
     this.socket?.close(4000)
@@ -836,7 +836,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   }
 
   /** reject 当前等待连接的所有 open waiter。 */
-  private rejectWaiters(error: WwsError): void {
+  private rejectWaiters(error: SocketFuseError): void {
     const waiters = this.waiters.splice(0)
     for (const waiter of waiters)
       waiter.reject(error)
@@ -899,6 +899,6 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   /** 拒绝 dispose 后的连接操作。 */
   private assertUsable(): void {
     if (this.disposed)
-      throw new WwsError('CLIENT_DISPOSED', 'Connection controller has been disposed')
+      throw new SocketFuseError('CLIENT_DISPOSED', 'Connection controller has been disposed')
   }
 }

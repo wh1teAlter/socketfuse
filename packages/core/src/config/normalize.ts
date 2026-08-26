@@ -17,7 +17,7 @@ import type {
   QueueOptions,
   ReconnectOptions,
   SocketData,
-  WwsLogger,
+  SocketFuseLogger,
 } from '../shared/types'
 import {
   DEFAULT_BACKPRESSURE_OPTIONS,
@@ -87,7 +87,7 @@ export interface LocalClientConfig {
   /** Worker 来源模式。 */
   readonly workerMode: 'inline' | 'custom'
   /** 只在当前页面调用的脱敏日志函数。 */
-  readonly logger: WwsLogger | undefined
+  readonly logger: SocketFuseLogger | undefined
 }
 
 export interface NormalizedWebSocketConfig<Incoming, Outgoing, Auth> {

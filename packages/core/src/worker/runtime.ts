@@ -8,9 +8,9 @@ import type { JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, Ti
 import type { WebSocketFactory } from '../transport/socket'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, type HelloRequest, isClientControlMessage, type WorkerControlMessage } from './control'
 import { type NormalizedWebSocketConfig, normalizeRestoreOptions, normalizeWebSocketOptions, type SharedConnectionConfig } from '../config/normalize'
+import { isSocketFuseError, SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
 import { createJsonProtocolAdapter, rawProtocol, validateProtocolAdapter } from '../protocol/adapter'
 import { CONTROL_PROTOCOL_MAJOR, DEFAULT_WORKER_RESOURCE_LIMITS } from '../shared/constants'
-import { isWwsError, toSafePublicError, toWwsError, WwsError } from '../shared/errors'
 import { ConnectionController, type ConnectionSink } from '../connection/controller'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
 
@@ -117,21 +117,21 @@ function createId(): string {
 /** 校验正安全整数 Worker 限制。 */
 function positiveInteger(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
-    throw new WwsError('INVALID_OPTIONS', `${field} must be a positive safe integer`)
+    throw new SocketFuseError('INVALID_OPTIONS', `${field} must be a positive safe integer`)
   return value
 }
 
 /** 校验正有限 Worker 限制。 */
 function positiveNumber(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
-    throw new WwsError('INVALID_OPTIONS', `${field} must be a positive finite number`)
+    throw new SocketFuseError('INVALID_OPTIONS', `${field} must be a positive finite number`)
   return value
 }
 
 /** 规范化 Worker 级资源限制，限制在 runtime 生命周期内保持不变。 */
 function normalizeWorkerLimits(value: Partial<WorkerResourceLimits> | undefined): Readonly<WorkerResourceLimits> {
   if (value !== undefined && (value === null || typeof value !== 'object'))
-    throw new WwsError('INVALID_OPTIONS', 'workerLimits must be an options object')
+    throw new SocketFuseError('INVALID_OPTIONS', 'workerLimits must be an options object')
   return Object.freeze({
     maxControlEnvelopeBytes: positiveInteger(value?.maxControlEnvelopeBytes ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxControlEnvelopeBytes, 'workerLimits.maxControlEnvelopeBytes'),
     maxPorts: positiveInteger(value?.maxPorts ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxPorts, 'workerLimits.maxPorts'),
@@ -175,7 +175,7 @@ function resolveAdapter(
     return createJsonProtocolAdapter(shared.protocol.sharedConfig as never) as ProtocolAdapter<unknown, unknown, unknown>
   const adapter = adapters.get(adapterKey(shared.protocol.id, shared.protocol.version))
   if (adapter === undefined)
-    throw new WwsError('ADAPTER_NOT_REGISTERED', 'Custom protocol adapter is not registered in this Worker')
+    throw new SocketFuseError('ADAPTER_NOT_REGISTERED', 'Custom protocol adapter is not registered in this Worker')
   return adapter
 }
 
@@ -206,7 +206,7 @@ function createWorkerConfig(
     worker: () => null as unknown as SharedWorker,
   }) as NormalizedWebSocketConfig<unknown, unknown, unknown>
   if (normalized.configCanonical !== message.configCanonical || normalized.configFingerprint !== message.configFingerprint)
-    throw new WwsError('INVALID_CONTROL_MESSAGE', 'Hello configuration does not match its canonical fingerprint')
+    throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'Hello configuration does not match its canonical fingerprint')
   return { config: normalized, restore: normalizeRestoreOptions({ restore: message.restore.enabled
     ? { maxBytes: message.restore.maxBytes, maxMessages: message.restore.maxMessages, replay: message.restore.replay }
     : false }) }
@@ -214,7 +214,7 @@ function createWorkerConfig(
 
 /** 将任意异常裁剪为可跨端口的稳定 ControlError。 */
 function serializeError(error: unknown): ControlError {
-  const value = isWwsError(error) ? error : toWwsError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
+  const value = isSocketFuseError(error) ? error : toSocketFuseError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
   const safe = toSafePublicError(value)
   return { code: safe.code, fatal: safe.fatal, retryable: safe.retryable }
 }
@@ -225,7 +225,7 @@ function serializeError(error: unknown): ControlError {
  * @param options Worker 内静态 adapter、socket 工厂、时钟和资源上限；创建后资源上限
  * 不能通过页面控制消息放宽。
  * @returns 可手动连接 port、查询 instanceId 并最终 dispose 的 runtime。
- * @throws `WwsError`，当静态 adapter 或 Worker 资源上限无效时。
+ * @throws `SocketFuseError`，当静态 adapter 或 Worker 资源上限无效时。
  */
 export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOptions = {}): SharedWebSocketRuntime {
   const workerLimits = normalizeWorkerLimits(options.workerLimits)
@@ -349,10 +349,10 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   const ensureAttached = (port: MessagePortLike): { client: RuntimeClient, entry: ConnectionEntry } => {
     const client = clients.get(port)
     if (client === undefined)
-      throw new WwsError('INVALID_CONTROL_MESSAGE', 'Port is not attached')
+      throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'Port is not attached')
     const entry = connections.get(client.connectionId)
     if (entry === undefined)
-      throw new WwsError('INTERNAL_STATE_ERROR', 'Connection entry is missing')
+      throw new SocketFuseError('INTERNAL_STATE_ERROR', 'Connection entry is missing')
     return { client, entry }
   }
 
@@ -386,7 +386,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   /** 以 attach→client commit 顺序完成 hello 事务，失败时完整回滚。 */
   const handleHello = (port: MessagePortLike, message: HelloRequest): void => {
     if (message.protocolMajor !== CONTROL_PROTOCOL_MAJOR) {
-      reject(port, message.requestId, new WwsError('PROTOCOL_VERSION_MISMATCH', 'Control protocol version mismatch', { fatal: true }))
+      reject(port, message.requestId, new SocketFuseError('PROTOCOL_VERSION_MISMATCH', 'Control protocol version mismatch', { fatal: true }))
       detach(port, true)
       return
     }
@@ -395,14 +395,14 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       if (!connectedPorts.has(port)) {
         if (connectedPorts.size >= workerLimits.maxPorts) {
           detach(port, true)
-          throw new WwsError('RESOURCE_LIMIT_EXCEEDED', 'Maximum Worker ports has been reached')
+          throw new SocketFuseError('RESOURCE_LIMIT_EXCEEDED', 'Maximum Worker ports has been reached')
         }
         connectedPorts.add(port)
       }
       const workerConfig = createWorkerConfig(message, adapters)
       let entry = connections.get(message.id)
       if (entry !== undefined && entry.canonical !== message.configCanonical)
-        throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
+        throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
       if (entry === undefined) {
         const config = workerConfig.config
         const controller = new ConnectionController({
@@ -418,7 +418,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         connections.set(message.id, entry)
       }
       else if (entry.controller.endpointRevision === 0 && entry.config.url !== message.url) {
-        throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Initial endpoint conflicts with the current endpoint')
+        throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Initial endpoint conflicts with the current endpoint')
       }
       detach(port, false, false)
       const sink = createSink(port, message)
@@ -565,7 +565,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       if (!isClientControlMessage(event.data)) {
         const record = event.data as { readonly requestId?: unknown }
         if (typeof record?.requestId === 'string')
-          reject(port, record.requestId, new WwsError('INVALID_CONTROL_MESSAGE', 'Invalid control message'))
+          reject(port, record.requestId, new SocketFuseError('INVALID_CONTROL_MESSAGE', 'Invalid control message'))
         else
           detach(port, true)
         return
@@ -624,7 +624,7 @@ export interface SharedWorkerGlobalLike {
  * @param options Worker runtime 依赖和静态资源上限。
  * @param scope 可选的测试/自定义 global scope；省略时使用当前 Worker globalThis。
  * @returns 已安装连接入口的 runtime。
- * @throws `WwsError`，当 runtime 选项无效时。
+ * @throws `SocketFuseError`，当 runtime 选项无效时。
  */
 export function exposeSharedWebSocketWorker(options: SharedWebSocketRuntimeOptions = {}, scope?: SharedWorkerGlobalLike): SharedWebSocketRuntime {
   const target = scope ?? globalThis as unknown as SharedWorkerGlobalLike

@@ -1,11 +1,11 @@
 /**
- * WWS 的稳定错误模型与跨 Worker 脱敏边界。
+ * SocketFuse 的稳定错误模型与跨 Worker 脱敏边界。
  *
  * 页面只能依据错误码与安全文本做控制流；adapter、服务端和浏览器原始异常不能跨端口
  * 传播，以免凭据、URL 或内部实现细节进入其他页面或日志。
  */
-/** WWS v1 对外稳定的机器可读错误码集合。 */
-export const WWS_ERROR_CODES = [
+/** SocketFuse v1 对外稳定的机器可读错误码集合。 */
+export const SOCKET_FUSE_ERROR_CODES = [
   'INVALID_OPTIONS',
   'ENVIRONMENT_UNSUPPORTED',
   'CLIENT_DISPOSED',
@@ -41,24 +41,24 @@ export const WWS_ERROR_CODES = [
   'INTERNAL_STATE_ERROR',
 ] as const
 
-/** 所有 WWS 稳定错误码构成的联合类型。 */
-export type WwsErrorCode = typeof WWS_ERROR_CODES[number]
+/** 所有 SocketFuse 稳定错误码构成的联合类型。 */
+export type SocketFuseErrorCode = typeof SOCKET_FUSE_ERROR_CODES[number]
 
 /** 用于 O(1) 校验外部控制消息错误码的只读集合。 */
-const wwsErrorCodeSet: ReadonlySet<string> = new Set(WWS_ERROR_CODES)
+const socketFuseErrorCodeSet: ReadonlySet<string> = new Set(SOCKET_FUSE_ERROR_CODES)
 
 /**
- * 判断未知值是否为 WWS 可公开的稳定错误码。
+ * 判断未知值是否为 SocketFuse 可公开的稳定错误码。
  *
  * @param value 可能来自 Worker 控制消息的未知值。
  * @returns 是稳定错误码时返回 `true`。
  */
-export function isWwsErrorCode(value: unknown): value is WwsErrorCode {
-  return typeof value === 'string' && wwsErrorCodeSet.has(value)
+export function isSocketFuseErrorCode(value: unknown): value is SocketFuseErrorCode {
+  return typeof value === 'string' && socketFuseErrorCodeSet.has(value)
 }
 
-/** 构造 `WwsError` 时的内部元数据；跨 Worker 前必须经过脱敏。 */
-export interface WwsErrorOptions {
+/** 构造 `SocketFuseError` 时的内部元数据；跨 Worker 前必须经过脱敏。 */
+export interface SocketFuseErrorOptions {
   /** 当前失败是否可能通过重试恢复。 */
   retryable?: boolean
   /** 当前失败是否令逻辑 client 进入终态。 */
@@ -75,11 +75,11 @@ export interface WwsErrorOptions {
  * 调用方必须依据 `code` 而不是匹配 `message`。details 和 cause 在错误跨 Worker
  * 边界或进入页面 callback 前会被移除，维持“不泄露凭据与内部异常”的不变量。
  */
-export class WwsError extends Error {
+export class SocketFuseError extends Error {
   /** 便于跨 realm 判断的稳定错误名称。 */
-  readonly name = 'WwsError' as const
+  readonly name = 'SocketFuseError' as const
   /** 面向调用方的稳定错误码。 */
-  readonly code: WwsErrorCode
+  readonly code: SocketFuseErrorCode
   /** 是否允许当前操作自动或手动重试。 */
   readonly retryable: boolean
   /** 是否表示 client 不应再尝试恢复。 */
@@ -96,7 +96,7 @@ export class WwsError extends Error {
    * @param message 当前 realm 中可读的错误文本。
    * @param options 重试、终态和本地诊断元数据。
    */
-  constructor(code: WwsErrorCode, message: string, options: WwsErrorOptions = {}) {
+  constructor(code: SocketFuseErrorCode, message: string, options: SocketFuseErrorOptions = {}) {
     super(message)
     this.code = code
     this.retryable = options.retryable ?? false
@@ -107,7 +107,7 @@ export class WwsError extends Error {
 }
 
 /** 跨端口时唯一允许使用的稳定英文错误文本映射。 */
-const SAFE_ERROR_MESSAGES: Readonly<Record<WwsErrorCode, string>> = Object.freeze({
+const SAFE_ERROR_MESSAGES: Readonly<Record<SocketFuseErrorCode, string>> = Object.freeze({
   ABORTED: 'Operation was aborted',
   ADAPTER_NOT_REGISTERED: 'The requested protocol adapter is unavailable in this Worker',
   AUTH_FAILED: 'Authentication failed',
@@ -125,7 +125,7 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<WwsErrorCode, string>> = Object.freez
   INBOUND_OVERFLOW: 'Inbound messages were dropped because the page was too slow',
   INTERNAL_STATE_ERROR: 'Internal connection state error',
   INVALID_CONTROL_MESSAGE: 'Invalid SharedWorker control message',
-  INVALID_OPTIONS: 'Invalid WWS options',
+  INVALID_OPTIONS: 'Invalid SocketFuse options',
   MESSAGE_TOO_LARGE: 'Message exceeds the configured size limit',
   PROTOCOL_ERROR: 'Protocol processing failed',
   PROTOCOL_VERSION_MISMATCH: 'SharedWorker control protocol version mismatch',
@@ -146,10 +146,10 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<WwsErrorCode, string>> = Object.freez
 /**
  * 返回错误码对应的稳定安全文本。
  *
- * @param code 已校验的 WWS 错误码。
+ * @param code 已校验的 SocketFuse 错误码。
  * @returns 不含 adapter、服务端或浏览器原始文本的错误说明。
  */
-export function safeErrorMessage(code: WwsErrorCode): string {
+export function safeErrorMessage(code: SocketFuseErrorCode): string {
   return SAFE_ERROR_MESSAGES[code]
 }
 
@@ -161,19 +161,19 @@ export function safeErrorMessage(code: WwsErrorCode): string {
  * @returns 不携带原始 cause 的页面安全错误对象。
  */
 export function createSafePublicError(
-  code: WwsErrorCode,
-  options: Pick<WwsErrorOptions, 'details' | 'fatal' | 'retryable'> = {},
-): WwsError {
-  return new WwsError(code, safeErrorMessage(code), options)
+  code: SocketFuseErrorCode,
+  options: Pick<SocketFuseErrorOptions, 'details' | 'fatal' | 'retryable'> = {},
+): SocketFuseError {
+  return new SocketFuseError(code, safeErrorMessage(code), options)
 }
 
 /**
  * 将本地错误裁剪为可跨端口的安全形式。
  *
- * @param error 任意本地 WWS 错误。
+ * @param error 任意本地 SocketFuse 错误。
  * @returns 保留 code/retryable/fatal、丢弃内部文本和详情的错误对象。
  */
-export function toSafePublicError(error: WwsError): WwsError {
+export function toSafePublicError(error: SocketFuseError): SocketFuseError {
   const details = error.details === undefined
     ? undefined
     : Object.freeze(Object.fromEntries(Object.entries(error.details).filter(([, value]) => value === null
@@ -187,34 +187,34 @@ export function toSafePublicError(error: WwsError): WwsError {
 }
 
 /**
- * 判断未知异常是否为 WWS 错误。
+ * 判断未知异常是否为 SocketFuse 错误。
  *
  * @param value 捕获到的未知异常。
- * @returns 值为 `WwsError` 时返回 `true`。
+ * @returns 值为 `SocketFuseError` 时返回 `true`。
  */
-export function isWwsError(value: unknown): value is WwsError {
-  return value instanceof WwsError
+export function isSocketFuseError(value: unknown): value is SocketFuseError {
+  return value instanceof SocketFuseError
 }
 
 /**
- * 将任意异常归一化为 WWS 错误，保留本地 cause 但不负责跨端口传播。
+ * 将任意异常归一化为 SocketFuse 错误，保留本地 cause 但不负责跨端口传播。
  *
  * @param value 原始异常或任意 throw 值。
- * @param code 非 WWS 错误时采用的稳定错误码。
+ * @param code 非 SocketFuse 错误时采用的稳定错误码。
  * @param message 当前 realm 中的后备文本。
  * @param options 可重试、终态与本地诊断元数据。
- * @returns 可被本地状态机处理的 `WwsError`。
+ * @returns 可被本地状态机处理的 `SocketFuseError`。
  */
-export function toWwsError(
+export function toSocketFuseError(
   value: unknown,
-  code: WwsErrorCode,
+  code: SocketFuseErrorCode,
   message: string,
-  options: Omit<WwsErrorOptions, 'cause'> = {},
-): WwsError {
-  if (isWwsError(value))
+  options: Omit<SocketFuseErrorOptions, 'cause'> = {},
+): SocketFuseError {
+  if (isSocketFuseError(value))
     return value
 
-  return new WwsError(code, message, { ...options, cause: value })
+  return new SocketFuseError(code, message, { ...options, cause: value })
 }
 
 /**
@@ -224,6 +224,6 @@ export function toWwsError(
  * @param field 可选的字段路径，仅用于本地诊断。
  * @returns 错误码固定为 `INVALID_OPTIONS` 的错误。
  */
-export function invalidOptions(message: string, field?: string): WwsError {
-  return new WwsError('INVALID_OPTIONS', message, field === undefined ? {} : { details: { field } })
+export function invalidOptions(message: string, field?: string): SocketFuseError {
+  return new SocketFuseError('INVALID_OPTIONS', message, field === undefined ? {} : { details: { field } })
 }

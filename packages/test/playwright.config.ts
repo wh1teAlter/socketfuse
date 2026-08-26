@@ -1,5 +1,5 @@
 /**
- * WWS 跨浏览器 E2E 配置。
+ * SocketFuse 跨浏览器 E2E 配置。
  *
  * 每个项目使用同一 docs playground 与本地 ws 测试服务，覆盖 SharedWorker、页面
  * 生命周期和 direct fallback 的浏览器差异。
@@ -16,7 +16,7 @@ const config: PlaywrightTestConfig = {
   testDir: './e2e/specs',
   webServer: [
     {
-      command: 'pnpm --filter @wws/docs dev',
+      command: 'pnpm --filter @socketfuse/docs dev',
       port: 4173,
       reuseExistingServer: true,
     },

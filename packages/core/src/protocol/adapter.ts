@@ -18,10 +18,10 @@ import type {
   SocketData,
 } from '../shared/types'
 import { assertStructuredCloneable, isPlainRecord, stableSerialize } from '../shared/structured'
-import { invalidOptions, WwsError } from '../shared/errors'
+import { invalidOptions, SocketFuseError } from '../shared/errors'
 import { isValidAdapterId } from '../config/normalize'
 
-/** raw adapter 的能力快照；raw 不消费控制帧且不支持 WWS heartbeat/auth。 */
+/** raw adapter 的能力快照；raw 不消费控制帧且不支持 SocketFuse heartbeat/auth。 */
 const rawCapabilities: ProtocolCapabilities = Object.freeze({ auth: false, binary: true, heartbeat: false })
 
 /** raw 协议：原样透传 WebSocket payload，并在 socket open 时 ready。 */
@@ -126,7 +126,7 @@ function readJson(data: SocketData): MaybePromise<JsonValue> {
       return parsed
     }
     catch (cause) {
-      throw new WwsError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
+      throw new SocketFuseError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
     }
   }
   if (data instanceof Blob)
@@ -136,7 +136,7 @@ function readJson(data: SocketData): MaybePromise<JsonValue> {
     return readJson(new TextDecoder().decode(bytes))
   }
   catch (cause) {
-    throw new WwsError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
+    throw new SocketFuseError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
   }
 }
 
@@ -196,7 +196,7 @@ function validateJsonOptions(options: JsonProtocolOptions): void {
   assertStructuredCloneable(options, 'protocol')
 }
 
-/** 创建声明式 JSON 协议适配器。同步/异步 API 失败会转为稳定 WWS 错误码。 */
+/** 创建声明式 JSON 协议适配器。同步/异步 API 失败会转为稳定 SocketFuse 错误码。 */
 export function createJsonProtocolAdapter(options: JsonProtocolOptions): ProtocolAdapter<JsonValue, JsonValue, unknown> {
   validateJsonOptions(options)
   const id = options.id ?? 'json'
@@ -229,14 +229,14 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
     createAuth(auth: unknown, context: AuthContext): JsonValue {
       void context
       if (options.auth === undefined)
-        throw new WwsError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare an auth template')
+        throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare an auth template')
       return applyTemplate(options.auth.template, auth)
     },
     /** 返回声明式 JSON ping 模板。 */
     createPing(context: HeartbeatContext): JsonValue {
       void context
       if (heartbeat === undefined)
-        throw new WwsError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a heartbeat template')
+        throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a heartbeat template')
       return heartbeat.ping
     },
     /** 返回声明式 JSON server-pong 模板。 */
@@ -244,7 +244,7 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
       void ping
       void context
       if (heartbeat?.serverPong === undefined)
-        throw new WwsError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a server pong template')
+        throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a server pong template')
       return heartbeat.serverPong
     },
     /** 将原始 payload 解码为 JSON 值。 */
@@ -261,7 +261,7 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
         return JSON.stringify(data)
       }
       catch (cause) {
-        throw new WwsError('ENCODE_FAILED', 'Unable to encode JSON message', { cause })
+        throw new SocketFuseError('ENCODE_FAILED', 'Unable to encode JSON message', { cause })
       }
     },
     id,
@@ -322,9 +322,9 @@ export async function encodeWithAdapter<Incoming, Outgoing, Auth>(
     return encoded
   }
   catch (cause) {
-    if (cause instanceof WwsError && cause.code === 'ENCODE_FAILED')
+    if (cause instanceof SocketFuseError && cause.code === 'ENCODE_FAILED')
       throw cause
-    throw new WwsError('ENCODE_FAILED', 'Protocol adapter encode failed', { cause })
+    throw new SocketFuseError('ENCODE_FAILED', 'Protocol adapter encode failed', { cause })
   }
 }
 
@@ -339,9 +339,9 @@ export async function decodeAndClassify<Incoming, Outgoing, Auth>(
     decoded = await adapter.decode(data, context)
   }
   catch (cause) {
-    if (cause instanceof WwsError && cause.code === 'DECODE_FAILED')
+    if (cause instanceof SocketFuseError && cause.code === 'DECODE_FAILED')
       throw cause
-    throw new WwsError('DECODE_FAILED', 'Protocol adapter decode failed', { cause })
+    throw new SocketFuseError('DECODE_FAILED', 'Protocol adapter decode failed', { cause })
   }
   try {
     const frame = await adapter.classify(decoded, context)
@@ -350,9 +350,9 @@ export async function decodeAndClassify<Incoming, Outgoing, Auth>(
     return frame
   }
   catch (cause) {
-    if (cause instanceof WwsError && cause.code === 'PROTOCOL_ERROR')
+    if (cause instanceof SocketFuseError && cause.code === 'PROTOCOL_ERROR')
       throw cause
-    throw new WwsError('PROTOCOL_ERROR', 'Protocol adapter classify failed', { cause })
+    throw new SocketFuseError('PROTOCOL_ERROR', 'Protocol adapter classify failed', { cause })
   }
 }
 

@@ -1,7 +1,7 @@
 /** 为出站消息提供按数量和字节双重限制的 FIFO 队列。 */
 import type { SocketData } from '../shared/types'
 import { socketDataByteLength } from '../shared/bytes'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 export interface OutboundQueueItem {
   /** 产生该项的页面 client id，用于 detach 时只移除所属消息。 */
@@ -10,9 +10,9 @@ export interface OutboundQueueItem {
   readonly data: SocketData
   /** 编码 payload 的字节数。 */
   readonly bytes: number
-  /** WWS 本地生成的消息标识。 */
+  /** SocketFuse 本地生成的消息标识。 */
   readonly messageId: string
-  /** 可选业务幂等键，WWS 不解释其服务端语义。 */
+  /** 可选业务幂等键，SocketFuse 不解释其服务端语义。 */
   readonly idempotencyKey?: string
   /** 全局入队序列，用于诊断和保持顺序语义。 */
   readonly sequence: number
@@ -36,7 +36,7 @@ export class OutboundQueue {
   /** 创建具有消息数和字节双重上限的 FIFO 队列。 */
   constructor(readonly maxMessages: number, readonly maxBytes: number) {
     if (!Number.isSafeInteger(maxMessages) || maxMessages <= 0 || !Number.isSafeInteger(maxBytes) || maxBytes <= 0)
-      throw new WwsError('INVALID_OPTIONS', 'Queue limits must be positive safe integers')
+      throw new SocketFuseError('INVALID_OPTIONS', 'Queue limits must be positive safe integers')
   }
 
   /** 返回当前消息数量。 */
@@ -63,11 +63,11 @@ export class OutboundQueue {
   ): { item: OutboundQueueItem, position: number } {
     const bytes = socketDataByteLength(data)
     if (bytes > this.maxBytes)
-      throw new WwsError('MESSAGE_TOO_LARGE', 'Message exceeds queue byte limit', { details: { bytes, maxBytes: this.maxBytes } })
+      throw new SocketFuseError('MESSAGE_TOO_LARGE', 'Message exceeds queue byte limit', { details: { bytes, maxBytes: this.maxBytes } })
     if (this.entries.length >= this.maxMessages)
-      throw new WwsError('QUEUE_FULL', 'Outbound queue message limit reached', { details: { maxMessages: this.maxMessages } })
+      throw new SocketFuseError('QUEUE_FULL', 'Outbound queue message limit reached', { details: { maxMessages: this.maxMessages } })
     if (this.totalBytes + bytes > this.maxBytes)
-      throw new WwsError('QUEUE_BYTES_EXCEEDED', 'Outbound queue byte limit reached', { details: { bytes: this.totalBytes, maxBytes: this.maxBytes } })
+      throw new SocketFuseError('QUEUE_BYTES_EXCEEDED', 'Outbound queue byte limit reached', { details: { bytes: this.totalBytes, maxBytes: this.maxBytes } })
     const item: OutboundQueueItem = idempotencyKey === undefined
       ? { bytes, data, messageId, ownerId, sequence: ++this.sequence }
       : { bytes, data, idempotencyKey, messageId, ownerId, sequence: ++this.sequence }

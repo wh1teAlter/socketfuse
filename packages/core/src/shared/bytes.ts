@@ -5,7 +5,7 @@
  * 在不同调用路径被按不同单位计算而突破共享连接边界。
  */
 import type { SocketData } from './types'
-import { invalidOptions, WwsError } from './errors'
+import { invalidOptions, SocketFuseError } from './errors'
 
 /**
  * 计算一条原生 WebSocket payload 的传输字节数。
@@ -36,6 +36,6 @@ export function socketDataByteLength(data: SocketData): number {
 export function assertEncodedMessageSize(data: SocketData, maxBytes: number): number {
   const bytes = socketDataByteLength(data)
   if (bytes > maxBytes)
-    throw new WwsError('MESSAGE_TOO_LARGE', 'Encoded message exceeds the configured limit', { details: { maxBytes, bytes } })
+    throw new SocketFuseError('MESSAGE_TOO_LARGE', 'Encoded message exceeds the configured limit', { details: { maxBytes, bytes } })
   return bytes
 }

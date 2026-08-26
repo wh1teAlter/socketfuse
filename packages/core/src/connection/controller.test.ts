@@ -118,7 +118,7 @@ describe('connectionController', () => {
     expect(controller.diagnostics('direct')).toMatchObject({
       attachedClientCount: 0,
       endpointOrigin: 'wss://example.test',
-      idHash: expect.stringMatching(/^wws1-/),
+      idHash: expect.stringMatching(/^socketfuse1-/),
       transport: 'direct',
     })
   })

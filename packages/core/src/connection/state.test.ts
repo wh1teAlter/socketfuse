@@ -1,7 +1,7 @@
 /** 验证连接状态迁移图与 WebSocket 兼容状态映射。 */
 import { describe, expect, it } from 'vitest'
 import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 describe('connection state machine', () => {
   it('accepts the physical connection lifecycle', () => {
@@ -16,7 +16,7 @@ describe('connection state machine', () => {
 
   it('rejects illegal transitions with INTERNAL_STATE_ERROR', () => {
     const machine = new ConnectionStateMachine()
-    expect(() => machine.transition('open')).toThrowError(WwsError)
+    expect(() => machine.transition('open')).toThrowError(SocketFuseError)
     expect(() => machine.transition('open')).toThrowError(/Invalid connection transition/)
   })
 

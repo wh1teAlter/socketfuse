@@ -1,8 +1,8 @@
 ---
 layout: home
-title: wws
+title: SocketFuse
 hero:
-  name: wws
+  name: SocketFuse
   text: 在浏览器标签页之间共享 WebSocket 连接
   tagline: 以 SharedWorker 为首选，并提供 direct WebSocket 降级。
 ---
@@ -10,7 +10,7 @@ hero:
 # 快速开始
 
 ```ts
-import { createWebSocket } from 'wws'
+import { createWebSocket } from 'socketfuse'
 
 const ws = createWebSocket('wss://api.example.com/realtime', {
   id: 'chat:tenant-a:user-42',
@@ -42,7 +42,7 @@ await ws.sendMessage(JSON.stringify({ type: 'join', room: 'general' }))
 ]
 ```
 
-这些回执只描述本地接纳结果。WWS v1 不实现服务端 Ack、请求关联或 `request()`
+这些回执只描述本地接纳结果。SocketFuse v1 不实现服务端 Ack、请求关联或 `request()`
 辅助方法。队列需显式启用：`queue: true` 会在断开和背压状态下启用 FIFO 内存队列，
 默认上限为 100 条消息和 1 MiB。
 
@@ -115,13 +115,13 @@ const ws = createWebSocket(url, {
 ```ts
 const ws = createWebSocket(url, {
   id: 'feed',
-  worker: () => new SharedWorker('/wws-worker.js'),
+  worker: () => new SharedWorker('/socketfuse-worker.js'),
   protocol: 'raw',
 })
 ```
 
 自定义 Worker 必须调用 `exposeSharedWebSocketWorker()`，并静态注册所有自定义适配器。
-需要共享连接的 SPA 必须使用完全一致的 Worker URL。WWS 不会创建 Blob URL，也不会从 CDN
+需要共享连接的 SPA 必须使用完全一致的 Worker URL。SocketFuse 不会创建 Blob URL，也不会从 CDN
 加载 Worker 代码。
 
 ## 兼容性

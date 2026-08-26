@@ -11,7 +11,7 @@ import type {
 import type { NormalizedWebSocketConfig } from '../config/normalize'
 import type { WebSocketFactory } from './socket'
 import { ConnectionController, type ConnectionControllerOptions, type ConnectionSink } from '../connection/controller'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 export interface ClientTransport<Incoming, Outgoing, Auth> {
   /** 当前选定的物理 transport 类型。 */
@@ -92,9 +92,9 @@ export class DirectTransport<Incoming, Outgoing, Auth = unknown> implements Clie
     const existing = directPool.get(options.config.id)
     if (existing !== undefined) {
       if (existing.canonical !== options.config.configCanonical)
-        throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
+        throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
       if (existing.controller.endpointRevision === 0 && existing.controller.endpointUrl !== options.config.url)
-        throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Initial endpoint conflicts with the current endpoint')
+        throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Initial endpoint conflicts with the current endpoint')
       existing.references++
       this.controller = existing.controller as ConnectionController<Incoming, Outgoing, Auth>
     }
@@ -181,7 +181,7 @@ export class DirectTransport<Incoming, Outgoing, Auth = unknown> implements Clie
 /** 在创建 direct transport 前确认当前 realm 提供 WebSocket。 */
 export function assertDirectEnvironment(): void {
   if (typeof WebSocket === 'undefined')
-    throw new WwsError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available in this environment')
+    throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available in this environment')
 }
 
 export type { SocketData, WebSocketClient }

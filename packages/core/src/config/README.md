@@ -4,4 +4,4 @@
 
 它依赖 `shared` 与 `protocol`，不拥有 socket 或页面生命周期。相同 `id` 的共享字段必须规范化为相同结果；本地监听器、恢复与 fallback 选项不能参与共享冲突判断。
 
-没有独立公开入口；调用方使用 `wws` 的 `CreateWebSocketOptions`，内部 runtime 使用规范化结果。
+没有独立公开入口；调用方使用 `socketfuse` 的 `CreateWebSocketOptions`，内部 runtime 使用规范化结果。

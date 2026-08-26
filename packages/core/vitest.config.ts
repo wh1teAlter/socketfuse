@@ -1,4 +1,4 @@
-/** @wws/core 浏览器无关单元测试配置。 */
+/** @socketfuse/core 浏览器无关单元测试配置。 */
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({

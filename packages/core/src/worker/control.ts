@@ -1,12 +1,12 @@
 /** 定义 page-to-Worker 控制消息、响应消息和严格的运行时解析器。 */
 import type { ConnectionDiagnostics, ConnectionSnapshot, NormalizedRestoreOptions, RevisionReceipt, SendOptions, SendReceipt, SocketData } from '../shared/types'
 import type { SharedConnectionConfig } from '../config/normalize'
-import { isWwsErrorCode, type WwsErrorCode } from '../shared/errors'
+import { isSocketFuseErrorCode, type SocketFuseErrorCode } from '../shared/errors'
 import { isPlainRecord } from '../shared/structured'
 
 export interface ControlError {
   /** 稳定错误码；不携带原始异常文本。 */
-  readonly code: WwsErrorCode
+  readonly code: SocketFuseErrorCode
   /** 当前操作是否可重试。 */
   readonly retryable: boolean
   /** 是否进入终态。 */
@@ -244,7 +244,7 @@ const isSnapshot = (value: unknown): value is ConnectionSnapshot =>
 /** 校验不含 message/cause 的跨端口错误结构。 */
 const isControlError = (value: unknown): value is ControlError =>
   isPlainRecord(value) && exactKeys(value, ['code', 'retryable', 'fatal'])
-  && isWwsErrorCode(value.code) && typeof value.retryable === 'boolean' && typeof value.fatal === 'boolean'
+  && isSocketFuseErrorCode(value.code) && typeof value.retryable === 'boolean' && typeof value.fatal === 'boolean'
 
 /** 校验单调 revision 回执。 */
 const isRevisionReceipt = (value: unknown): value is RevisionReceipt =>
@@ -280,7 +280,7 @@ const isDiagnostics = (value: unknown): value is ConnectionDiagnostics =>
   && Number.isSafeInteger(value.queueMessages) && (value.queueMessages as number) >= 0
   && nonNegativeFinite(value.queueBytes) && nonNegativeFinite(value.bufferedAmount)
   && typeof value.outboundHighWater === 'boolean'
-  && (value.lastErrorCode === null || isWwsErrorCode(value.lastErrorCode))
+  && (value.lastErrorCode === null || isSocketFuseErrorCode(value.lastErrorCode))
 
 /** 校验 Worker request 的响应 payload。 */
 const isControlResponseValue = (value: unknown): value is ControlResponseValue =>

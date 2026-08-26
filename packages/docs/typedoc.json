@@ -1,9 +1,9 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": [
-    "../wws/src/index.ts",
-    "../wws/src/protocol.ts",
-    "../wws/src/worker.ts"
+    "../socketfuse/src/index.ts",
+    "../socketfuse/src/protocol.ts",
+    "../socketfuse/src/worker.ts"
   ],
   "entryPointStrategy": "resolve",
   "excludeExternals": true,
@@ -11,7 +11,7 @@
   "hideBreadcrumbs": true,
   "hidePageHeader": true,
   "lang": "zh",
-  "name": "wws API",
+  "name": "SocketFuse API",
   "out": "site/api/generated",
   "plugin": ["typedoc-plugin-markdown"],
   "readme": "none",

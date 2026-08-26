@@ -48,7 +48,7 @@ function send(): void {
     <header class="playground-header">
       <div>
         <p class="playground-eyebrow">
-          wws 演练场
+          SocketFuse 演练场
         </p>
         <h2 class="playground-title">
           共享 WebSocket 控制台

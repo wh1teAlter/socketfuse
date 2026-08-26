@@ -6,7 +6,7 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "ignore": ["@wws/core", "@wws/docs", "@wws/test"],
+  "ignore": ["@socketfuse/core", "@socketfuse/docs", "@socketfuse/test"],
   "linked": [],
   "privatePackages": {
     "tag": false,

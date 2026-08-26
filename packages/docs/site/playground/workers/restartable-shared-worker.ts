@@ -4,7 +4,7 @@
  * 测试控制消息只在本文件消费；正常业务消息全部交给 runtime，确保 restart 流程
  * 覆盖真实 Worker attach/restore 协议而不是 mock 页面状态。
  */
-import { createSharedWebSocketRuntime } from 'wws/worker'
+import { createSharedWebSocketRuntime } from 'socketfuse/worker'
 
 /** E2E 用的最小 MessagePort 形状。 */
 interface TestPort {
@@ -29,7 +29,7 @@ scope.onconnect = (event) => {
     return
   port.addEventListener('message', (message) => {
     const data = message.data
-    if (typeof data === 'object' && data !== null && 'type' in data && data.type === '__wws_test_terminate__')
+    if (typeof data === 'object' && data !== null && 'type' in data && data.type === '__socketfuse_test_terminate__')
       scope.close()
   })
   runtime.connect(port)

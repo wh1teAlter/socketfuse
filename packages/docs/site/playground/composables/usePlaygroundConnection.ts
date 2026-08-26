@@ -4,7 +4,7 @@
  * 组件只通过 props/events 读写这些 refs；连接创建、生命周期监听、测试控制句柄和
  * 错误格式化集中在此处，避免展示组件持有 transport 状态。
  */
-import { type ConnectionState, createWebSocket, type JsonValue, type WebSocketClient, type WwsError, WwsError as WwsErrorClass } from 'wws'
+import { type ConnectionState, createWebSocket, type JsonValue, type SocketFuseError, SocketFuseError as SocketFuseErrorClass, type WebSocketClient } from 'socketfuse'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
 /** Worker 诊断通过 MessagePort 异步返回时，演练场刷新指标的间隔，单位为毫秒。 */
@@ -41,7 +41,7 @@ interface WorkerTerminationHandle {
 
 /** 将异常转换为 playground 可读文本，不暴露未脱敏内部详情。 */
 function formatError(value: unknown): string {
-  if (value instanceof WwsErrorClass)
+  if (value instanceof SocketFuseErrorClass)
     return `${value.code}: ${value.message}`
   if (value instanceof Error)
     return value.message
@@ -160,7 +160,7 @@ export function usePlaygroundConnection() {
   }
 
   /** 记录已脱敏的 client 错误并同步指标。 */
-  function handleClientError(value: WwsError): void {
+  function handleClientError(value: SocketFuseError): void {
     error.value = `${value.code}: ${value.message}`
     refreshMetrics()
   }
@@ -267,7 +267,7 @@ export function usePlaygroundConnection() {
 
   /** 通过测试 worker 控制端口触发 Worker 终止。 */
   function terminateWorkerForE2E(): void {
-    restartableWorker?.port.postMessage({ type: '__wws_test_terminate__' })
+    restartableWorker?.port.postMessage({ type: '__socketfuse_test_terminate__' })
   }
 
   /** 为 revision replay E2E 更新 endpoint 与 auth revision。 */
@@ -281,8 +281,8 @@ export function usePlaygroundConnection() {
 
   if (typeof window !== 'undefined')
     Object.assign(window, {
-      __wwsPlaygroundApplyRevisions: applyRevisionsForE2E,
-      __wwsPlaygroundTerminateWorker: terminateWorkerForE2E,
+      __socketfusePlaygroundApplyRevisions: applyRevisionsForE2E,
+      __socketfusePlaygroundTerminateWorker: terminateWorkerForE2E,
     })
 
   /** 打开同源 playground 新标签页以观察连接共享。 */

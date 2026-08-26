@@ -5,10 +5,10 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
-      "@wws/core": ["./packages/core/src/index.ts"],
-      "wws": ["./packages/wws/src/index.ts"],
-      "wws/protocol": ["./packages/wws/src/protocol.ts"],
-      "wws/worker": ["./packages/wws/src/worker.ts"]
+      "@socketfuse/core": ["./packages/core/src/index.ts"],
+      "socketfuse": ["./packages/socketfuse/src/index.ts"],
+      "socketfuse/protocol": ["./packages/socketfuse/src/protocol.ts"],
+      "socketfuse/worker": ["./packages/socketfuse/src/worker.ts"]
     },
     "resolveJsonModule": true,
     "strict": true,

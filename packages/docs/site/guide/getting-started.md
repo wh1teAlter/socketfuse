@@ -1,9 +1,9 @@
 # 快速开始
 
-安装 `wws` 后，为每个需要参与共享连接的页面创建一个 client。
+安装 `socketfuse` 后，为每个需要参与共享连接的页面创建一个 client。
 
 ```ts
-import { createWebSocket } from 'wws'
+import { createWebSocket } from 'socketfuse'
 
 const ws = createWebSocket('wss://api.example.com/events', {
   id: 'events:tenant-a',

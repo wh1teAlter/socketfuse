@@ -1,7 +1,7 @@
 /** 验证创建选项默认值、共享 fingerprint 和冲突校验。 */
 import { describe, expect, it } from 'vitest'
 import { hasConfigConflict, normalizeWebSocketOptions } from './normalize'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 describe('normalizeWebSocketOptions', () => {
   it('normalizes defaults and keeps lifecycle local', () => {
@@ -35,10 +35,10 @@ describe('normalizeWebSocketOptions', () => {
   })
 
   it('rejects invalid values synchronously', () => {
-    expect(() => normalizeWebSocketOptions('https://example.test', { id: 'room' })).toThrowError(WwsError)
-    expect(() => normalizeWebSocketOptions('wss://example.test', { id: '' })).toThrowError(WwsError)
-    expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', queue: { maxMessages: 0 } })).toThrowError(WwsError)
-    expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', autoReconnect: { jitter: 2 } })).toThrowError(WwsError)
+    expect(() => normalizeWebSocketOptions('https://example.test', { id: 'room' })).toThrowError(SocketFuseError)
+    expect(() => normalizeWebSocketOptions('wss://example.test', { id: '' })).toThrowError(SocketFuseError)
+    expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', queue: { maxMessages: 0 } })).toThrowError(SocketFuseError)
+    expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', autoReconnect: { jitter: 2 } })).toThrowError(SocketFuseError)
   })
 
   it('rejects heartbeat when the selected protocol does not support it', () => {

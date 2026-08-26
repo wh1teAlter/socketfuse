@@ -2,7 +2,7 @@
  * 仅供 Playwright E2E 使用的本地 WebSocket 回显服务。
  *
  * namespace 将不同测试隔离；连接集合和统计数据只用于验证共享连接数、广播及
- * 生命周期，不属于 wws 产品协议。control 端点不接收凭据或生产流量。
+ * 生命周期，不属于 SocketFuse 产品协议。control 端点不接收凭据或生产流量。
  */
 import { createServer } from 'node:http'
 import { WebSocketServer } from 'ws'

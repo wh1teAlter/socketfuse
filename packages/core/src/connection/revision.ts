@@ -1,11 +1,11 @@
 /** 维护 endpoint 与 auth 的单调 revision，防止旧页面状态覆盖新值。 */
 import type { RevisionReceipt } from '../shared/types'
-import { WwsError } from '../shared/errors'
+import { SocketFuseError } from '../shared/errors'
 
 /** 校验 revision 为正安全整数，避免跨页面更新顺序歧义。 */
 export function assertRevision(revision: number): void {
   if (!Number.isSafeInteger(revision) || revision <= 0)
-    throw new WwsError('INVALID_OPTIONS', 'revision must be a positive safe integer', { details: { field: 'revision' } })
+    throw new SocketFuseError('INVALID_OPTIONS', 'revision must be a positive safe integer', { details: { field: 'revision' } })
 }
 
 export class RevisionRegister<Value> {
@@ -17,7 +17,7 @@ export class RevisionRegister<Value> {
   /** 创建带初始 revision/value 的寄存器。 */
   constructor(initialValue: Value, initialRevision = 0) {
     if (!Number.isSafeInteger(initialRevision) || initialRevision < 0)
-      throw new WwsError('INVALID_OPTIONS', 'initial revision must be a non-negative safe integer')
+      throw new SocketFuseError('INVALID_OPTIONS', 'initial revision must be a non-negative safe integer')
     this.currentRevision = initialRevision
     this.currentValue = initialValue
   }
@@ -53,7 +53,7 @@ export class EndpointRevisionRegister extends RevisionRegister<string> {
       return { revision: this.revision, status: 'stale' }
     if (revision === this.revision) {
       if (value !== this.value)
-        throw new WwsError('CONNECTION_CONFIG_CONFLICT', 'Endpoint revision conflicts with the current URL')
+        throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Endpoint revision conflicts with the current URL')
       return { revision, status: 'unchanged' }
     }
     return super.update(value, revision)

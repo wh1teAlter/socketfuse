@@ -13,25 +13,25 @@ import type {
   RevisionReceipt,
   SendOptions,
   SendReceipt,
+  SocketFuseCloseEvent,
+  SocketFuseDiagnosticEvent,
+  SocketFuseMessageEvent,
+  SocketFuseOverflowEvent,
+  SocketFuseStateChangeEvent,
   Transport,
   WebSocketClient,
   WebSocketStatus,
   WorkerMode,
-  WwsCloseEvent,
-  WwsDiagnosticEvent,
-  WwsMessageEvent,
-  WwsOverflowEvent,
-  WwsStateChangeEvent,
 } from '../shared/types'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
 import type { ConnectionSink } from '../connection/controller'
 import type { ClientTransport } from '../transport/direct'
+import { SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
-import { toSafePublicError, toWwsError, WwsError } from '../shared/errors'
 import { readyStateFor, statusFor } from '../connection/state'
 
 /** 动态消息 handler 的页面本地签名。 */
-type MessageHandler<Incoming> = (event: WwsMessageEvent<Incoming>) => void
+type MessageHandler<Incoming> = (event: SocketFuseMessageEvent<Incoming>) => void
 
 /** SSR import 时使用的空 EventTarget 基类；页面 realm 使用原生 EventTarget。 */
 const EventTargetBase: typeof EventTarget = typeof EventTarget === 'undefined'
@@ -60,16 +60,16 @@ function sanitizeDetails(details: Readonly<Record<string, unknown>> | undefined)
 }
 
 /** 将本地错误转换为页面 callback 可见的安全错误。 */
-function sanitizeError(error: WwsError): WwsError {
+function sanitizeError(error: SocketFuseError): SocketFuseError {
   const details = sanitizeDetails(error.details)
-  return toSafePublicError(new WwsError(error.code, error.message, details === undefined
+  return toSafePublicError(new SocketFuseError(error.code, error.message, details === undefined
     ? { fatal: error.fatal, retryable: error.retryable }
     : { details, fatal: error.fatal, retryable: error.retryable }))
 }
 
 /** 创建带解码数据、时间和 transport 的 message 事件。 */
-function createMessageEvent<Incoming>(data: Incoming, receivedAt: number, transport: Exclude<Transport, 'pending'>, replayed: boolean): WwsMessageEvent<Incoming> {
-  const event = new Event('message') as WwsMessageEvent<Incoming>
+function createMessageEvent<Incoming>(data: Incoming, receivedAt: number, transport: Exclude<Transport, 'pending'>, replayed: boolean): SocketFuseMessageEvent<Incoming> {
+  const event = new Event('message') as SocketFuseMessageEvent<Incoming>
   Object.defineProperties(event, {
     data: { value: data },
     receivedAt: { value: receivedAt },
@@ -80,8 +80,8 @@ function createMessageEvent<Incoming>(data: Incoming, receivedAt: number, transp
 }
 
 /** 创建不暴露 close reason 的页面 close 事件。 */
-function createCloseEvent(event: { readonly code: number, readonly wasClean: boolean, readonly terminal: boolean, readonly willReconnect: boolean }): WwsCloseEvent {
-  const result = new Event('close') as WwsCloseEvent
+function createCloseEvent(event: { readonly code: number, readonly wasClean: boolean, readonly terminal: boolean, readonly willReconnect: boolean }): SocketFuseCloseEvent {
+  const result = new Event('close') as SocketFuseCloseEvent
   Object.defineProperties(result, {
     code: { value: event.code },
     terminal: { value: event.terminal },
@@ -91,8 +91,8 @@ function createCloseEvent(event: { readonly code: number, readonly wasClean: boo
   return result
 }
 
-/** 创建携带已脱敏 WwsError 的 error 事件。 */
-function createErrorEvent(error: WwsError): Event {
+/** 创建携带已脱敏 SocketFuseError 的 error 事件。 */
+function createErrorEvent(error: SocketFuseError): Event {
   const event = new Event('error')
   Object.defineProperty(event, 'error', { value: error })
   Object.defineProperty(event, 'detail', { value: error })
@@ -212,7 +212,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     return this.clientTransport.capabilities
   }
 
-  /** 附着页面 sink 并等待连接 ready；失败以安全 WwsError reject。 */
+  /** 附着页面 sink 并等待连接 ready；失败以安全 SocketFuseError reject。 */
   async open(options?: { signal?: AbortSignal }): Promise<ConnectionSnapshot> {
     this.assertUsable()
     if (!this.attached) {
@@ -238,11 +238,11 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     this.setState('closed', 'CLIENT_DISCONNECTED')
   }
 
-  /** 发送业务值；返回值只代表本地 accepted/queued，失败以 WwsError reject。 */
+  /** 发送业务值；返回值只代表本地 accepted/queued，失败以 SocketFuseError reject。 */
   sendMessage(data: Outgoing, options?: SendOptions): Promise<SendReceipt> {
     this.assertUsable()
     if (!this.attached)
-      return Promise.reject(new WwsError('CLIENT_DISCONNECTED', 'Client is not open'))
+      return Promise.reject(new SocketFuseError('CLIENT_DISCONNECTED', 'Client is not open'))
     return this.sanitizePublicPromise(this.clientTransport.send(data, options))
   }
 
@@ -250,7 +250,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   onMessage(handler: MessageHandler<Incoming>): () => void {
     this.assertUsable()
     if (typeof handler !== 'function')
-      throw new WwsError('INVALID_OPTIONS', 'onMessage handler must be a function')
+      throw new SocketFuseError('INVALID_OPTIONS', 'onMessage handler must be a function')
     const token = Symbol('onMessage')
     this.handlers.set(token, handler)
     return () => {
@@ -360,7 +360,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       this.options.onConnected?.(this, snapshot)
     }
     catch (cause) {
-      this.handleError(new WwsError('INTERNAL_STATE_ERROR', 'onConnected callback failed', { cause }))
+      this.handleError(new SocketFuseError('INTERNAL_STATE_ERROR', 'onConnected callback failed', { cause }))
     }
   }
 
@@ -387,7 +387,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
         handler(event)
       }
       catch (cause) {
-        this.handleError(new WwsError('INTERNAL_STATE_ERROR', 'onMessage handler failed', { cause }))
+        this.handleError(new SocketFuseError('INTERNAL_STATE_ERROR', 'onMessage handler failed', { cause }))
       }
     }
     this.dispatchEvent(event)
@@ -403,12 +403,12 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       this.options.onDisconnected?.(this, closeEvent)
     }
     catch (cause) {
-      this.handleError(new WwsError('INTERNAL_STATE_ERROR', 'onDisconnected callback failed', { cause }))
+      this.handleError(new SocketFuseError('INTERNAL_STATE_ERROR', 'onDisconnected callback failed', { cause }))
     }
   }
 
   /** 脱敏错误后派发 error/diagnostic，并隔离 logger 与 callback。 */
-  private handleError(error: WwsError): void {
+  private handleError(error: SocketFuseError): void {
     const publicError = sanitizeError(error)
     this.dispatchEvent(createErrorEvent(publicError))
     const diagnosticEvent = new Event('diagnostic')
@@ -416,7 +416,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       value: Object.freeze({ code: publicError.code, timestamp: Date.now(), type: 'error' }),
     })
     this.dispatchEvent(diagnosticEvent)
-    const diagnostic: WwsDiagnosticEvent = publicError.details === undefined
+    const diagnostic: SocketFuseDiagnosticEvent = publicError.details === undefined
       ? { code: publicError.code, timestamp: Date.now(), type: 'error' }
       : { code: publicError.code, details: publicError.details, timestamp: Date.now(), type: 'error' }
     this.options.logger?.(diagnostic)
@@ -434,7 +434,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     this.currentState = state
     if (previous === state)
       return
-    const event = new Event('statechange') as WwsStateChangeEvent
+    const event = new Event('statechange') as SocketFuseStateChangeEvent
     Object.defineProperties(event, {
       attempt: { value: snapshot?.attempt ?? 0 },
       previous: { value: previous },
@@ -515,9 +515,9 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
         await this.recreateTransport()
       }
       catch (recoveryError) {
-        this.handleError(recoveryError instanceof WwsError
+        this.handleError(recoveryError instanceof SocketFuseError
           ? recoveryError
-          : new WwsError('WORKER_DISCONNECTED', 'SharedWorker recovery failed', { cause: error ?? recoveryError, retryable: true }))
+          : new SocketFuseError('WORKER_DISCONNECTED', 'SharedWorker recovery failed', { cause: error ?? recoveryError, retryable: true }))
         return
       }
     }
@@ -554,15 +554,15 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       await this.sanitizePublicPromise(replacement.open())
   }
 
-  /** 将 transport reject 统一裁剪为页面安全 WwsError。 */
+  /** 将 transport reject 统一裁剪为页面安全 SocketFuseError。 */
   private async sanitizePublicPromise<Value>(promise: Promise<Value>): Promise<Value> {
     try {
       return await promise
     }
     catch (error) {
-      const value = error instanceof WwsError
+      const value = error instanceof SocketFuseError
         ? error
-        : toWwsError(error, 'INTERNAL_STATE_ERROR', 'WebSocket operation failed')
+        : toSocketFuseError(error, 'INTERNAL_STATE_ERROR', 'WebSocket operation failed')
       throw sanitizeError(value)
     }
   }
@@ -588,8 +588,8 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   }
 
   /** 派发页面本地 replay overflow。 */
-  private dispatchOverflow(bytes: number, strategy: WwsOverflowEvent['strategy']): void {
-    const event = new Event('overflow') as WwsOverflowEvent
+  private dispatchOverflow(bytes: number, strategy: SocketFuseOverflowEvent['strategy']): void {
+    const event = new Event('overflow') as SocketFuseOverflowEvent
     Object.defineProperties(event, {
       direction: { value: 'replay' },
       droppedBytes: { value: bytes },
@@ -601,7 +601,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
 
   /** 将 Worker 入站或 replay credit 溢出转换为页面事件。 */
   private dispatchRemoteOverflow(event: { readonly direction: 'inbound' | 'replay', readonly strategy: 'drop-newest' | 'drop-oldest', readonly droppedMessages: number, readonly droppedBytes: number }): void {
-    const overflow = new Event('overflow') as WwsOverflowEvent
+    const overflow = new Event('overflow') as SocketFuseOverflowEvent
     Object.defineProperties(overflow, {
       direction: { value: event.direction },
       droppedBytes: { value: event.droppedBytes },
@@ -614,6 +614,6 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   /** 拒绝已 dispose client 的后续公开操作。 */
   private assertUsable(): void {
     if (this.disposed)
-      throw new WwsError('CLIENT_DISPOSED', 'WebSocket client has been disposed')
+      throw new SocketFuseError('CLIENT_DISPOSED', 'WebSocket client has been disposed')
   }
 }

@@ -1,4 +1,4 @@
-# 先由 Changesets 创建可审查的 Version Packages PR；只有已消费 changeset 的版本提交才能发布 wws。
+# 先由 Changesets 创建可审查的 Version Packages PR；只有已消费 changeset 的版本提交才能发布 socketfuse。
 name: Release
 
 on:
@@ -44,9 +44,9 @@ jobs:
 
           version_changed=false
           # 只比较 push 前后版本，避免普通 main 提交或手工 preflight 意外进入发布阶段。
-          if [ "$EVENT_NAME" = "push" ] && git cat-file -e "$BEFORE_SHA:packages/wws/package.json" 2>/dev/null; then
-            previous_version=$(git show "$BEFORE_SHA:packages/wws/package.json" | jq -r '.version')
-            current_version=$(jq -r '.version' packages/wws/package.json)
+          if [ "$EVENT_NAME" = "push" ] && git cat-file -e "$BEFORE_SHA:packages/socketfuse/package.json" 2>/dev/null; then
+            previous_version=$(git show "$BEFORE_SHA:packages/socketfuse/package.json" | jq -r '.version')
+            current_version=$(jq -r '.version' packages/socketfuse/package.json)
             if [ "$previous_version" != "$current_version" ]; then
               version_changed=true
             fi
@@ -55,9 +55,9 @@ jobs:
 
           changelog_changed=false
           # 初始空 CHANGELOG 是发布 tarball 的固定元数据；其后的业务修改只能由 Version Packages PR 写入。
-          if [ "$EVENT_NAME" = "push" ] && git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- packages/wws/CHANGELOG.md; then
+          if [ "$EVENT_NAME" = "push" ] && git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- packages/socketfuse/CHANGELOG.md; then
             :
-          elif [ "$EVENT_NAME" = "push" ] && git cat-file -e "$BEFORE_SHA:packages/wws/CHANGELOG.md" 2>/dev/null; then
+          elif [ "$EVENT_NAME" = "push" ] && git cat-file -e "$BEFORE_SHA:packages/socketfuse/CHANGELOG.md" 2>/dev/null; then
             changelog_changed=true
           fi
 
@@ -68,7 +68,7 @@ jobs:
               [.[] | select(
                 .base.ref == "main" and
                 .merged_at != null and
-                .title == "chore(release): version wws" and
+                .title == "chore(release): version socketfuse" and
                 .head.ref == "changeset-release/main" and
                 .user.login == (env.RELEASE_APP_SLUG + "[bot]")
               )] | length
@@ -89,7 +89,7 @@ jobs:
             # 此文件白名单保证发布提交不会带入未经过浏览器验证的源码改动。
             unexpected_paths=$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" | while IFS= read -r path; do
               case "$path" in
-                packages/wws/package.json|packages/wws/CHANGELOG.md|.changeset/*.md)
+                packages/socketfuse/package.json|packages/socketfuse/CHANGELOG.md|.changeset/*.md)
                   ;;
                 *)
                   printf '%s\n' "$path"
@@ -131,9 +131,9 @@ jobs:
           permission-pull-requests: write
       - uses: changesets/action@v1
         with:
-          commit: 'chore(release): version wws'
+          commit: 'chore(release): version socketfuse'
           github-token: ${{ steps.release-app-token.outputs.token }}
-          title: 'chore(release): version wws'
+          title: 'chore(release): version socketfuse'
           version: pnpm changeset:version
 
   preflight:
@@ -149,7 +149,7 @@ jobs:
         with:
           node-version: 22.18.0
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @wws/test exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm --filter @socketfuse/test exec playwright install --with-deps chromium firefox webkit
       - run: pnpm release:preflight
 
   publish:
@@ -179,4 +179,4 @@ jobs:
       - run: test "$(npm --version)" = '11.5.1'
       # 版本 PR 已通过 tarball 验收且文件白名单排除运行时代码；npm prepack 仍会构建最终 tarball。
       # 发布命令只存在于已验证 Version PR 身份、受保护 environment 与 OIDC 权限的 job。
-      - run: npm publish ./packages/wws --access public --tag beta
+      - run: npm publish ./packages/socketfuse --access public --tag beta

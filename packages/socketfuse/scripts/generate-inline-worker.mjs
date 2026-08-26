@@ -20,7 +20,7 @@ const bundle = await rolldown({
   platform: 'browser',
   resolve: {
     alias: {
-      '@wws/core': resolve(workspaceRoot, 'packages/core/src/index.ts'),
+      '@socketfuse/core': resolve(workspaceRoot, 'packages/core/src/index.ts'),
     },
   },
 })

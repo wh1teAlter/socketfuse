@@ -1,6 +1,6 @@
-# @wws/core
+# @socketfuse/core
 
-`@wws/core` 是 WWS 的私有浏览器连接引擎。它定义共享连接的状态机、协议适配、控制协议、Worker runtime、页面 client 与 direct fallback；不会作为 npm 公共依赖发布。
+`@socketfuse/core` 是 SocketFuse 的私有浏览器连接引擎。它定义共享连接的状态机、协议适配、控制协议、Worker runtime、页面 client 与 direct fallback；不会作为 npm 公共依赖发布。
 
 ## 职责
 
@@ -18,7 +18,7 @@
 
 ## 使用
 
-公开包 `wws` 会打包此模块。应用代码应从 `wws`、`wws/protocol` 或 `wws/worker` 导入，不直接依赖 `@wws/core`。
+公开包 `socketfuse` 会打包此模块。应用代码应从 `socketfuse`、`socketfuse/protocol` 或 `socketfuse/worker` 导入，不直接依赖 `@socketfuse/core`。
 
 ## 不变量
 

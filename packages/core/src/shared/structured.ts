@@ -127,7 +127,7 @@ export function stableHash(value: unknown): string {
     hash ^= input.charCodeAt(index)
     hash = Math.imul(hash, 0x01000193)
   }
-  return `wws1-${(hash >>> 0).toString(16).padStart(8, '0')}`
+  return `socketfuse1-${(hash >>> 0).toString(16).padStart(8, '0')}`
 }
 
 /**

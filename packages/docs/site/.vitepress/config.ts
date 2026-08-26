@@ -12,7 +12,7 @@ const themeConfig: DefaultTheme.Config = {
   darkModeSwitchTitle: '切换为深色主题',
   docFooter: { next: '下一页', prev: '上一页' },
   footer: {
-    copyright: '版权所有 © 2026 wws 贡献者',
+    copyright: '版权所有 © 2026 SocketFuse 贡献者',
     message: '基于 MIT 许可证发布。',
   },
   lastUpdated: {
@@ -65,9 +65,9 @@ const themeConfig: DefaultTheme.Config = {
       {
         items: [
           { link: '/api/', text: '概览' },
-          { link: '/api/generated/index/README.md', text: 'wws 入口' },
-          { link: '/api/generated/protocol/README.md', text: 'wws/protocol' },
-          { link: '/api/generated/worker/README.md', text: 'wws/worker' },
+          { link: '/api/generated/index/README.md', text: 'socketfuse 入口' },
+          { link: '/api/generated/protocol/README.md', text: 'socketfuse/protocol' },
+          { link: '/api/generated/worker/README.md', text: 'socketfuse/worker' },
         ],
         text: 'API 参考',
       },
@@ -108,7 +108,7 @@ const themeConfig: DefaultTheme.Config = {
       },
     ],
   },
-  socialLinks: [{ icon: 'github', link: 'https://github.com/wh1teAlter/wws' }],
+  socialLinks: [{ icon: 'github', link: 'https://github.com/wh1teAlter/socketfuse' }],
 }
 
 export default defineConfig({
@@ -116,5 +116,5 @@ export default defineConfig({
   lang: 'zh-CN',
   lastUpdated: true,
   themeConfig,
-  title: 'wws',
+  title: 'SocketFuse',
 })

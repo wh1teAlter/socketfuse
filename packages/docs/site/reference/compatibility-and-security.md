@@ -2,11 +2,11 @@
 
 ## 浏览器与 SSR 基线
 
-WWS 的目标是具备 SharedWorker 的 Chromium/Edge、Firefox 与 Safari 16+。SharedWorker 缺失时，
+SocketFuse 的目标是具备 SharedWorker 的 Chromium/Edge、Firefox 与 Safari 16+。SharedWorker 缺失时，
 `fallback: 'direct'` 会保持 client API，但物理连接共享仅限单个 JavaScript realm。
 `fallback: 'error'` 会拒绝这一降级。
 
-导入 `wws` 对 SSR 是安全的；创建 client 则要求浏览器**页面** realm 同时具备 `window` 和
+导入 `socketfuse` 对 SSR 是安全的；创建 client 则要求浏览器**页面** realm 同时具备 `window` 和
 `document`。即使 Node runtime 提供全局 `WebSocket` 也不够：`createWebSocket()` 会在那里抛出
 `ENVIRONMENT_UNSUPPORTED`，且绝不会打开 direct 降级 socket。请只在浏览器生命周期代码中创建
 client，绝不能在服务端渲染期间创建。
