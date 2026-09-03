@@ -95,6 +95,34 @@ test('shares one physical WebSocket across two tabs', async ({ browser, request 
   await context.close()
 })
 
+test('filters duplicate frames once in the Worker for every attached tab', async ({ browser, request }) => {
+  const testNamespace = namespace('dedupe')
+  const context = await browser.newContext()
+  try {
+    const first = await context.newPage()
+    const second = await context.newPage()
+    await Promise.all([
+      first.goto('http://127.0.0.1:4173/playground?e2eDedupe=1'),
+      second.goto('http://127.0.0.1:4173/playground?e2eDedupe=1'),
+    ])
+    for (const page of [first, second])
+      await connect(page, socketUrl(testNamespace), `dedupe-${testNamespace}`)
+    await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(1)
+
+    // 服务端重复下发同一条帧；Worker 内的扩展只放行第一条。
+    await broadcast(request, testNamespace, 'dedupe:once')
+    await broadcast(request, testNamespace, 'dedupe:once')
+    await broadcast(request, testNamespace, 'dedupe:other')
+    for (const page of [first, second]) {
+      await expect(page.locator('#messages')).toContainText('dedupe:other')
+      await expect(page.locator('#messages li', { hasText: 'dedupe:once' })).toHaveCount(1)
+    }
+  }
+  finally {
+    await context.close()
+  }
+})
+
 test('reconnects the selected SharedWorker transport after an ordinary socket failure', async ({ page, request }) => {
   const testNamespace = namespace('reconnect')
   await page.goto('http://127.0.0.1:4173/playground')

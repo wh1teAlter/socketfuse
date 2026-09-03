@@ -4,15 +4,16 @@
  * hello 是 attach 的事务边界：只有配置重建、controller.attach 和 client 提交都成功，
  * 端口才成为已附着 client；任一失败都必须回滚临时连接和端口 timer。
  */
-import type { ClientVisibility, JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, TimerHandle, WorkerResourceLimits } from '../shared/types'
+import type { BeforeReconnectReason, ClientVisibility, JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, SafeCloseInfo, TimerHandle, WorkerResourceLimits } from '../shared/types'
 import type { WebSocketFactory } from '../transport/socket'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, type HelloRequest, isClientControlMessage, type WorkerControlMessage } from './control'
 import { type NormalizedWebSocketConfig, normalizeRestoreOptions, normalizeWebSocketOptions, type SharedConnectionConfig } from '../config/normalize'
+import { ConnectionController, type ConnectionSink, type ReconnectPlan, type ReconnectPlanOverride } from '../connection/controller'
+import { CONTROL_PROTOCOL_MAJOR, DEFAULT_LEASE_OPTIONS, DEFAULT_WORKER_RESOURCE_LIMITS } from '../shared/constants'
 import { isSocketFuseError, SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
 import { createJsonProtocolAdapter, rawProtocol, validateProtocolAdapter } from '../protocol/adapter'
-import { CONTROL_PROTOCOL_MAJOR, DEFAULT_WORKER_RESOURCE_LIMITS } from '../shared/constants'
-import { ConnectionController, type ConnectionSink } from '../connection/controller'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
+import { normalizeEndpointUrl, safeEndpointOrigin } from '../shared/endpoint'
 import { ReconnectCoordinator } from '../transport/reconnect-coordinator'
 import { ExclusiveKeyRegistry } from './exclusive-keys'
 
@@ -34,8 +35,77 @@ export interface MessagePortLike {
   onmessageerror?: ((event: { readonly data: unknown }) => void) | null
 }
 
+/** 入站过滤判定：继续派发或整条丢弃。 */
+export type InboundDecision = 'deliver' | 'drop'
+
+/**
+ * 扩展准备一次连接尝试时收到的有界上下文。
+ *
+ * 能力刻意最小化：只能覆盖下一次尝试的 endpoint 与延迟，不能触碰参与共享
+ * fingerprint 的配置，否则多标签页的配置冲突检测会失效。
+ */
+export interface AttemptPreparationContext {
+  /** 从一开始计数的本次重连序号。 */
+  readonly attempt: number
+  /** 未覆盖时使用的退避延迟。 */
+  readonly defaultDelay: number
+  /** 当前重连的安全原因。 */
+  readonly reason: BeforeReconnectReason
+  /** 已移除服务端 reason 文本的安全 close 信息。 */
+  readonly close: SafeCloseInfo
+  /** 总期限到达或计划失效时终止。 */
+  readonly signal: AbortSignal
+  /** 覆盖下一次尝试使用的固定 URL。 */
+  readonly setOptions: (options: { readonly url: string }) => void
+  /** 覆盖从提交到下一次尝试的等待时间。 */
+  readonly setDelay: (delay: number) => void
+}
+
+/** 传给扩展工厂与回调的连接身份；不含完整 endpoint、query 或凭据。 */
+export interface ConnectionExtensionContext {
+  /** 共享连接的业务 id。 */
+  readonly connectionId: string
+  /** endpoint 的 origin，与 diagnostics 同口径。 */
+  readonly endpointOrigin: string
+  /** 当前物理连接尝试计数。 */
+  readonly attempt: number
+}
+
+/**
+ * 一条共享连接的业务扩展实例。
+ *
+ * 扩展在 Worker 内按连接运行一次，用于所有标签页共同需要的逻辑。所有回调都必须
+ * 快速返回：Worker 是全部标签页共享的单线程，阻塞会放大为全局延迟。
+ */
+export interface ConnectionExtension {
+  /** 物理 socket 打开时调用；用于初始化或重置连接期状态。异常只记诊断。 */
+  readonly onSocketOpen?: (context: ConnectionExtensionContext) => void
+  /**
+   * 判定一条已解码业务帧是否派发给标签页。
+   *
+   * 必须同步：Worker 是全部标签页共享的单线程。返回 `drop` 的帧在 fan-out 之前
+   * 被丢弃，因此不消耗任何标签页的投递额度；抛出时按 `deliver` 放行，因为静默
+   * 丢弃全局消息比重复投递严重得多。
+   */
+  readonly filterInbound?: (data: unknown, context: ConnectionExtensionContext) => InboundDecision
+  /**
+   * 准备下一次物理连接尝试；提供该方法即由扩展接管，页面 hook 不再参与该连接。
+   *
+   * 允许异步，但受计划总期限（`autoReconnect.hookTimeout`）约束；超时或抛出时
+   * 沿用当前 endpoint 与默认退避。
+   */
+  readonly prepareAttempt?: (context: AttemptPreparationContext) => void | Promise<void>
+  /** 连接条目释放时调用；用于释放扩展自有资源。 */
+  readonly dispose?: () => void
+}
+
+/** 扩展工厂：每条共享连接调用一次，返回该连接独占的实例。 */
+export type ConnectionExtensionFactory = (context: ConnectionExtensionContext) => ConnectionExtension
+
 /** 自定义 Worker runtime 的依赖、时钟与静态协议注册。 */
 export interface SharedWebSocketRuntimeOptions {
+  /** 连接作用域业务扩展工厂；每条共享连接调用一次。 */
+  readonly createExtension?: ConnectionExtensionFactory
   /** 在 Worker 内静态注册的 custom adapter。 */
   readonly protocols?: readonly ProtocolAdapter<unknown, unknown>[]
   /** 可注入的 WebSocket 工厂。 */
@@ -98,6 +168,8 @@ interface ConnectionEntry {
   readonly exclusiveKeys: ExclusiveKeyRegistry
   /** 页面候选与 connection plan 之间的有界协调器。 */
   readonly reconnect: ReconnectCoordinator
+  /** 该连接独占的业务扩展；未配置工厂时为 undefined。 */
+  readonly extension: ConnectionExtension | undefined
 }
 
 /** SharedWorker 端 runtime：接受页面 port 并拥有共享物理连接。 */
@@ -221,6 +293,108 @@ function createWorkerConfig(
     : false }) }
 }
 
+/**
+ * 执行一段业务扩展代码并吞掉其异常。
+ *
+ * 扩展由应用提供，其失败不得影响连接状态机、其他标签页或 Worker 控制平面；
+ * 异常文本也绝不跨端口传播。
+ *
+ * @param run 待执行的扩展回调。
+ * @returns 回调返回值；抛出时返回 undefined。
+ */
+function runExtension<Value>(run: () => Value): Value | undefined {
+  try {
+    return run()
+  }
+  catch {
+    return undefined
+  }
+}
+
+/**
+ * 让扩展在 Worker 内准备一次连接尝试，并在总期限内原子提交。
+ *
+ * 不新增提交路径：仍复用 controller 的 `commitReconnectPlan` 及其代际守卫。总期限
+ * 到达、扩展抛出或迟到提交都沿用当前 endpoint 与默认退避，绝不部分应用草案。
+ *
+ * @param extension 该连接的业务扩展。
+ * @param holder 延迟持有 controller 的引用，避免构造期循环依赖。
+ * @param plan connection 创建的当前重连计划。
+ * @param config 该连接的规范化配置，用于读取 hook 总期限。
+ * @returns 固定为 `true`，表示扩展已接管本次提交。
+ */
+function startExtensionPreparation(
+  extension: ConnectionExtension,
+  holder: { current?: ConnectionController<unknown, unknown> },
+  plan: Readonly<ReconnectPlan>,
+  config: NormalizedWebSocketConfig<unknown, unknown>,
+  timers: Pick<SharedWebSocketRuntimeOptions, 'clearTimeout' | 'setTimeout'> = {},
+): boolean {
+  const setTimer = timers.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay))
+  const clearTimer = timers.clearTimeout ?? (handle => globalThis.clearTimeout(handle))
+  const abort = new AbortController()
+  const draft: { url?: string, delay?: number } = {}
+  /** 计划已被 close/dispose 取代时提交会抛出；过期计划不得冒泡为未捕获异常。 */
+  const commit = (override: Readonly<ReconnectPlanOverride>): void => {
+    try {
+      holder.current?.commitReconnectPlan(plan.id, override)
+    }
+    catch {
+      // 计划已失效，无需再改变任何状态。
+    }
+  }
+  const deadline = config.shared.reconnect === false ? 10_000 : config.shared.reconnect.hookTimeout
+  const timer = setTimer(() => {
+    if (abort.signal.aborted)
+      return
+    abort.abort()
+    commit({})
+  }, deadline)
+  /** 期限外写入必须被显式拒绝，避免扩展误以为草案已生效。 */
+  const assertActive = (): void => {
+    if (abort.signal.aborted)
+      throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer active')
+  }
+  const context: Readonly<AttemptPreparationContext> = Object.freeze({
+    attempt: plan.attempt,
+    close: plan.close,
+    defaultDelay: plan.defaultDelay,
+    reason: plan.reason,
+    setDelay: (delay: number): void => {
+      assertActive()
+      if (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0)
+        throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect delay must be a non-negative finite number')
+      draft.delay = delay
+    },
+    setOptions: (options: { readonly url: string }): void => {
+      assertActive()
+      if (options === null || typeof options !== 'object' || Object.keys(options).some(key => key !== 'url'))
+        throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect options only accept url')
+      draft.url = normalizeEndpointUrl(options.url, 'Reconnect url')
+    },
+    signal: abort.signal,
+  })
+  void (async () => {
+    try {
+      await extension.prepareAttempt?.(context)
+      if (abort.signal.aborted)
+        return
+      clearTimer(timer)
+      abort.abort()
+      commit(draft)
+    }
+    catch {
+      // 扩展失败不得修改 endpoint，也不把异常文本跨端口传播。
+      if (abort.signal.aborted)
+        return
+      clearTimer(timer)
+      abort.abort()
+      commit({})
+    }
+  })()
+  return true
+}
+
 /** 将任意异常裁剪为可跨端口的稳定 ControlError。 */
 function serializeError(error: unknown): ControlError {
   const value = isSocketFuseError(error) ? error : toSocketFuseError(error, 'INTERNAL_STATE_ERROR', 'Worker operation failed')
@@ -250,6 +424,14 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
   const unattachedTimers = new Map<MessagePortLike, TimerHandle>()
   /** 正在回收的坏端口；阻止撤销通知再次递归回收同一端口。 */
   const detachingPorts = new Set<MessagePortLike>()
+  /**
+   * 已逻辑 close 但仍占用 maxPorts 的端口及其进入时间。
+   *
+   * 逻辑 close 保留额度，使页面可以立即重新 open；但页面卸载的默认路径只调用
+   * close，此后端口既不在 clients 中（lease sweep 看不到），未 hello timer 也已
+   * 清除，因此必须单独登记并按 lease 宽限期回收，否则额度会永久流失。
+   */
+  const closedPorts = new Map<MessagePortLike, { closedAt: number, leaseTimeout: number }>()
   const now = options.now ?? Date.now
   const instanceId = createId()
   let leaseTimer: TimerHandle | undefined
@@ -282,9 +464,16 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         entry?.exclusiveKeys.removeClient(client.clientId)
         entry?.reconnect.unregister(client.clientId)
         entry?.controller.detach(client.clientId)
+        if (!releasePort) {
+          closedPorts.set(port, {
+            closedAt: now(),
+            leaseTimeout: entry?.config.shared.lease.timeout ?? DEFAULT_LEASE_OPTIONS.timeout,
+          })
+        }
       }
       if (releasePort) {
         connectedPorts.delete(port)
+        closedPorts.delete(port)
         const timer = unattachedTimers.get(port)
         if (timer !== undefined)
           (options.clearTimeout ?? globalThis.clearTimeout)(timer)
@@ -306,6 +495,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
     connections.delete(id)
     entry.reconnect.dispose()
     controller.dispose()
+    runExtension(() => entry.extension?.dispose?.())
   }
 
   /** 周期回收 lease 超时的页面 client。 */
@@ -318,6 +508,11 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       for (const [port, client] of clients) {
         const entry = connections.get(client.connectionId)
         if (entry !== undefined && current - client.lastLeaseAt > entry.config.shared.lease.timeout)
+          detach(port, true)
+      }
+      // 已 close 的端口不再出现在 clients 中，必须单独回收其 maxPorts 额度。
+      for (const [port, closed] of [...closedPorts]) {
+        if (current - closed.closedAt > closed.leaseTimeout)
           detach(port, true)
       }
       scheduleLeaseSweep()
@@ -445,6 +640,16 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
       if (entry === undefined) {
         const config = workerConfig.config
+        /** 扩展与诊断共用的安全连接身份；只暴露 origin，不含 path、query 与凭据。 */
+        const extensionContext = (attempt: number): ConnectionExtensionContext => ({
+          attempt,
+          connectionId: message.id,
+          endpointOrigin: safeEndpointOrigin(config.url),
+        })
+        /** 扩展是业务代码；其异常绝不能影响连接状态机或其他标签页。 */
+        const extension = options.createExtension === undefined
+          ? undefined
+          : runExtension(() => options.createExtension?.(extensionContext(0)))
         /** reconnect 回调只会在 controller 构造完成并开始连接后触发。 */
         const controllerHolder: { current?: ConnectionController<unknown, unknown> } = {}
         const reconnect = new ReconnectCoordinator({
@@ -475,8 +680,24 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
           ...(options.setTimeout === undefined ? {} : { setTimeout: options.setTimeout }),
           ...(options.socketFactory === undefined ? {} : { socketFactory: options.socketFactory }),
           onIdle: idleController => removeIdleConnection(message.id, idleController),
-          onReconnectPlan: plan => reconnect.start(plan),
+          // 扩展提供准备函数时由它接管整个计划；否则回退到页面候选协调器。
+          onReconnectPlan: plan => extension?.prepareAttempt === undefined
+            ? reconnect.start(plan)
+            : startExtensionPreparation(extension, controllerHolder, plan, config, {
+                ...(options.clearTimeout === undefined ? {} : { clearTimeout: options.clearTimeout }),
+                ...(options.setTimeout === undefined ? {} : { setTimeout: options.setTimeout }),
+              }),
           onReconnectPlanCancel: planId => reconnect.cancel(planId),
+          ...(extension?.onSocketOpen === undefined
+            ? {}
+            : { onSocketOpen: (attempt: number) => runExtension(() => extension.onSocketOpen?.(extensionContext(attempt))) }),
+          ...(extension?.filterInbound === undefined
+            ? {}
+            : {
+                // 过滤异常按放行降级：静默丢弃全局消息比重复投递严重得多。
+                shouldDeliverInbound: (data: unknown) =>
+                  runExtension(() => extension.filterInbound?.(data, extensionContext(controllerHolder.current?.retryAttempt ?? 0))) !== 'drop',
+              }),
         })
         controllerHolder.current = controller
         const exclusiveKeys = new ExclusiveKeyRegistry({
@@ -491,7 +712,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
               post(target.port, { key, type: 'key-revoked' })
           },
         })
-        entry = { canonical: message.configCanonical, config, controller, exclusiveKeys, reconnect }
+        entry = { canonical: message.configCanonical, config, controller, exclusiveKeys, extension, reconnect }
         createdEntry = entry
         connections.set(message.id, entry)
       }
@@ -519,6 +740,8 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       entry.controller.attach(sink)
       clients.set(port, client)
       clientsById.set(client.clientId, client)
+      // 端口重新 open，不再是待回收的已 close 端口。
+      closedPorts.delete(port)
       const unattachedTimer = unattachedTimers.get(port)
       if (unattachedTimer !== undefined)
         (options.clearTimeout ?? globalThis.clearTimeout)(unattachedTimer)
@@ -531,6 +754,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       if (createdEntry !== undefined && createdEntry.controller.attachedClientCount === 0) {
         connections.delete(message.id)
         createdEntry.controller.dispose()
+        runExtension(() => createdEntry?.extension?.dispose?.())
       }
       reject(port, message.requestId, error)
       detach(port, true)
@@ -730,6 +954,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       for (const entry of connections.values()) {
         entry.reconnect.dispose()
         entry.controller.dispose()
+        runExtension(() => entry.extension?.dispose?.())
       }
       connections.clear()
     },

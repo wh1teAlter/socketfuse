@@ -16,4 +16,5 @@ socket、重连策略、队列、心跳、租约和协议适配器会被共享�
 - [快速开始](./getting-started)：创建最小可用 client。
 - [连接共享](./connection-sharing)：了解 `id` 与冲突规则。
 - [可靠性](./reliability)：了解队列、背压与重连。
+- [Worker 共享处理](./worker-extensions)：入站去重、共享时钟与重连前刷新凭据。
 - [降级与 Worker](./fallback-and-worker)：了解部署选择。

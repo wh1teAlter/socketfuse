@@ -183,6 +183,8 @@ export function usePlaygroundConnection() {
       const useRestartableWorker = parameters.has('e2eWorkerRestart')
       /** 只供跨浏览器验收缩短应用层 heartbeat 周期。 */
       const useHeartbeat = parameters.has('e2eHeartbeat')
+      /** 演示连接作用域扩展：Worker 内一次去重，全部标签页同时生效。 */
+      const useDedupeWorker = parameters.has('e2eDedupe')
       const current = createWebSocket<unknown, string | Blob | ArrayBuffer | Uint8Array>(url.value, {
         fallback: fallback.value,
         ...(useHeartbeat ? { heartbeat: { interval: 100, pongTimeout: 1_000 } } : {}),
@@ -197,6 +199,11 @@ export function usePlaygroundConnection() {
                 restartableWorker = worker as unknown as WorkerTerminationHandle
                 return worker
               },
+            }
+          : {}),
+        ...(useDedupeWorker
+          ? {
+              worker: () => new SharedWorker(new URL('../workers/dedupe-shared-worker.ts', import.meta.url), { type: 'module' }),
             }
           : {}),
         ...(simulateWorkerFailure.value

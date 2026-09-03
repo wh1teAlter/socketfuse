@@ -31,9 +31,10 @@ import type { ReconnectPlan, ReconnectPlanOverride } from '../connection/control
 import type { ClientTransport, ClientTransportSink } from '../transport/direct'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
 import { SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
-import { CONTROL_PROTOCOL_MAJOR, MAX_ENDPOINT_LENGTH } from '../shared/constants'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
 import { readyStateFor, statusFor } from '../connection/state'
+import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
+import { normalizeEndpointUrl } from '../shared/endpoint'
 
 /** 动态消息 handler 的页面本地签名。 */
 type MessageHandler<Incoming> = (event: SocketFuseMessageEvent<Incoming>, context: Readonly<MessageHandlerContext>) => unknown
@@ -127,26 +128,6 @@ function pageVisibility(): ClientVisibility {
   if (typeof document === 'undefined')
     return 'visible'
   return document.visibilityState === 'hidden' || document.hidden ? 'hidden' : 'visible'
-}
-
-/** 校验页面 hook 提交的固定 ws/wss URL，并返回规范化字符串。 */
-function normalizeReconnectUrl(value: string): string {
-  if (typeof value !== 'string')
-    throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect url must be a fixed string')
-  if (value.length > MAX_ENDPOINT_LENGTH)
-    throw new SocketFuseError('INVALID_OPTIONS', `Reconnect url must be at most ${MAX_ENDPOINT_LENGTH} characters`)
-  let parsed: URL
-  try {
-    parsed = new URL(value)
-  }
-  catch {
-    throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect url must be an absolute ws: or wss: URL')
-  }
-  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
-    throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect url must use ws: or wss:')
-  if (parsed.href.length > MAX_ENDPOINT_LENGTH)
-    throw new SocketFuseError('INVALID_OPTIONS', `Reconnect url must be at most ${MAX_ENDPOINT_LENGTH} characters after normalization`)
-  return parsed.href
 }
 
 /** 估算页面本地 replay 项的结构化克隆字节数。 */
@@ -529,7 +510,7 @@ export class PageWebSocketClient<Incoming, Outgoing> extends EventTargetBase imp
           throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer active')
         if (options === null || typeof options !== 'object' || Object.keys(options).some(key => key !== 'url'))
           throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect options only accept url')
-        draft.url = normalizeReconnectUrl(options.url)
+        draft.url = normalizeEndpointUrl(options.url, 'Reconnect url')
       },
       signal: abort.signal,
     })

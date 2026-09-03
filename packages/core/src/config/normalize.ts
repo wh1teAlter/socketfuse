@@ -30,10 +30,10 @@ import {
   DEFAULT_RECONNECT_OPTIONS,
   DEFAULT_REPLAY_MAX_BYTES,
   DEFAULT_REPLAY_MAX_MESSAGES,
-  MAX_ENDPOINT_LENGTH,
 } from '../shared/constants'
 import { createJsonProtocolAdapter, getProtocolDescriptor, rawProtocol, validateProtocolAdapter } from '../protocol/adapter'
 import { assertStructuredCloneable, stableHash, stableSerialize } from '../shared/structured'
+import { normalizeEndpointUrl } from '../shared/endpoint'
 import { invalidOptions } from '../shared/errors'
 
 export interface NormalizedProtocolDescriptor {
@@ -127,26 +127,6 @@ function positiveInteger(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0)
     throw invalidOptions(`${field} must be a positive safe integer`, field)
   return value
-}
-
-/** 解析并校验绝对 ws/wss endpoint。 */
-function normalizeUrl(url: string): string {
-  if (typeof url !== 'string')
-    throw invalidOptions('url must be a fixed string', 'url')
-  if (url.length > MAX_ENDPOINT_LENGTH)
-    throw invalidOptions(`url must be at most ${MAX_ENDPOINT_LENGTH} characters`, 'url')
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  }
-  catch {
-    throw invalidOptions('url must be an absolute ws: or wss: URL', 'url')
-  }
-  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
-    throw invalidOptions('url must use the ws: or wss: protocol', 'url')
-  if (parsed.href.length > MAX_ENDPOINT_LENGTH)
-    throw invalidOptions(`url must be at most ${MAX_ENDPOINT_LENGTH} characters after normalization`, 'url')
-  return parsed.href
 }
 
 /** 校验可同步参与共享 fingerprint 的 raw 心跳 payload。 */
@@ -383,7 +363,7 @@ export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = Sock
       workerMode: options.worker === undefined ? 'inline' : 'custom',
     }),
     shared,
-    url: normalizeUrl(url),
+    url: normalizeEndpointUrl(url, 'url', 'url'),
   })
 }
 

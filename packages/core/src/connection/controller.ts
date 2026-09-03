@@ -21,10 +21,11 @@ import type {
 } from '../shared/types'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
 import { addSocketListener, browserWebSocketFactory, SOCKET_CONNECTING, SOCKET_OPEN, type WebSocketFactory, type WebSocketLike } from '../transport/socket'
-import { CONTROL_PROTOCOL_MAJOR, MAX_ENDPOINT_LENGTH } from '../shared/constants'
+import { normalizeEndpointUrl, safeEndpointOrigin } from '../shared/endpoint'
 import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
 import { encodeWithAdapter, OrderedProtocol } from '../protocol/adapter'
 import { SocketFuseError, toSocketFuseError } from '../shared/errors'
+import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
 import { assertEncodedMessageSize } from '../shared/bytes'
 import { BackpressureTracker } from './backpressure'
 import { HeartbeatController } from './heartbeat'
@@ -64,6 +65,20 @@ export interface ConnectionControllerOptions<Incoming, Outgoing> {
   readonly clearTimeout?: (handle: TimerHandle) => void
   /** 无 owner controller 完成主动 idle close 后调用一次。 */
   readonly onIdle?: (controller: ConnectionController<Incoming, Outgoing>) => void
+  /**
+   * 原生 socket 打开后、向 sink 派发 open 之前调用。
+   *
+   * connection 不认识「扩展」概念，只承诺这一时机；上层用它让共享业务逻辑先于
+   * 页面重置连接期状态。回调异常由上层隔离，不影响状态机。
+   */
+  readonly onSocketOpen?: (attempt: number) => void
+  /**
+   * 判定一条已解码业务帧是否继续派发；返回 false 表示整条丢弃。
+   *
+   * 在 fan-out 之前调用，因此被丢弃的帧不进入任何 sink，也不消耗上层的投递额度。
+   * connection 不认识「扩展」概念；上层负责隔离异常并按放行降级。
+   */
+  readonly shouldDeliverInbound?: (data: Incoming) => boolean
   /** 自动重连 plan 创建后交给上层协调器；返回 true 表示异步接管提交。 */
   readonly onReconnectPlan?: (plan: Readonly<ReconnectPlan>) => boolean
   /** 显式 close/reconnect 使等待中的 plan 失效时通知协调器。 */
@@ -123,16 +138,6 @@ function createOperationId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
   return `socketfuse-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-}
-
-/** 只保留 endpoint origin，拒绝向诊断暴露 path/query/凭据。 */
-function safeOrigin(url: string): string {
-  try {
-    return new URL(url).origin
-  }
-  catch {
-    return ''
-  }
 }
 
 /** 将原生二进制 payload 转为字节视图；文本与其他值返回 undefined。 */
@@ -308,7 +313,7 @@ export class ConnectionController<Incoming, Outgoing> {
       bufferedAmount: this.bufferedAmount,
       configFingerprint: this.options.config.configFingerprint,
       controlProtocolMajor: CONTROL_PROTOCOL_MAJOR,
-      endpointOrigin: safeOrigin(this.endpoint),
+      endpointOrigin: safeEndpointOrigin(this.endpoint),
       idHash: stableHash(this.options.config.id),
       lastErrorCode: this.lastErrorCode,
       lastSafeCloseCode: this.lastSafeCloseCode,
@@ -485,7 +490,7 @@ export class ConnectionController<Incoming, Outgoing> {
       throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect delay must be a non-negative finite number')
     let endpoint = this.endpoint
     if (override.url !== undefined)
-      endpoint = this.normalizeEndpoint(override.url)
+      endpoint = normalizeEndpointUrl(override.url, 'url')
     this.reconnectPlan = undefined
     if (endpoint !== this.endpoint) {
       this.endpoint = endpoint
@@ -552,6 +557,8 @@ export class ConnectionController<Incoming, Outgoing> {
     this.heartbeat = this.createHeartbeat()
     this.heartbeat?.start()
     this.flushQueue()
+    // 共享业务逻辑先于页面观察到 open，才能在页面发出第一条消息前重置连接期状态。
+    this.options.onSocketOpen?.(this.retry.attempt)
     for (const sink of this.sinks.values())
       sink.onOpen?.(this.snapshot())
   }
@@ -607,6 +614,9 @@ export class ConnectionController<Incoming, Outgoing> {
       this.heartbeat?.acknowledge('pong')
       return
     }
+    // 过滤在 fan-out 之前，被丢弃的帧因此不占用任何 sink 的投递额度。
+    if (this.options.shouldDeliverInbound?.(frame.data) === false)
+      return
     for (const sink of this.sinks.values())
       sink.onMessage?.(frame.data, this.now())
   }
@@ -817,26 +827,6 @@ export class ConnectionController<Incoming, Outgoing> {
     if (this.lastError?.code === 'SOCKET_ERROR')
       return 'socket-error'
     return 'socket-close'
-  }
-
-  /** 校验 plan 提交的 endpoint，但不把完整 URL写入错误详情。 */
-  private normalizeEndpoint(value: string): string {
-    if (typeof value !== 'string')
-      throw new SocketFuseError('INVALID_OPTIONS', 'url must be a fixed string')
-    if (value.length > MAX_ENDPOINT_LENGTH)
-      throw new SocketFuseError('INVALID_OPTIONS', `url must be at most ${MAX_ENDPOINT_LENGTH} characters`)
-    let parsed: URL
-    try {
-      parsed = new URL(value)
-    }
-    catch {
-      throw new SocketFuseError('INVALID_OPTIONS', 'url must be an absolute ws: or wss: URL')
-    }
-    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
-      throw new SocketFuseError('INVALID_OPTIONS', 'url must use ws: or wss:')
-    if (parsed.href.length > MAX_ENDPOINT_LENGTH)
-      throw new SocketFuseError('INVALID_OPTIONS', `url must be at most ${MAX_ENDPOINT_LENGTH} characters after normalization`)
-    return parsed.href
   }
 
   /** 按 adapter 能力创建心跳 controller；未配置则返回 undefined。 */

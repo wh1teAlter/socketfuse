@@ -80,6 +80,7 @@ const themeConfig: DefaultTheme.Config = {
           { link: '/guide/connection-sharing', text: '连接共享' },
           { link: '/guide/reliability', text: '可靠性' },
           { link: '/guide/lifecycle-and-replay', text: '生命周期与回放' },
+          { link: '/guide/worker-extensions', text: 'Worker 共享处理' },
           { link: '/guide/fallback-and-worker', text: '降级与 Worker' },
         ],
         text: '指南',

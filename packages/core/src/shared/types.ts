@@ -117,7 +117,12 @@ export interface WorkerResourceLimits {
 
 /** 动态消息 handler 的可选执行约束。 */
 export interface MessageHandlerOptions {
-  /** 同一共享连接内至多由一个页面执行的非空业务 key；最长 1024 字符。 */
+  /**
+   * 同一共享连接内至多授权一个页面「启动」handler 的非空业务 key；最长 1024 字符。
+   *
+   * 库只保证启动资格唯一：已经开始的异步 handler 只能通过 `AbortSignal` 协作取消，
+   * 浏览器无法强制终止，因此交接窗口内旧 holder 的副作用仍可能与新 holder 重叠。
+   */
   readonly key?: string
 }
 

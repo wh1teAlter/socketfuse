@@ -6,6 +6,11 @@
  */
 export { createSharedWebSocketRuntime, exposeSharedWebSocketWorker } from '@socketfuse/core'
 export type {
+  AttemptPreparationContext,
+  ConnectionExtension,
+  ConnectionExtensionContext,
+  ConnectionExtensionFactory,
+  InboundDecision,
   MessagePortLike,
   SharedWebSocketRuntime,
   SharedWebSocketRuntimeOptions,

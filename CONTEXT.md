@@ -41,5 +41,17 @@ _Avoid_: 共享配置、连接变量、endpoint register
 _Avoid_: SocketFuse auth、Worker session、revision register
 
 **协议适配器（protocol adapter）**：
-把应用选择的 wire format 映射为 SocketFuse 可编码、解码和识别的帧类别的无状态规则。它不拥有凭据、会话或应用就绪状态。
+把应用选择的 wire format 映射为 SocketFuse 可编码、解码和识别的帧类别的无状态规则。它只描述格式，不保存跨帧状态，也不拥有凭据、会话或应用就绪状态。
 _Avoid_: auth provider、session manager、业务状态机
+
+**连接作用域业务扩展（connection-scoped extension）**：
+在 SharedWorker 内、以一条共享连接为作用域运行一次的业务逻辑，用于所有标签页共同需要的入站过滤与重连准备。它由应用在自己的 Worker 文件中提供，生命周期与共享连接一致，不随标签页增减而重复执行。
+_Avoid_: 中间件、插件、协议适配器
+
+**入站过滤（inbound filter）**：
+连接作用域业务扩展对已解码业务帧做出的「继续派发或整条丢弃」判定。丢弃在投递给任何标签页之前发生，因此不消耗任何页面的投递额度。它不改写 payload，也不承诺服务端 exactly-once。
+_Avoid_: dedupe 中间件、拦截器、消息网关
+
+**连接尝试准备（attempt preparation）**：
+在下一次物理连接尝试前，为当前重连计划提交 endpoint 与延迟的过程。它可由 Worker 内的连接作用域业务扩展完成，也可回退到某个候选页面的 `onBeforeReconnect`；两者对同一计划互斥。
+_Avoid_: 重连中间件、连接工厂

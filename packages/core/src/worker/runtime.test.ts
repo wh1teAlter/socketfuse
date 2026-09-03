@@ -907,7 +907,7 @@ describe('shared worker runtime', () => {
     }
   })
 
-  it('keeps a reusable closed port within maxPorts until the client is disposed', async () => {
+  it('keeps a reusable closed port within maxPorts until it is disposed or its lease expires', async () => {
     const runtime = createSharedWebSocketRuntime({ workerLimits: { maxPorts: 1 } })
     try {
       const first = createPortPair()
@@ -918,6 +918,7 @@ describe('shared worker runtime', () => {
       await waitFor(() => !first[1].closed)
       await firstTransport.close()
 
+      // 立即重新 open 的端口必须仍然可用，因此 close 不能马上归还额度。
       const second = createPortPair()
       runtime.connect(second[1])
       expect(second[1].closed).toBe(true)
@@ -927,6 +928,48 @@ describe('shared worker runtime', () => {
       const third = createPortPair()
       runtime.connect(third[1])
       expect(third[1].closed).toBe(false)
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('reclaims a closed port quota once its lease grace elapses without a reopen', async () => {
+    let currentTime = 0
+    /** 手动驱动 lease sweep，避免占用真实时钟等待一整个扫描周期。 */
+    const sweeps: (() => void)[] = []
+    const runtime = createSharedWebSocketRuntime({
+      clearTimeout: () => undefined,
+      now: () => currentTime,
+      setTimeout: (callback, delay) => {
+        if (delay === 1_000)
+          sweeps.push(callback)
+        return 0
+      },
+      workerLimits: { maxPorts: 1 },
+    })
+    try {
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        id: 'closed-port-quota',
+        lease: { interval: 10, timeout: 20 },
+      })
+      // 页面卸载的默认路径只调用 close()，不调用 dispose()；额度必须最终回收，
+      // 否则新标签页会在 maxPorts 耗尽后静默降级为 direct。
+      for (let index = 0; index < 3; index++) {
+        const pair = createPortPair()
+        runtime.connect(pair[1])
+        const transport = new SharedWorkerTransport({ clientId: `tab-${index}`, config, mode: 'inline', worker: { port: pair[0] } })
+        transport.attach({ id: `tab-${index}` })
+        await waitFor(() => !pair[1].closed)
+        await transport.close()
+        currentTime += 50
+        sweeps.splice(0).forEach(sweep => sweep())
+        await Promise.resolve()
+      }
+
+      const replacement = createPortPair()
+      runtime.connect(replacement[1])
+      expect(replacement[1].closed).toBe(false)
     }
     finally {
       runtime.dispose()
