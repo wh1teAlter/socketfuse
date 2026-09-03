@@ -4,7 +4,7 @@
  * 组件只通过 props/events 读写这些 refs；连接创建、生命周期监听、测试控制句柄和
  * 错误格式化集中在此处，避免展示组件持有 transport 状态。
  */
-import { type ConnectionState, createWebSocket, type JsonValue, type SocketFuseError, SocketFuseError as SocketFuseErrorClass, type WebSocketClient } from 'socketfuse'
+import { type ConnectionState, createWebSocket, type SocketFuseError, SocketFuseError as SocketFuseErrorClass, type WebSocketClient } from 'socketfuse'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 
 /** Worker 诊断通过 MessagePort 异步返回时，演练场刷新指标的间隔，单位为毫秒。 */
@@ -24,10 +24,8 @@ export interface PlaygroundMessage {
 
 /** Playground 发送二进制样本的种类。 */
 type BinaryMessageKind = 'array-buffer' | 'blob' | 'typed-array'
-/** JSON 协议示例使用的认证值。 */
-type PlaygroundAuth = { readonly token: string }
-/** Playground 同时支持 raw 二进制与 JSON revision 的 client 类型。 */
-type PlaygroundClient = WebSocketClient<unknown, string | Blob | ArrayBuffer | Uint8Array, PlaygroundAuth>
+/** Playground 使用 raw 二进制 client，以公开 API 演示共享连接。 */
+type PlaygroundClient = WebSocketClient<unknown, string | Blob | ArrayBuffer | Uint8Array>
 
 /** E2E Worker 终止控制所需的最小端口能力。 */
 interface WorkerTerminationPort {
@@ -75,6 +73,12 @@ export function usePlaygroundConnection() {
   const fallback = shallowRef<'direct' | 'error'>('direct')
   const isConnected = shallowRef(false)
   const messages = shallowRef<readonly PlaygroundMessage[]>([])
+  /** 当前页面 keyed handler 的实际执行次数。 */
+  const exclusiveMessageCount = shallowRef(0)
+  /** Worker 控制帧确认的演示 key 持有状态。 */
+  const exclusiveKeyHeld = shallowRef(false)
+  /** 当前页面成功运行的重连 hook 次数。 */
+  const reconnectHookCount = shallowRef(0)
   /** 当前页面观测到的已打开物理 WebSocket 数量。 */
   const physicalConnections = shallowRef('-')
   const replayWhileHidden = shallowRef(false)
@@ -154,6 +158,7 @@ export function usePlaygroundConnection() {
     stopMetricsRefresh()
     client.value = undefined
     isConnected.value = false
+    exclusiveKeyHeld.value = false
     if (current !== undefined)
       await current.dispose().catch(() => undefined)
     clearMetrics()
@@ -169,48 +174,47 @@ export function usePlaygroundConnection() {
   async function connect(): Promise<void> {
     await disposeCurrentClient()
     error.value = ''
+    exclusiveMessageCount.value = 0
+    reconnectHookCount.value = 0
     refreshMetrics()
 
     try {
       const parameters = new URLSearchParams(window.location.search)
       const useRestartableWorker = parameters.has('e2eWorkerRestart')
-      const useRevisionReplay = parameters.has('e2eRevisionReplay')
-      const current = (useRevisionReplay
-        ? createWebSocket<JsonValue, JsonValue, PlaygroundAuth>(url.value, {
-            fallback: fallback.value,
-            id: connectionId.value,
-            immediate: false,
-            onError: (_client, value) => handleClientError(value),
-            protocol: { auth: { template: { token: '$auth.token', type: 'auth' } }, type: 'json' },
-            ...(replayWhileHidden.value ? { lifecycle: { restore: { replay: true } } } : {}),
-            ...(useRestartableWorker
-              ? { worker: () => {
-                  const worker = new SharedWorker(new URL('../workers/restartable-shared-worker.ts', import.meta.url), { type: 'module' })
-                  restartableWorker = worker as unknown as WorkerTerminationHandle
-                  return worker
-                } }
-              : {}),
-          })
-        : createWebSocket<unknown, string | Blob | ArrayBuffer | Uint8Array, unknown>(url.value, {
-            fallback: fallback.value,
-            id: connectionId.value,
-            immediate: false,
-            onError: (_client, value) => handleClientError(value),
-            ...(replayWhileHidden.value ? { lifecycle: { restore: { replay: true } } } : {}),
-            ...(useRestartableWorker
-              ? {
-                  worker: () => {
-                    const worker = new SharedWorker(new URL('../workers/restartable-shared-worker.ts', import.meta.url), { type: 'module' })
-                    restartableWorker = worker as unknown as WorkerTerminationHandle
-                    return worker
-                  },
-                }
-              : {}),
-            ...(simulateWorkerFailure.value
-              ? { worker: () => { throw new Error('Simulated Worker construction failure') } }
-              : {}),
-          })) as unknown as PlaygroundClient
+      /** 只供跨浏览器验收缩短应用层 heartbeat 周期。 */
+      const useHeartbeat = parameters.has('e2eHeartbeat')
+      const current = createWebSocket<unknown, string | Blob | ArrayBuffer | Uint8Array>(url.value, {
+        fallback: fallback.value,
+        ...(useHeartbeat ? { heartbeat: { interval: 100, pongTimeout: 1_000 } } : {}),
+        id: connectionId.value,
+        immediate: false,
+        onError: (_client, value) => handleClientError(value),
+        ...(replayWhileHidden.value ? { lifecycle: { restore: { replay: true } } } : {}),
+        ...(useRestartableWorker
+          ? {
+              worker: () => {
+                const worker = new SharedWorker(new URL('../workers/restartable-shared-worker.ts', import.meta.url), { type: 'module' })
+                restartableWorker = worker as unknown as WorkerTerminationHandle
+                return worker
+              },
+            }
+          : {}),
+        ...(simulateWorkerFailure.value
+          ? { worker: () => { throw new Error('Simulated Worker construction failure') } }
+          : {}),
+      }) as PlaygroundClient
       current.onMessage(event => appendMessage(event.data, event.replayed))
+      current.onMessage(() => {
+        exclusiveMessageCount.value++
+      }, { key: 'playground:single-execution' })
+      current.onBeforeReconnect((context) => {
+        context.setOptions({ url: url.value })
+        context.setDelay(0)
+        reconnectHookCount.value++
+      })
+      current.addEventListener('keychange', () => {
+        exclusiveKeyHeld.value = current.holdsKey('playground:single-execution')
+      })
       current.addEventListener('close', () => refreshMetrics(current))
       current.addEventListener('open', () => refreshMetrics(current))
       current.addEventListener('statechange', () => refreshMetrics(current))
@@ -270,18 +274,8 @@ export function usePlaygroundConnection() {
     restartableWorker?.port.postMessage({ type: '__socketfuse_test_terminate__' })
   }
 
-  /** 为 revision replay E2E 更新 endpoint 与 auth revision。 */
-  async function applyRevisionsForE2E(nextUrl: string): Promise<void> {
-    const current = client.value
-    if (current === undefined)
-      throw new Error('请先连接，再应用测试 revision')
-    await current.updateUrl(nextUrl, { revision: 1 })
-    await current.updateAuth({ token: 'e2e-revision-auth' }, { revision: 1 })
-  }
-
   if (typeof window !== 'undefined')
     Object.assign(window, {
-      __socketfusePlaygroundApplyRevisions: applyRevisionsForE2E,
       __socketfusePlaygroundTerminateWorker: terminateWorkerForE2E,
     })
 
@@ -300,14 +294,16 @@ export function usePlaygroundConnection() {
     connectionId,
     disconnect,
     error,
+    exclusiveKeyHeld,
+    exclusiveMessageCount,
     fallback,
     isConnected,
     messageCount,
     messages,
     openAnotherTab,
     physicalConnections,
+    reconnectHookCount,
     replayWhileHidden,
-    applyRevisionsForE2E,
     sendBinaryMessage,
     sendMessage,
     sharedClients,

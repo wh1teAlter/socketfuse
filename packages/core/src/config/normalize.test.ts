@@ -41,10 +41,65 @@ describe('normalizeWebSocketOptions', () => {
     expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', autoReconnect: { jitter: 2 } })).toThrowError(SocketFuseError)
   })
 
-  it('rejects heartbeat when the selected protocol does not support it', () => {
-    expect(() => normalizeWebSocketOptions('wss://example.test', {
+  it('supports raw string heartbeat without enabling timeout implicitly', () => {
+    const config = normalizeWebSocketOptions('wss://example.test', {
       heartbeat: true,
       id: 'room',
+    })
+    expect(config.shared.heartbeat).toMatchObject({ message: 'ping', responseMessage: 'pong' })
+    expect(config.shared.heartbeat && config.shared.heartbeat.pongTimeout).toBeUndefined()
+  })
+
+  it('fingerprints raw binary heartbeat bytes and rejects Blob heartbeat config', () => {
+    const first = normalizeWebSocketOptions('wss://example.test', {
+      heartbeat: { message: new Uint8Array([1]), responseMessage: new Uint8Array([2]) },
+      id: 'binary-heartbeat',
+    })
+    const second = normalizeWebSocketOptions('wss://example.test', {
+      heartbeat: { message: new Uint8Array([3]), responseMessage: new Uint8Array([2]) },
+      id: 'binary-heartbeat',
+    })
+
+    expect(hasConfigConflict(first, second)).toBe(true)
+    expect(() => normalizeWebSocketOptions('wss://example.test', {
+      heartbeat: { message: new Blob(['ping']) as unknown as string },
+      id: 'blob-heartbeat',
+    })).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+  })
+
+  it('rejects URL objects and custom heartbeat adapters without createPing', () => {
+    expect(() => normalizeWebSocketOptions(new URL('wss://example.test') as unknown as string, { id: 'fixed-string-only' })).toThrowError(SocketFuseError)
+    expect(() => normalizeWebSocketOptions('wss://example.test', {
+      heartbeat: true,
+      id: 'missing-create-ping',
+      protocol: {
+        classify: data => ({ data, type: 'data' }),
+        decode: data => data,
+        encode: data => String(data),
+        id: 'missing-create-ping',
+        version: 1,
+      },
+      worker: () => null as unknown as SharedWorker,
+    })).toThrowError(SocketFuseError)
+  })
+
+  it('keeps raw heartbeat payloads out of JSON and custom timing config', () => {
+    const json = normalizeWebSocketOptions('wss://example.test', {
+      heartbeat: true,
+      id: 'json-heartbeat',
+      protocol: {
+        heartbeat: { ping: { messageType: 'ping' }, pong: { messageType: 'pong' } },
+        type: 'json',
+      },
+    })
+    expect(json.shared.heartbeat).toEqual({ interval: 25_000, mode: 'pong' })
+    expect(() => normalizeWebSocketOptions('wss://example.test', {
+      heartbeat: { message: 'raw-ping' },
+      id: 'invalid-json-heartbeat',
+      protocol: {
+        heartbeat: { ping: { messageType: 'ping' }, pong: { messageType: 'pong' } },
+        type: 'json',
+      },
     })).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
   })
 

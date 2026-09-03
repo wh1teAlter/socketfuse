@@ -21,7 +21,7 @@ export class HeartbeatController {
   private timeoutHandle: TimerHandle | undefined
   /** 是否已启动，防止停止后的异步 tick 继续发送。 */
   private running = false
-  /** pong 模式下是否等待响应。 */
+  /** 配置超时时是否正在等待 pong 或入站活动。 */
   private awaiting = false
 
   /** 创建未启动的心跳控制器。 */
@@ -74,7 +74,11 @@ export class HeartbeatController {
   private async tick(): Promise<void> {
     if (!this.running)
       return
-    this.awaiting = this.options.mode === 'pong'
+    if (this.awaiting) {
+      this.schedule()
+      return
+    }
+    this.awaiting = this.options.pongTimeout !== undefined
     try {
       await this.runtime.send()
     }
@@ -82,7 +86,7 @@ export class HeartbeatController {
       // socket/controller 统一拥有发送失败与重连决策；这里仅维护存活超时，
       // 不能因单次发送异常改变连接状态机的不变量。
     }
-    if (this.awaiting && this.running) {
+    if (this.awaiting && this.running && this.options.pongTimeout !== undefined) {
       this.timeoutHandle = (this.runtime.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay)))(() => {
         if (this.running && this.awaiting) {
           this.awaiting = false

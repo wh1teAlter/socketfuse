@@ -40,6 +40,20 @@ const requiredEntries = [
 const rootEntries = new Set(['package/CHANGELOG.md', 'package/LICENSE', 'package/README.md', 'package/package.json'])
 /** dist 允许的构建 artifact 命名模式。 */
 const distEntryPattern = /^package\/dist\/[A-Za-z0-9_-]+\.(?:js|d\.ts)(?:\.map)?$/
+/** 不得残留在发布运行时或声明文件中的已删除 beta API 标识。 */
+const removedPublicApiTokens = [
+  'updateAuth',
+  'clearAuth',
+  'RevisionReceipt',
+  'JsonAuthTemplate',
+  'AuthContext',
+  'ProtocolCapabilities',
+  'idempotencyKey',
+  'handshaking',
+  'readyWhen',
+  'createAuth',
+  'CAPABILITY_UNSUPPORTED',
+]
 
 /** 拒绝路径穿越和未批准的发布 artifact。 */
 function assertSafeEntryName(entry) {
@@ -77,10 +91,13 @@ async function verifyArchive(entries, tarball) {
   await run('tar', ['-xzf', tarball, '-C', archiveDir])
   for (const entry of entries.filter(entry => entry.endsWith('.map')))
     await verifySourceMap(entry)
-  for (const entry of entries.filter(entry => entry.endsWith('.js') || entry.endsWith('.d.ts'))) {
+  for (const entry of entries.filter(entry => entry.endsWith('.js') || entry.endsWith('.d.ts') || entry.endsWith('.map'))) {
     const content = await readFile(resolve(archiveDir, entry), 'utf8')
-    if (content.includes('@socketfuse/core'))
+    if (!entry.endsWith('.map') && content.includes('@socketfuse/core'))
       throw new Error(`${entry} references the private workspace runtime`)
+    const removedToken = removedPublicApiTokens.find(token => content.includes(token))
+    if (removedToken !== undefined)
+      throw new Error(`${entry} still contains removed public API ${removedToken}`)
   }
 }
 
@@ -105,10 +122,14 @@ async function verifyConsumer(tarball) {
     include: ['index.ts'],
   }, null, 2))
   await writeFile(resolve(consumerDir, 'index.ts'), `
-import { createWebSocket, type JsonValue, type WebSocketClient } from 'socketfuse'
+import { createWebSocket, type BeforeReconnectContext, type JsonValue, type MessageHandlerContext, type WebSocketClient } from 'socketfuse'
 import { rawProtocol, type ProtocolAdapter } from 'socketfuse/protocol'
 import type { SocketData } from 'socketfuse'
 import { exposeSharedWebSocketWorker, type SharedWebSocketRuntime } from 'socketfuse/worker'
+// @ts-expect-error removed revision types must not remain at the root entry
+import type { RevisionReceipt } from 'socketfuse'
+// @ts-expect-error removed auth types must not remain at the protocol entry
+import type { AuthContext } from 'socketfuse/protocol'
 
 const client: WebSocketClient = createWebSocket('wss://example.test/socket', { id: 'tarball-check' })
 const protocol: ProtocolAdapter<SocketData, SocketData> = rawProtocol
@@ -121,11 +142,29 @@ const jsonClient = createWebSocket('wss://example.test/json', {
 const jsonMessage: JsonValue = { type: 'json' }
 
 void jsonClient.sendMessage(jsonMessage)
+client.onMessage((_event, context: MessageHandlerContext) => void context.signal, { key: 'tarball-exclusive' })
+client.onBeforeReconnect((context: BeforeReconnectContext) => {
+  context.setOptions({ url: 'wss://example.test/socket?fresh=1' })
+  context.setDelay(0)
+})
+void client.holdsKey('tarball-exclusive')
+// @ts-expect-error removed beta API must not remain on the public client
+void client.updateAuth
+// @ts-expect-error removed beta API must not remain on the public client
+void client.clearAuth
+// @ts-expect-error capability declarations no longer exist on the public client
+void client.capabilities
+// @ts-expect-error reconnect no longer accepts arbitrary application reasons
+void client.reconnect({ reason: 'secret' })
+// @ts-expect-error send options do not claim idempotency semantics
+void client.sendMessage('message', { idempotencyKey: 'duplicate' })
 
 void client
 void protocol
 void worker
 void runtime
+void (undefined as unknown as RevisionReceipt)
+void (undefined as unknown as AuthContext)
 `, 'utf8')
   await writeFile(resolve(consumerDir, 'vite.config.ts'), `
 import { defineConfig } from 'vite'

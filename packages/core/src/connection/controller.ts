@@ -1,16 +1,16 @@
 /**
  * 拥有一条物理 WebSocket 的连接状态机。
  *
- * 该模块只处理连接尝试、协议握手、重连、心跳、队列、背压和 revision，不知道页面或
+ * 该模块只处理连接尝试、重连、心跳、队列和背压，不知道页面或
  * Worker 的实现；所有外部观察通过 `ConnectionSink` 派发且不等待业务 handler。
  */
 import type {
+  BeforeReconnectReason,
   ConnectionDiagnostics,
   ConnectionSnapshot,
   ConnectionState,
   ProtocolFrame,
   ReadyState,
-  RevisionReceipt,
   SafeCloseInfo,
   SendOptions,
   SendReceipt,
@@ -21,11 +21,10 @@ import type {
 } from '../shared/types'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
 import { addSocketListener, browserWebSocketFactory, SOCKET_CONNECTING, SOCKET_OPEN, type WebSocketFactory, type WebSocketLike } from '../transport/socket'
-import { AuthRevisionRegister, EndpointRevisionRegister } from './revision'
+import { CONTROL_PROTOCOL_MAJOR, MAX_ENDPOINT_LENGTH } from '../shared/constants'
 import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
 import { encodeWithAdapter, OrderedProtocol } from '../protocol/adapter'
 import { SocketFuseError, toSocketFuseError } from '../shared/errors'
-import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
 import { assertEncodedMessageSize } from '../shared/bytes'
 import { BackpressureTracker } from './backpressure'
 import { HeartbeatController } from './heartbeat'
@@ -38,7 +37,7 @@ export interface ConnectionSink<Incoming> {
   readonly id: string
   /** 详细状态变化通知。 */
   readonly onState?: (snapshot: ConnectionSnapshot, reasonCode?: string) => void
-  /** 连接 ready 通知。 */
+  /** 原生 socket open 通知。 */
   readonly onOpen?: (snapshot: ConnectionSnapshot) => void
   /** 解码后的业务消息通知；controller 不等待 handler。 */
   readonly onMessage?: (data: Incoming, receivedAt: number, replayed?: boolean) => void
@@ -50,9 +49,9 @@ export interface ConnectionSink<Incoming> {
   readonly onError?: (error: SocketFuseError) => void
 }
 
-export interface ConnectionControllerOptions<Incoming, Outgoing, Auth> {
+export interface ConnectionControllerOptions<Incoming, Outgoing> {
   /** 物理连接与 adapter 的规范化配置。 */
-  readonly config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>
+  readonly config: NormalizedWebSocketConfig<Incoming, Outgoing>
   /** 可选测试 socket 工厂。 */
   readonly socketFactory?: WebSocketFactory
   /** 当前时间源，单位为 Unix 毫秒。 */
@@ -64,14 +63,42 @@ export interface ConnectionControllerOptions<Incoming, Outgoing, Auth> {
   /** 与注入 timer 配对的清理函数。 */
   readonly clearTimeout?: (handle: TimerHandle) => void
   /** 无 owner controller 完成主动 idle close 后调用一次。 */
-  readonly onIdle?: (controller: ConnectionController<Incoming, Outgoing, Auth>) => void
+  readonly onIdle?: (controller: ConnectionController<Incoming, Outgoing>) => void
+  /** 自动重连 plan 创建后交给上层协调器；返回 true 表示异步接管提交。 */
+  readonly onReconnectPlan?: (plan: Readonly<ReconnectPlan>) => boolean
+  /** 显式 close/reconnect 使等待中的 plan 失效时通知协调器。 */
+  readonly onReconnectPlanCancel?: (planId: string) => void
+}
+
+/** connection 层创建且不包含 endpoint 秘密的重连计划。 */
+export interface ReconnectPlan {
+  /** 仅用于同一 controller 内提交校验的不透明代际 id。 */
+  readonly id: string
+  /** 从一开始计数的自动重连序号。 */
+  readonly attempt: number
+  /** 未覆盖时使用的退避延迟。 */
+  readonly defaultDelay: number
+  /** 当前断开的安全分类。 */
+  readonly reason: BeforeReconnectReason
+  /** 不含服务端 reason 文本的 close 信息。 */
+  readonly close: SafeCloseInfo
+}
+
+/** 上层协调器对当前重连计划的一次原子覆盖。 */
+export interface ReconnectPlanOverride {
+  /** 下一次尝试使用的固定 URL。 */
+  readonly url?: string
+  /** 从提交到尝试的等待时间。 */
+  readonly delay?: number
 }
 
 interface OpenWaiter {
-  /** ready 后返回连接快照。 */
+  /** 原生 socket open 后返回连接快照。 */
   readonly resolve: (snapshot: ConnectionSnapshot) => void
   /** 终态、关闭或 abort 时拒绝。 */
   readonly reject: (error: SocketFuseError) => void
+  /** waiter 完成时移除外部 AbortSignal 监听。 */
+  cleanup?: () => void
 }
 
 /** 将原生 close 事件裁剪为不含 reason 的安全信息。 */
@@ -91,7 +118,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   return true
 }
 
-/** 生成本地 send/auth 操作使用的 id。 */
+/** 生成本地发送和重连计划使用的操作 id。 */
 function createOperationId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
     return crypto.randomUUID()
@@ -108,18 +135,27 @@ function safeOrigin(url: string): string {
   }
 }
 
-/** 比较心跳原生 payload，不做隐式文本或二进制转换。 */
-function socketDataEquals(left: unknown, right: SocketData): boolean {
-  if (typeof left === 'string' || typeof right === 'string')
-    return left === right
-  if (left instanceof ArrayBuffer && right instanceof ArrayBuffer)
-    return bytesEqual(new Uint8Array(left), new Uint8Array(right))
-  if (ArrayBuffer.isView(left) && ArrayBuffer.isView(right))
-    return bytesEqual(new Uint8Array(left.buffer, left.byteOffset, left.byteLength), new Uint8Array(right.buffer, right.byteOffset, right.byteLength))
-  return left === right
+/** 将原生二进制 payload 转为字节视图；文本与其他值返回 undefined。 */
+async function socketBytes(value: unknown): Promise<Uint8Array | undefined> {
+  if (value instanceof ArrayBuffer)
+    return new Uint8Array(value)
+  if (ArrayBuffer.isView(value))
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  if (typeof Blob !== 'undefined' && value instanceof Blob)
+    return new Uint8Array(await value.arrayBuffer())
+  return undefined
 }
 
-export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
+/** 比较心跳原生 payload；文本不与二进制互转，二进制按线上的字节比较。 */
+async function socketDataEquals(left: unknown, right: SocketData): Promise<boolean> {
+  if (typeof left === 'string' || typeof right === 'string')
+    return left === right
+  const [leftBytes, rightBytes] = await Promise.all([socketBytes(left), socketBytes(right)])
+  return leftBytes !== undefined && rightBytes !== undefined && bytesEqual(leftBytes, rightBytes)
+}
+
+/** 独占一条物理 WebSocket 及其全部连接状态。 */
+export class ConnectionController<Incoming, Outgoing> {
   /** 物理连接状态机。 */
   private readonly machine = new ConnectionStateMachine()
   /** 所有页面 owner 共享的有界出站队列。 */
@@ -129,14 +165,12 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   /** 物理连接重试预算与退避策略。 */
   private readonly retry: ReconnectPolicy
   /** 保证异步协议解码顺序的处理器。 */
-  private readonly orderedProtocol: OrderedProtocol<Incoming, Outgoing, Auth>
-  /** 当前 endpoint 与单调 revision。 */
-  private readonly endpoint: EndpointRevisionRegister
-  /** 当前认证值与单调 revision。 */
-  private readonly auth: AuthRevisionRegister<Auth>
+  private readonly orderedProtocol: OrderedProtocol<Incoming, Outgoing>
+  /** 当前物理连接使用的固定 endpoint；仅 plan 提交可以更新。 */
+  private endpoint: string
   /** client id 到事件 sink 的所有权映射。 */
   private readonly sinks = new Map<string, ConnectionSink<Incoming>>()
-  /** 等待当前物理连接 ready 的 open 调用。 */
+  /** 等待当前物理连接 open 的调用。 */
   private readonly waiters: OpenWaiter[] = []
   /** 当前时间源。 */
   private readonly now: () => number
@@ -152,7 +186,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private socketCleanups: (() => void)[] = []
   /** 当前应用层心跳 controller。 */
   private heartbeat: HeartbeatController | undefined
-  /** 当前建连/握手超时 timer。 */
+  /** 当前建连超时 timer。 */
   private connectTimer: TimerHandle | undefined
   /** 当前重连退避 timer。 */
   private retryTimer: TimerHandle | undefined
@@ -160,22 +194,24 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private idleTimer: TimerHandle | undefined
   /** 背压队列冲刷 timer。 */
   private flushTimer: TimerHandle | undefined
-  /** 最近一次 ready 时间，单位为 Unix 毫秒。 */
+  /** 最近一次原生 socket open 时间，单位为 Unix 毫秒。 */
   private connectedAt = 0
   /** 已计划的下次重试延迟，单位为毫秒。 */
   private nextRetryDelay: number | null = null
+  /** 等待 Worker/direct coordinator 提交的当前重连计划。 */
+  private reconnectPlan: Readonly<ReconnectPlan> | undefined
+  /** 生成 plan id 的单调代际。 */
+  private reconnectPlanGeneration = 0
   /** 最近安全 close code。 */
   private lastSafeCloseCode: number | null = null
   /** 最近本地 SocketFuse 错误；跨边界前必须脱敏。 */
   private lastError: SocketFuseError | null = null
   /** close 是否由当前控制器主动发起。 */
   private intentionalClose = false
-  /** close 完成后是否必须立即开始显式重连。 */
-  private forceReconnect = false
+  /** 当前 socket close 后是否必须进入显式重连计划。 */
+  private explicitReconnectPending = false
   /** 区分过期 socket 回调的单调尝试 id。 */
   private activeAttempt = 0
-  /** adapter-frame ready 前必须完成的 auth promise。 */
-  private authReady: { readonly attempt: number, readonly promise: Promise<void> } | undefined
   /** onIdle 是否已经为当前空闲周期通知。 */
   private idleNotified = false
   /** 当前关闭是否由 owner 归零触发。 */
@@ -186,15 +222,14 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private outgoingTail: Promise<void> = Promise.resolve()
 
   /** 创建拥有单一物理 WebSocket 的连接控制器。 */
-  constructor(readonly options: ConnectionControllerOptions<Incoming, Outgoing, Auth>) {
+  constructor(readonly options: ConnectionControllerOptions<Incoming, Outgoing>) {
     this.queue = new OutboundQueue(options.config.shared.queue.maxMessages, options.config.shared.queue.maxBytes)
     this.backpressure = new BackpressureTracker(options.config.shared.backpressure)
     this.retry = new ReconnectPolicy(options.config.shared.reconnect === false
-      ? { factor: 2, initialDelay: 0, jitter: 0, maxDelay: 0, retries: 0, stableThreshold: 0 }
+      ? { factor: 2, hookTimeout: 10_000, initialDelay: 0, jitter: 0, maxDelay: 0, retries: 0, stableThreshold: 0 }
       : options.config.shared.reconnect, options.random)
     this.orderedProtocol = new OrderedProtocol(options.config.adapter)
-    this.endpoint = new EndpointRevisionRegister(options.config.url)
-    this.auth = new AuthRevisionRegister<Auth>()
+    this.endpoint = options.config.url
     this.now = options.now ?? Date.now
     this.setTimer = options.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay))
     this.clearTimer = options.clearTimeout ?? (handle => globalThis.clearTimeout(handle))
@@ -216,7 +251,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return readyStateFor(this.state)
   }
 
-  /** 当前物理连接是否已经 ready。 */
+  /** 当前物理连接是否已经 open。 */
   get connected(): boolean {
     return this.state === 'open'
   }
@@ -226,14 +261,9 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return this.sinks.size
   }
 
-  /** 当前 endpoint revision。 */
-  get endpointRevision(): number {
-    return this.endpoint.revision
-  }
-
   /** 当前 endpoint 完整 URL；不得进入跨端口 diagnostics。 */
   get endpointUrl(): string {
-    return this.endpoint.value
+    return this.endpoint
   }
 
   /** 出站队列消息数。 */
@@ -278,7 +308,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       bufferedAmount: this.bufferedAmount,
       configFingerprint: this.options.config.configFingerprint,
       controlProtocolMajor: CONTROL_PROTOCOL_MAJOR,
-      endpointOrigin: safeOrigin(this.endpoint.value),
+      endpointOrigin: safeOrigin(this.endpoint),
       idHash: stableHash(this.options.config.id),
       lastErrorCode: this.lastErrorCode,
       lastSafeCloseCode: this.lastSafeCloseCode,
@@ -316,7 +346,7 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       this.scheduleIdleClose()
   }
 
-  /** 打开或等待物理连接 ready；abort、终态和关闭会 reject。 */
+  /** 打开或等待物理连接 open；abort、终态和关闭会 reject。 */
   open(signal?: AbortSignal): Promise<ConnectionSnapshot> {
     this.assertUsable()
     if (signal?.aborted)
@@ -329,18 +359,21 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       this.machine.transition('connecting')
     this.emitState()
     const promise = new Promise<ConnectionSnapshot>((resolve, reject) => {
-      this.waiters.push({ reject, resolve })
+      const waiter: OpenWaiter = { reject, resolve }
+      this.waiters.push(waiter)
       if (signal !== undefined) {
         const onAbort = (): void => {
-          const index = this.waiters.findIndex(waiter => waiter.resolve === resolve)
+          const index = this.waiters.indexOf(waiter)
           if (index >= 0)
             this.waiters.splice(index, 1)
+          waiter.cleanup?.()
           reject(new SocketFuseError('ABORTED', 'Open wait was aborted'))
         }
+        waiter.cleanup = () => signal.removeEventListener('abort', onAbort)
         signal.addEventListener('abort', onAbort, { once: true })
       }
     })
-    if (this.socket === null && this.retryTimer === undefined)
+    if (this.socket === null && this.retryTimer === undefined && this.reconnectPlan === undefined)
       this.startSocket()
     return promise
   }
@@ -350,6 +383,8 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     if (this.disposed)
       return
     this.intentionalClose = true
+    this.explicitReconnectPending = false
+    this.cancelReconnectPlan()
     this.clearRetryTimer()
     this.clearConnectTimer()
     this.heartbeat?.stop()
@@ -367,23 +402,28 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   /** 串行编码并本地发送或排队，不承诺服务端 Ack。 */
   async send(ownerId: string, data: Outgoing, options: SendOptions = {}): Promise<SendReceipt> {
     this.assertUsable()
+    this.assertOwnerAttached(ownerId)
     const messageId = createOperationId()
     const queueSetting = options.queue
     const queueAllowed = queueSetting === true
       || (queueSetting !== false && (this.options.config.shared.queue.whenDisconnected || this.options.config.shared.queue.whenBackpressured))
     const operation = this.outgoingTail.then(async () => {
+      this.assertUsable()
+      this.assertOwnerAttached(ownerId)
       const encoded = await encodeWithAdapter(this.options.config.adapter, data, { messageId, now: this.now() })
+      this.assertUsable()
+      this.assertOwnerAttached(ownerId)
       assertEncodedMessageSize(encoded, this.options.config.shared.limits.maxEncodedMessageBytes)
       if (this.socket === null || this.state !== 'open') {
         if (!queueAllowed || (!this.options.config.shared.queue.whenDisconnected && queueSetting !== true))
           throw new SocketFuseError('SEND_WHILE_DISCONNECTED', 'Cannot send while the connection is not open', { retryable: true })
-        return this.enqueue(ownerId, encoded, messageId, options.idempotencyKey)
+        return this.enqueue(ownerId, encoded, messageId)
       }
       const highWater = this.backpressure.update(this.socket.bufferedAmount)
       if (highWater) {
         if (!queueAllowed || (!this.options.config.shared.queue.whenBackpressured && queueSetting !== true))
           throw new SocketFuseError('BACKPRESSURE', 'Socket bufferedAmount is above the high-water mark', { retryable: true })
-        return this.enqueue(ownerId, encoded, messageId, options.idempotencyKey)
+        return this.enqueue(ownerId, encoded, messageId)
       }
       this.socket.send(encoded)
       return { bufferedAmount: this.socket.bufferedAmount, messageId, status: 'accepted' as const }
@@ -392,64 +432,23 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     return operation
   }
 
-  /** 应用认证 revision；协议不支持时 reject。 */
-  async updateAuth(value: Auth, revision: number): Promise<RevisionReceipt> {
-    this.assertUsable()
-    if (!this.options.config.adapter.capabilities.auth || this.options.config.adapter.createAuth === undefined)
-      throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'The selected protocol does not support auth updates')
-    const receipt = this.auth.update(value, revision)
-    if (receipt.status === 'applied' && this.isAttemptActive())
-      await this.reconnect('AUTH_REVISION_UPDATED')
-    return receipt
-  }
-
-  /** 清除认证 revision，并移除可能携带旧身份的队列项。 */
-  async clearAuth(revision: number): Promise<RevisionReceipt> {
-    this.assertUsable()
-    const receipt = this.auth.update(undefined, revision)
-    if (receipt.status === 'applied') {
-      this.queue.clear()
-      if (this.isAttemptActive())
-        await this.reconnect('AUTH_CLEARED')
-    }
-    return receipt
-  }
-
-  /** 应用 endpoint revision；仅 ws/wss URL 可被接受。 */
-  async updateUrl(url: string, revision: number): Promise<RevisionReceipt> {
-    this.assertUsable()
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    }
-    catch (cause) {
-      throw new SocketFuseError('INVALID_OPTIONS', 'url must be a valid absolute URL', { cause })
-    }
-    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
-      throw new SocketFuseError('INVALID_OPTIONS', 'url must use ws: or wss:')
-    const receipt = this.endpoint.update(parsed.href, revision)
-    if (receipt.status === 'applied' && this.isAttemptActive())
-      await this.reconnect('ENDPOINT_UPDATED')
-    return receipt
-  }
-
-  /** 清空退避并请求一次显式物理重连。 */
-  async reconnect(reason = 'RECONNECT_REQUESTED'): Promise<void> {
+  /** 清空退避并请求一次显式物理重连计划。 */
+  async reconnect(): Promise<void> {
     this.assertUsable()
     this.retry.reset()
     this.intentionalClose = false
     this.lastError = null
-    this.forceReconnect = true
+    this.explicitReconnectPending = true
+    this.cancelReconnectPlan()
     this.clearRetryTimer()
     if (this.socket !== null) {
-      this.transition('closing', reason)
+      this.transition('closing', 'RECONNECT_REQUESTED')
       this.socket.close(1000)
       return
     }
-    if (this.state === 'closed' || this.state === 'failed' || this.state === 'idle' || this.state === 'reconnecting')
-      this.transition('connecting', reason)
-    this.emitState(reason)
-    this.startSocket()
+    this.explicitReconnectPending = false
+    const plan = this.createReconnectPlan(1, 0, 'explicit', { code: 1000, terminal: false, wasClean: true }, 'RECONNECT_REQUESTED')
+    this.dispatchReconnectPlan(plan)
   }
 
   /** 释放 controller、所有 owner、socket 与 timers。 */
@@ -475,9 +474,28 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }
   }
 
+  /** 原子提交当前重连计划；旧代际或非法覆盖不会改变 endpoint/timer。 */
+  commitReconnectPlan(id: string, override: Readonly<ReconnectPlanOverride> = {}): void {
+    this.assertUsable()
+    const plan = this.reconnectPlan
+    if (plan === undefined || plan.id !== id)
+      throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer active')
+    const delay = override.delay ?? plan.defaultDelay
+    if (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0)
+      throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect delay must be a non-negative finite number')
+    let endpoint = this.endpoint
+    if (override.url !== undefined)
+      endpoint = this.normalizeEndpoint(override.url)
+    this.reconnectPlan = undefined
+    if (endpoint !== this.endpoint) {
+      this.endpoint = endpoint
+    }
+    this.scheduleReconnect(delay)
+  }
+
   /** 将一条已编码消息放入有界 FIFO 队列。 */
-  private enqueue(ownerId: string, data: SocketData, messageId: string, idempotencyKey?: string): SendReceipt {
-    const result = this.queue.enqueue(ownerId, data, messageId, idempotencyKey)
+  private enqueue(ownerId: string, data: SocketData, messageId: string): SendReceipt {
+    const result = this.queue.enqueue(ownerId, data, messageId)
     return { messageId, position: result.position, status: 'queued' }
   }
 
@@ -491,10 +509,10 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.retry.recordAttempt()
     let socket: WebSocketLike
     try {
-      socket = this.socketFactory(this.endpoint.value, this.options.config.shared.protocols, this.options.config.shared.binaryType)
+      socket = this.socketFactory(this.endpoint, this.options.config.shared.protocols, this.options.config.shared.binaryType)
     }
     catch (cause) {
-      this.fail(new SocketFuseError('SOCKET_ERROR', 'Unable to construct WebSocket', { cause, retryable: true }))
+      this.handleSocketConstructionFailure(new SocketFuseError('SOCKET_ERROR', 'Unable to construct WebSocket', { cause, retryable: true }))
       return
     }
     this.socket = socket
@@ -513,50 +531,16 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     }, this.options.config.shared.connectionTimeout)
   }
 
-  /** 处理 socket open，并按协议 ready 模式完成 auth/handshake。 */
+  /** 处理原生 socket open，并立即进入 SocketFuse open 状态。 */
   private handleOpen(socket: WebSocketLike, attempt: number): void {
     if (!this.isCurrentAttempt(socket, attempt))
       return
     this.connectedAt = this.now()
     this.retry.recordOpen(this.connectedAt)
-    if (this.options.config.adapter.readyWhen === 'adapter-frame') {
-      this.transition('handshaking', 'SOCKET_OPEN')
-      this.emitState('SOCKET_OPEN')
-      this.authReady = { attempt, promise: this.sendAuth(socket, attempt) }
-      return
-    }
-    void this.sendAuth(socket, attempt).then(() => this.becomeOpen(socket, attempt)).catch(() => undefined)
+    this.becomeOpen(socket, attempt)
   }
 
-  /** 在 ready 前发送当前认证 revision 的 protocol 帧。 */
-  private async sendAuth(socket: WebSocketLike, attempt: number): Promise<void> {
-    const createAuth = this.options.config.adapter.createAuth
-    if (createAuth === undefined || this.auth.value === undefined)
-      return
-    try {
-      const values = await createAuth(this.auth.value, { now: this.now(), revision: this.auth.revision })
-      if (!this.isCurrentAttempt(socket, attempt))
-        return
-      const list = Array.isArray(values) ? values : [values]
-      for (const value of list) {
-        const encoded = await encodeWithAdapter(this.options.config.adapter, value, { messageId: createOperationId(), now: this.now() })
-        if (!this.isCurrentAttempt(socket, attempt))
-          return
-        socket.send(encoded)
-      }
-    }
-    catch (cause) {
-      const error = toSocketFuseError(cause, 'AUTH_FAILED', 'Protocol auth frame failed', { fatal: true, retryable: false })
-      if (this.isCurrentAttempt(socket, attempt)) {
-        this.handleError(error)
-        this.lastError = error
-        socket.close(4001)
-      }
-      throw error
-    }
-  }
-
-  /** 将当前尝试标记为 ready，启动心跳、冲刷队列并通知所有 sink。 */
+  /** 将当前尝试标记为 open，启动心跳、冲刷队列并通知所有 sink。 */
   private becomeOpen(socket: WebSocketLike = this.socket as WebSocketLike, attempt: number = this.activeAttempt): void {
     if (!this.isCurrentAttempt(socket, attempt))
       return
@@ -589,25 +573,12 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private async handleFrame(socket: WebSocketLike, attempt: number, frame: ProtocolFrame<Incoming>): Promise<void> {
     if (!this.isCurrentAttempt(socket, attempt))
       return
-    if (frame.type === 'ready') {
-      const authReady = this.authReady
-      if (authReady?.attempt === attempt) {
-        try {
-          await authReady.promise
-        }
-        catch {
-          return
-        }
-      }
-      this.becomeOpen(socket, attempt)
-      return
-    }
+    this.heartbeat?.acknowledge('activity')
     if (frame.type === 'pong') {
       this.heartbeat?.acknowledge('pong')
       return
     }
     if (frame.type === 'ping') {
-      this.heartbeat?.acknowledge('activity')
       const createPong = this.options.config.adapter.createPong
       if (createPong !== undefined) {
         const value = await createPong(frame, { attempt: this.retry.attempt, now: this.now() })
@@ -631,12 +602,11 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       return
     const heartbeat = this.options.config.shared.heartbeat
     if (heartbeat !== false
-      && !this.options.config.adapter.capabilities.heartbeat
-      && socketDataEquals(frame.data, heartbeat.responseMessage)) {
+      && this.options.config.shared.protocol.kind === 'raw'
+      && await socketDataEquals(frame.data, heartbeat.responseMessage as SocketData)) {
       this.heartbeat?.acknowledge('pong')
       return
     }
-    this.heartbeat?.acknowledge('activity')
     for (const sink of this.sinks.values())
       sink.onMessage?.(frame.data, this.now())
   }
@@ -660,36 +630,33 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     this.cleanupSocket()
     const info = safeCloseInfo(event)
     this.lastSafeCloseCode = info.code
-    const protocolAllowsRetry = this.forceReconnect
+    const protocolAllowsRetry = this.explicitReconnectPending
       || (!this.lastError?.fatal && (this.lastError?.retryable === true
         || (this.options.config.adapter.shouldReconnect?.(info) ?? !info.terminal)))
-    const forcedAttempt = this.forceReconnect
-    const shouldRetry = (forcedAttempt || !this.intentionalClose)
+    const explicitAttempt = this.explicitReconnectPending
+    const shouldRetry = (explicitAttempt || !this.intentionalClose)
       && this.sinks.size > 0
-      && this.options.config.shared.reconnect !== false
+      && (explicitAttempt || this.options.config.shared.reconnect !== false)
       && protocolAllowsRetry
     let willReconnect = false
-    if (forcedAttempt) {
+    let planToDispatch: Readonly<ReconnectPlan> | undefined
+    const reconnectInfo = { ...info, terminal: false }
+    if (explicitAttempt && shouldRetry) {
       willReconnect = true
-      this.forceReconnect = false
-      this.transition('connecting', 'RECONNECT_REQUESTED')
-      this.emitState('RECONNECT_REQUESTED')
-      this.startSocket()
+      this.explicitReconnectPending = false
+      planToDispatch = this.createReconnectPlan(1, 0, 'explicit', reconnectInfo, 'RECONNECT_REQUESTED')
     }
     else if (shouldRetry) {
       const decision = this.retry.decide(this.now(), true)
       if (decision.allowed) {
         willReconnect = true
-        this.nextRetryDelay = decision.delay
-        this.transition('reconnecting', this.lastError?.code ?? 'SOCKET_CLOSED')
-        this.emitState(this.lastError?.code ?? 'SOCKET_CLOSED')
-        this.retryTimer = this.setTimer(() => {
-          this.retryTimer = undefined
-          this.nextRetryDelay = null
-          this.transition('connecting', 'RETRY')
-          this.emitState('RETRY')
-          this.startSocket()
-        }, decision.delay)
+        planToDispatch = this.createReconnectPlan(
+          decision.attempt,
+          decision.delay,
+          this.reconnectReason(),
+          reconnectInfo,
+          this.lastError?.code ?? 'SOCKET_CLOSED',
+        )
       }
       else {
         this.transition('failed', 'RETRY_EXHAUSTED')
@@ -711,19 +678,44 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
         this.rejectWaiters(new SocketFuseError(info.terminal ? 'CLOSE_NOT_RETRYABLE' : 'CLIENT_DISCONNECTED', 'WebSocket closed'))
       }
     }
+    const closeInfo = { ...info, terminal: !willReconnect }
     for (const sink of this.sinks.values())
-      sink.onClose?.({ ...info, willReconnect })
+      sink.onClose?.({ ...closeInfo, willReconnect })
+    if (planToDispatch !== undefined)
+      this.dispatchReconnectPlan(planToDispatch)
     this.intentionalClose = false
-    this.forceReconnect = false
+    this.explicitReconnectPending = false
     if (this.idleCloseRequested && this.sinks.size === 0)
       this.notifyIdle()
   }
 
-  /** 在 socket 构造失败等无 close 事件路径进入终态。 */
-  private fail(error: SocketFuseError): void {
+  /** 在 socket 构造失败且没有 close 事件时进入统一自动重连计划。 */
+  private handleSocketConstructionFailure(error: SocketFuseError): void {
     this.handleError(error)
     if (this.socket !== null)
       this.cleanupSocket()
+    const close = { code: 1006, terminal: false, wasClean: false }
+    this.lastSafeCloseCode = close.code
+    const protocolAllowsRetry = !error.fatal
+      && error.retryable
+      && (this.options.config.adapter.shouldReconnect?.(close) ?? true)
+    if (!this.intentionalClose
+      && this.sinks.size > 0
+      && this.options.config.shared.reconnect !== false
+      && protocolAllowsRetry) {
+      const decision = this.retry.decide(this.now(), true)
+      if (decision.allowed) {
+        const plan = this.createReconnectPlan(decision.attempt, decision.delay, 'socket-error', close, error.code)
+        this.dispatchReconnectPlan(plan)
+        return
+      }
+      const exhausted = new SocketFuseError('RETRY_EXHAUSTED', 'Reconnect retry budget was exhausted', { fatal: true })
+      if (this.state !== 'failed')
+        this.transition('failed', exhausted.code)
+      this.emitState(exhausted.code)
+      this.rejectWaiters(exhausted)
+      return
+    }
     if (this.state !== 'failed')
       this.transition('failed', error.code)
     this.emitState(error.code)
@@ -756,35 +748,130 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
     flush()
   }
 
+  /** 把 plan 交给上层候选协调器；无人接管或异常时立即采用默认值。 */
+  private dispatchReconnectPlan(plan: Readonly<ReconnectPlan>): void {
+    // onClose 会同步进入页面 callback；callback 可能在此处先显式 close/reconnect，
+    // 因而必须再次确认 plan 仍是 controller 权威的当前代际，不能把已取消计划交给协调器。
+    if (this.reconnectPlan?.id !== plan.id)
+      return
+    let accepted = false
+    try {
+      accepted = this.options.onReconnectPlan?.(plan) === true
+    }
+    catch {
+      accepted = false
+    }
+    if (!accepted && this.reconnectPlan?.id === plan.id)
+      this.commitReconnectPlan(plan.id)
+  }
+
+  /** 建立唯一的当前重连计划，并在提交前保持 endpoint 与 timer 不变。 */
+  private createReconnectPlan(
+    attempt: number,
+    defaultDelay: number,
+    reason: BeforeReconnectReason,
+    close: SafeCloseInfo,
+    reasonCode: string,
+  ): Readonly<ReconnectPlan> {
+    this.nextRetryDelay = defaultDelay
+    this.transition('reconnecting', reasonCode)
+    this.emitState(reasonCode)
+    const plan = Object.freeze({
+      attempt,
+      close,
+      defaultDelay,
+      id: `${++this.reconnectPlanGeneration}:${createOperationId()}`,
+      reason,
+    })
+    this.reconnectPlan = plan
+    return plan
+  }
+
+  /** 使当前 plan 失效，并让 transport abort 页面准备函数。 */
+  private cancelReconnectPlan(): void {
+    const plan = this.reconnectPlan
+    if (plan === undefined)
+      return
+    this.reconnectPlan = undefined
+    this.options.onReconnectPlanCancel?.(plan.id)
+  }
+
+  /** 安装已验证计划的单一退避 timer。 */
+  private scheduleReconnect(delay: number): void {
+    this.nextRetryDelay = delay
+    this.retryTimer = this.setTimer(() => {
+      this.retryTimer = undefined
+      this.nextRetryDelay = null
+      this.transition('connecting', 'RETRY')
+      this.emitState('RETRY')
+      this.startSocket()
+    }, delay)
+  }
+
+  /** 将内部错误与 close 收敛为不含服务端文本的公开重连原因。 */
+  private reconnectReason(): BeforeReconnectReason {
+    if (this.lastError?.code === 'HEARTBEAT_TIMEOUT')
+      return 'heartbeat-timeout'
+    if (this.lastError?.code === 'CONNECTION_TIMEOUT')
+      return 'connection-timeout'
+    if (this.lastError?.code === 'SOCKET_ERROR')
+      return 'socket-error'
+    return 'socket-close'
+  }
+
+  /** 校验 plan 提交的 endpoint，但不把完整 URL写入错误详情。 */
+  private normalizeEndpoint(value: string): string {
+    if (typeof value !== 'string')
+      throw new SocketFuseError('INVALID_OPTIONS', 'url must be a fixed string')
+    if (value.length > MAX_ENDPOINT_LENGTH)
+      throw new SocketFuseError('INVALID_OPTIONS', `url must be at most ${MAX_ENDPOINT_LENGTH} characters`)
+    let parsed: URL
+    try {
+      parsed = new URL(value)
+    }
+    catch {
+      throw new SocketFuseError('INVALID_OPTIONS', 'url must be an absolute ws: or wss: URL')
+    }
+    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
+      throw new SocketFuseError('INVALID_OPTIONS', 'url must use ws: or wss:')
+    if (parsed.href.length > MAX_ENDPOINT_LENGTH)
+      throw new SocketFuseError('INVALID_OPTIONS', `url must be at most ${MAX_ENDPOINT_LENGTH} characters after normalization`)
+    return parsed.href
+  }
+
   /** 按 adapter 能力创建心跳 controller；未配置则返回 undefined。 */
   private createHeartbeat(): HeartbeatController | undefined {
     const configured = this.options.config.shared.heartbeat
     if (configured === false)
       return undefined
+    const socket = this.socket
+    const attempt = this.activeAttempt
+    if (socket === null)
+      return undefined
     const adapter = this.options.config.adapter
-    if (adapter.createPing === undefined) {
-      if (configured.message === undefined)
-        return undefined
+    if (this.options.config.shared.protocol.kind === 'raw') {
       return new HeartbeatController(configured, {
         clearTimeout: this.clearTimer,
         onTimeout: () => this.handleHeartbeatTimeout(),
         send: async () => {
-          if (this.socket === null)
-            return
-          this.socket.send(configured.message)
+          if (this.isCurrentAttempt(socket, attempt) && this.state === 'open')
+            socket.send(configured.message as SocketData)
         },
         setTimeout: this.setTimer,
       })
     }
+    if (adapter.createPing === undefined)
+      return undefined
     return new HeartbeatController(configured, {
       clearTimeout: this.clearTimer,
       onTimeout: () => this.handleHeartbeatTimeout(),
       send: async () => {
-        if (this.socket === null)
-          return
         const value = await adapter.createPing?.({ attempt: this.retry.attempt, now: this.now() })
-        if (value !== undefined)
-          this.socket.send(await encodeWithAdapter(adapter, value, { messageId: createOperationId(), now: this.now() }))
+        if (value === undefined)
+          return
+        const encoded = await encodeWithAdapter(adapter, value, { messageId: createOperationId(), now: this.now() })
+        if (this.isCurrentAttempt(socket, attempt) && this.state === 'open')
+          socket.send(encoded)
       },
       setTimeout: this.setTimer,
     })
@@ -827,19 +914,23 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       sink.onState?.(snapshot, reasonCode)
   }
 
-  /** resolve 当前 ready 的所有 open waiter。 */
+  /** resolve 当前等待原生 socket open 的所有调用。 */
   private resolveWaiters(): void {
     const waiters = this.waiters.splice(0)
     const snapshot = this.snapshot()
-    for (const waiter of waiters)
+    for (const waiter of waiters) {
+      waiter.cleanup?.()
       waiter.resolve(snapshot)
+    }
   }
 
   /** reject 当前等待连接的所有 open waiter。 */
   private rejectWaiters(error: SocketFuseError): void {
     const waiters = this.waiters.splice(0)
-    for (const waiter of waiters)
+    for (const waiter of waiters) {
+      waiter.cleanup?.()
       waiter.reject(error)
+    }
   }
 
   /** 解绑当前 socket 监听器并释放 socket 引用。 */
@@ -861,11 +952,6 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
       return
     this.idleNotified = true
     this.options.onIdle?.(this)
-  }
-
-  /** 判断当前是否存在可重连的活跃 socket 尝试。 */
-  private isAttemptActive(): boolean {
-    return this.socket !== null && (this.state === 'connecting' || this.state === 'handshaking' || this.state === 'open')
   }
 
   /** 清理连接 deadline timer。 */
@@ -900,5 +986,11 @@ export class ConnectionController<Incoming, Outgoing, Auth = unknown> {
   private assertUsable(): void {
     if (this.disposed)
       throw new SocketFuseError('CLIENT_DISPOSED', 'Connection controller has been disposed')
+  }
+
+  /** 拒绝已经脱离当前 controller 的页面继续完成异步发送。 */
+  private assertOwnerAttached(ownerId: string): void {
+    if (!this.sinks.has(ownerId))
+      throw new SocketFuseError('CLIENT_DISCONNECTED', 'Message owner is no longer attached')
   }
 }

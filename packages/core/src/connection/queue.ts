@@ -12,8 +12,6 @@ export interface OutboundQueueItem {
   readonly bytes: number
   /** SocketFuse 本地生成的消息标识。 */
   readonly messageId: string
-  /** 可选业务幂等键，SocketFuse 不解释其服务端语义。 */
-  readonly idempotencyKey?: string
   /** 全局入队序列，用于诊断和保持顺序语义。 */
   readonly sequence: number
 }
@@ -59,7 +57,6 @@ export class OutboundQueue {
     ownerId: string,
     data: SocketData,
     messageId: string,
-    idempotencyKey?: string,
   ): { item: OutboundQueueItem, position: number } {
     const bytes = socketDataByteLength(data)
     if (bytes > this.maxBytes)
@@ -68,9 +65,7 @@ export class OutboundQueue {
       throw new SocketFuseError('QUEUE_FULL', 'Outbound queue message limit reached', { details: { maxMessages: this.maxMessages } })
     if (this.totalBytes + bytes > this.maxBytes)
       throw new SocketFuseError('QUEUE_BYTES_EXCEEDED', 'Outbound queue byte limit reached', { details: { bytes: this.totalBytes, maxBytes: this.maxBytes } })
-    const item: OutboundQueueItem = idempotencyKey === undefined
-      ? { bytes, data, messageId, ownerId, sequence: ++this.sequence }
-      : { bytes, data, idempotencyKey, messageId, ownerId, sequence: ++this.sequence }
+    const item: OutboundQueueItem = { bytes, data, messageId, ownerId, sequence: ++this.sequence }
     this.entries.push(item)
     this.totalBytes += bytes
     return { item, position: this.entries.length }

@@ -12,10 +12,10 @@
 ## 为什么使用 SocketFuse
 
 - 降低连接数：同一浏览器、同一源、相同 `id` 的页面最多复用一个物理 WebSocket。
-- 保持页面隔离：每个页面获得稳定的 `WebSocketClient` 实例，可动态注册 `onMessage` 处理器。
+- 保持页面隔离：每个页面获得稳定的 `WebSocketClient` 实例，可动态注册普通或跨标签页独占的 `onMessage` 处理器。
 - 零配置可用：默认使用内联 SharedWorker；不需要单独部署 Worker 文件。
 - 可控的降级：SharedWorker 构造或初始化失败时，可选择当前页面的 direct WebSocket 或直接报错。
-- 覆盖常见连接能力：重连、队列与背压、JSON/自定义协议、认证 revision、心跳、诊断、生命周期回放。
+- 覆盖常见连接能力：重连前 hook、队列与背压、JSON/自定义协议、应用层心跳、诊断、生命周期回放。
 - 明确交付边界：`sendMessage()` 成功表示本地已接纳或入队，不表示服务端已收到；库不提供 RPC 或服务端 Ack。
 
 ## 运行模型
@@ -29,8 +29,9 @@ flowchart LR
   S <--> R[WebSocket 服务端]
 ```
 
-共享身份由 `id` 与共享连接配置共同决定。相同 `id` 使用不同 URL、协议、重连、心跳等共享配置时，不会静默
-覆盖，而会以配置冲突失败。`id` 只用于连接复用，不是授权边界；认证仍应由服务端和应用协议负责。
+共享身份由 `id` 与共享连接配置共同决定。完整 URL 是一次连接尝试的输入，不参与共享 fingerprint：后来页面以
+相同 `id` 和共享配置加入时，其 URL 不冲突、也不会覆盖存量连接。协议、重连、心跳等共享配置仍必须一致。
+`id` 只用于连接复用，不是授权边界；认证仍应由服务端和应用协议负责。
 
 ## 快速开始
 
@@ -89,8 +90,9 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 
 - `open()` / `close()` / `dispose()`：参与、离开或永久释放当前页面的逻辑 client。
 - `sendMessage(data)`：提交消息并获得本地接纳回执。
-- `onMessage(handler)`：动态注册页面本地消息处理器，并返回取消函数。
-- `updateAuth()` / `clearAuth()` / `updateUrl()`：通过单调递增 revision 更新共享认证或 endpoint。
+- `onMessage(handler, { key })`：可选声明跨标签页 execution key；所有页面仍收到消息，只有 holder 调用 keyed handler。
+- `holdsKey()` / `keychange`：观察 Worker 权威下发的 execution key 状态。
+- `onBeforeReconnect(handler)`：由一个健康页面为断线、超时或显式重连计划原子覆盖 URL 与 delay。
 - `diagnostics()`：读取不包含 payload、token、查询参数和内部异常详情的运行指标。
 
 签名与完整行为以 [API 参考](packages/docs/site/api/index.md)为准。
@@ -101,10 +103,13 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 | --- | --- |
 | Worker 降级 | 仅在 SharedWorker API 不可用、构造、加载或初始化握手失败时按 `fallback` 降级。已选 transport 的网络或恢复失败不会静默切换。 |
 | 生命周期 | `lifecycle.restore` 默认关闭。启用后可在页面隐藏/冻结期间有限缓存消息，并在恢复时以 `replayed: true` 派发。它不是持久化消息恢复。 |
+| 单点执行 | SharedWorker 按 visible 优先、同级 FIFO 仲裁 execution key；freeze、端口离开或 lease 失效会交接。direct 只保证当前页面自身持有。 |
+| 动态 endpoint | 初始化只接受固定字符串。业务 getter 在 `onBeforeReconnect` 中运行，并用 `setOptions({ url })` 提交本次计划。 |
 | 协议 | 支持 raw、声明式 JSON 与自定义 adapter。自定义 adapter 需在自定义 Worker 中静态注册，不能通过 `MessagePort` 传递函数。 |
 | 队列与背压 | 默认不离线缓存。显式开启后，消息仍受数量与字节上限限制；溢出会有明确错误或事件，而不会无限占用内存。 |
 | SSR | 三个公开入口可在 Node/SSR 中安全 import；实际创建 client 必须在浏览器页面 realm。 |
-| 安全 | 诊断与 Worker 控制协议不会暴露认证值、URL 查询参数、业务 payload 或内部异常文本。 |
+| 安全 | 诊断、logger 与 Worker 控制响应不会暴露认证值、URL 查询参数、业务 payload 或内部异常文本。 |
+| 应用协议 | credential、session、业务 ready、Ack、cursor 和消息幂等由应用维护；库不提供 dedupe 或 exactly-once。 |
 
 浏览器兼容性与 CSP/自定义 Worker 部署要求见[兼容性与安全](packages/docs/site/reference/compatibility-and-security.md)。
 

@@ -1,20 +1,24 @@
 /**
  * 将 direct 或 SharedWorker transport 呈现为稳定的页面 WebSocketClient。
- * 页面生命周期、监听器、回放和 revision 属于本模块；物理 socket 所有权仍在 transport
+ * 页面生命周期、监听器、回放和执行授权属于本模块；物理 socket 所有权仍在 transport
  * 与 connection 层，且任何用户 handler 都在页面侧异步隔离执行。
  */
 import type {
+  BeforeReconnectContext,
+  BeforeReconnectHandler,
+  ClientVisibility,
   ConnectionDiagnostics,
   ConnectionSnapshot,
   ConnectionState,
   CreateWebSocketOptions,
+  MessageHandlerContext,
+  MessageHandlerOptions,
   NormalizedRestoreOptions,
-  ProtocolCapabilities,
-  RevisionReceipt,
   SendOptions,
   SendReceipt,
   SocketFuseCloseEvent,
   SocketFuseDiagnosticEvent,
+  SocketFuseKeyChangeEvent,
   SocketFuseMessageEvent,
   SocketFuseOverflowEvent,
   SocketFuseStateChangeEvent,
@@ -23,15 +27,24 @@ import type {
   WebSocketStatus,
   WorkerMode,
 } from '../shared/types'
+import type { ReconnectPlan, ReconnectPlanOverride } from '../connection/controller'
+import type { ClientTransport, ClientTransportSink } from '../transport/direct'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
-import type { ConnectionSink } from '../connection/controller'
-import type { ClientTransport } from '../transport/direct'
 import { SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
+import { CONTROL_PROTOCOL_MAJOR, MAX_ENDPOINT_LENGTH } from '../shared/constants'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
 import { readyStateFor, statusFor } from '../connection/state'
 
 /** 动态消息 handler 的页面本地签名。 */
-type MessageHandler<Incoming> = (event: SocketFuseMessageEvent<Incoming>) => void
+type MessageHandler<Incoming> = (event: SocketFuseMessageEvent<Incoming>, context: Readonly<MessageHandlerContext>) => unknown
+
+/** 页面本地 handler 及其可选 execution key。 */
+interface MessageHandlerEntry<Incoming> {
+  /** 页面本地 handler。 */
+  readonly handler: MessageHandler<Incoming>
+  /** 省略时每页执行，否则由 Worker grant gate。 */
+  readonly key?: string
+}
 
 /** SSR import 时使用的空 EventTarget 基类；页面 realm 使用原生 EventTarget。 */
 const EventTargetBase: typeof EventTarget = typeof EventTarget === 'undefined'
@@ -99,6 +112,43 @@ function createErrorEvent(error: SocketFuseError): Event {
   return event
 }
 
+/** 创建 execution key 实际授权变化事件。 */
+function createKeyChangeEvent(key: string, held: boolean): SocketFuseKeyChangeEvent {
+  const event = new Event('keychange') as SocketFuseKeyChangeEvent
+  Object.defineProperties(event, {
+    held: { value: held },
+    key: { value: key },
+  })
+  return event
+}
+
+/** 读取 Worker 选主需要的页面执行活性。 */
+function pageVisibility(): ClientVisibility {
+  if (typeof document === 'undefined')
+    return 'visible'
+  return document.visibilityState === 'hidden' || document.hidden ? 'hidden' : 'visible'
+}
+
+/** 校验页面 hook 提交的固定 ws/wss URL，并返回规范化字符串。 */
+function normalizeReconnectUrl(value: string): string {
+  if (typeof value !== 'string')
+    throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect url must be a fixed string')
+  if (value.length > MAX_ENDPOINT_LENGTH)
+    throw new SocketFuseError('INVALID_OPTIONS', `Reconnect url must be at most ${MAX_ENDPOINT_LENGTH} characters`)
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  }
+  catch {
+    throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect url must be an absolute ws: or wss: URL')
+  }
+  if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
+    throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect url must use ws: or wss:')
+  if (parsed.href.length > MAX_ENDPOINT_LENGTH)
+    throw new SocketFuseError('INVALID_OPTIONS', `Reconnect url must be at most ${MAX_ENDPOINT_LENGTH} characters after normalization`)
+  return parsed.href
+}
+
 /** 估算页面本地 replay 项的结构化克隆字节数。 */
 function estimateValueBytes(value: unknown): number {
   return estimateStructuredCloneBytes(value)
@@ -124,7 +174,8 @@ function stateValue(value: unknown, fallback: ConnectionState): ConnectionState 
   return typeof value === 'string' ? value as ConnectionState : fallback
 }
 
-export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBase implements WebSocketClient<Incoming, Outgoing, Auth> {
+/** 将 transport 包装为稳定、页面本地且可观察的公开 client。 */
+export class PageWebSocketClient<Incoming, Outgoing> extends EventTargetBase implements WebSocketClient<Incoming, Outgoing> {
   /** 最近一次业务消息；未收到时为 null。 */
   private currentData: Incoming | null = null
   /** 当前页面逻辑状态。 */
@@ -140,7 +191,27 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   /** 页面是否处于 freeze/hidden 挂起阶段。 */
   private suspended = false
   /** 每次注册使用独立 token，允许同一函数重复注册和独立移除。 */
-  private readonly handlers = new Map<symbol, MessageHandler<Incoming>>()
+  private readonly handlers = new Map<symbol, MessageHandlerEntry<Incoming>>()
+  /** 每个 execution key 的页面本地 handler 引用数。 */
+  private readonly keyReferences = new Map<string, number>()
+  /** Worker 控制帧确认的当前持有集合。 */
+  private readonly heldKeys = new Set<string>()
+  /** freeze 前已注册 key 的 revoke 屏障；屏障前到达的旧 grant 必须忽略。 */
+  private readonly frozenKeyBarriers = new Set<string>()
+  /** 屏障期间到达、需等同一端口 probe 成功后才能应用的候选 grant。 */
+  private readonly deferredKeyGrants = new Set<string>()
+  /** 页面进入后台后可能错过 lease 回收；每次状态不确定都会推进该代际。 */
+  private authorityGeneration = 0
+  /** 最近一次经存活 Worker/transport 验证的授权代际。 */
+  private validatedAuthorityGeneration = 0
+  /** 每次 key grant 对应一个新的协作式中止域。 */
+  private readonly keySignals = new Map<string, AbortController>()
+  /** 无 key handler 在 client dispose 前共享的存活域。 */
+  private readonly lifetimeSignal = new AbortController()
+  /** 当前页面唯一的重连准备 hook。 */
+  private beforeReconnectHandler: BeforeReconnectHandler | undefined
+  /** plan id 到页面 hook AbortController。 */
+  private readonly reconnectSignals = new Map<string, AbortController>()
   /** 页面本地 restore 与 replay 边界。 */
   private readonly restore: Readonly<NormalizedRestoreOptions>
   /** direct transport 挂起时的有限页面 replay 队列。 */
@@ -151,10 +222,6 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   private overflowCount = 0
   /** 生命周期事件监听清理函数，由 dispose 统一释放。 */
   private lifecycleCleanups: (() => void)[] = []
-  /** Worker 重建时需要重放的最新 endpoint revision。 */
-  private latestEndpoint: { revision: number, url: string } | undefined
-  /** Worker 重建时需要重放的最新 auth revision。 */
-  private latestAuth: { revision: number, value: Auth | undefined } | undefined
   /** 页面是否曾显式或 immediate 请求连接。 */
   private hadDemand = false
   /** 合并并发 restore 事件的恢复 promise。 */
@@ -162,16 +229,19 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
 
   /** 创建稳定页面 client，并安装可选生命周期监听。 */
   constructor(
-    readonly config: NormalizedWebSocketConfig<Incoming, Outgoing, Auth>,
-    private clientTransport: ClientTransport<Incoming, Outgoing, Auth>,
-    readonly options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
+    readonly config: NormalizedWebSocketConfig<Incoming, Outgoing>,
+    private clientTransport: ClientTransport<Incoming, Outgoing>,
+    readonly options: CreateWebSocketOptions<Incoming, Outgoing>,
     readonly clientId: string,
-    private readonly recreateSharedTransport?: () => ClientTransport<Incoming, Outgoing, Auth>,
+    private readonly recreateSharedTransport?: () => ClientTransport<Incoming, Outgoing>,
   ) {
     super()
     this.currentTransport = clientTransport.kind
     this.currentWorkerMode = clientTransport.workerMode
     this.restore = config.local.lifecycle
+    // direct transport 的初始可见性不能依赖构造默认值；SharedWorker transport
+    // 也在 hello 前只缓存该状态，不会因此提前附着页面。
+    this.clientTransport.setVisibility(pageVisibility())
     if (options.onMessage !== undefined)
       this.onMessage(event => options.onMessage?.(this, event))
     this.installLifecycle()
@@ -207,19 +277,18 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     return this.currentWorkerMode
   }
 
-  /** 返回协议能力快照。 */
-  get capabilities(): ProtocolCapabilities {
-    return this.clientTransport.capabilities
-  }
-
   /** 附着页面 sink 并等待连接 ready；失败以安全 SocketFuseError reject。 */
   async open(options?: { signal?: AbortSignal }): Promise<ConnectionSnapshot> {
     this.assertUsable()
     if (!this.attached) {
+      if (pageVisibility() === 'hidden')
+        this.authorityGeneration++
       this.clientTransport.attach(this.createSink())
       this.attached = true
     }
     const snapshot = await this.sanitizePublicPromise(this.clientTransport.open(options?.signal))
+    if (!this.attached)
+      throw new SocketFuseError('CLIENT_DISCONNECTED', 'Client is no longer attached')
     this.hadDemand = true
     if (snapshot.state === 'open' && this.currentState !== 'open')
       this.handleOpen(snapshot)
@@ -232,10 +301,21 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   async close(): Promise<void> {
     if (this.disposed)
       return
-    this.clientTransport.close()
-    this.attached = false
-    this.hadDemand = false
-    this.setState('closed', 'CLIENT_DISCONNECTED')
+    // close 请求跨端口确认前就停止旧 grant，避免已排队消息继续启动副作用。
+    this.revokeLocalKeyAuthority()
+    try {
+      await this.sanitizePublicPromise(this.clientTransport.close())
+    }
+    finally {
+      // close 是页面的逻辑边界；即使 Worker 没有及时确认，旧 transport
+      // 也不能阻止后续 open 或继续暴露旧的持有状态。
+      this.attached = false
+      this.hadDemand = false
+      this.frozenKeyBarriers.clear()
+      this.deferredKeyGrants.clear()
+      this.validatedAuthorityGeneration = this.authorityGeneration
+      this.setState('closed', 'CLIENT_DISCONNECTED')
+    }
   }
 
   /** 发送业务值；返回值只代表本地 accepted/queued，失败以 SocketFuseError reject。 */
@@ -247,52 +327,72 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   }
 
   /** 动态注册页面消息 handler，并返回只移除本次注册的函数。 */
-  onMessage(handler: MessageHandler<Incoming>): () => void {
+  onMessage(handler: MessageHandler<Incoming>, options: MessageHandlerOptions = {}): () => void {
     this.assertUsable()
     if (typeof handler !== 'function')
       throw new SocketFuseError('INVALID_OPTIONS', 'onMessage handler must be a function')
+    const key = options.key
+    if (key !== undefined && (typeof key !== 'string' || key.trim().length === 0 || key.length > 1_024))
+      throw new SocketFuseError('INVALID_OPTIONS', 'onMessage key must be a non-empty string of at most 1024 characters')
     const token = Symbol('onMessage')
-    this.handlers.set(token, handler)
+    this.handlers.set(token, key === undefined ? { handler } : { handler, key })
+    if (key !== undefined) {
+      const references = this.keyReferences.get(key) ?? 0
+      this.keyReferences.set(key, references + 1)
+      // transport 会对已成功或正在进行的注册去重；每次新增 handler 都再次
+      // 表达意图，使先前因资源上限被回滚的同 key 注册可以显式重试。
+      void this.clientTransport.registerExclusiveKey(key).catch(error => this.handleTransportError(error))
+    }
+    let removed = false
     return () => {
+      if (removed)
+        return
+      removed = true
       this.handlers.delete(token)
+      if (key === undefined)
+        return
+      const references = (this.keyReferences.get(key) ?? 1) - 1
+      if (references > 0) {
+        this.keyReferences.set(key, references)
+        return
+      }
+      this.keyReferences.delete(key)
+      this.deferredKeyGrants.delete(key)
+      void this.clientTransport.unregisterExclusiveKey(key).catch(error => this.handleTransportError(error))
     }
   }
 
-  /** 提交单调认证 revision；仅协议支持 auth 时可调用。 */
-  updateAuth(value: Auth, options: { revision: number }): Promise<RevisionReceipt> {
-    this.assertUsable()
-    return this.sanitizePublicPromise(this.clientTransport.updateAuth(value, options.revision)).then((receipt) => {
-      if (receipt.status === 'applied')
-        this.latestAuth = { revision: receipt.revision, value }
-      return receipt
-    })
+  /** 只查询 transport 控制帧维护的页面持有集合。 */
+  holdsKey(key: string): boolean {
+    return this.heldKeys.has(key)
   }
 
-  /** 清除认证并提交单调 revision。 */
-  clearAuth(options: { revision: number }): Promise<RevisionReceipt> {
+  /** 注册或替换当前页面唯一的自动重连准备 hook。 */
+  onBeforeReconnect(handler: BeforeReconnectHandler): () => void {
     this.assertUsable()
-    return this.sanitizePublicPromise(this.clientTransport.clearAuth(options.revision)).then((receipt) => {
-      if (receipt.status === 'applied')
-        this.latestAuth = { revision: receipt.revision, value: undefined }
-      return receipt
-    })
-  }
-
-  /** 更新 endpoint 并提交单调 revision。 */
-  updateUrl(url: string | URL, options: { revision: number }): Promise<RevisionReceipt> {
-    this.assertUsable()
-    const value = url instanceof URL ? url.href : url
-    return this.sanitizePublicPromise(this.clientTransport.updateUrl(value, options.revision)).then((receipt) => {
-      if (receipt.status === 'applied')
-        this.latestEndpoint = { revision: receipt.revision, url: value }
-      return receipt
-    })
+    if (typeof handler !== 'function')
+      throw new SocketFuseError('INVALID_OPTIONS', 'onBeforeReconnect handler must be a function')
+    if (this.beforeReconnectHandler !== undefined && this.beforeReconnectHandler !== handler)
+      this.abortLocalReconnectPlans(true)
+    this.beforeReconnectHandler = handler
+    void this.clientTransport.setReconnectHook(true).catch(error => this.handleTransportError(error))
+    let removed = false
+    return () => {
+      if (removed || this.beforeReconnectHandler !== handler)
+        return
+      removed = true
+      this.abortLocalReconnectPlans(false)
+      this.beforeReconnectHandler = undefined
+      void this.clientTransport.setReconnectHook(false).catch(error => this.handleTransportError(error))
+    }
   }
 
   /** 在 client 未 dispose 时请求物理连接重连。 */
-  reconnect(options?: { reason?: string }): Promise<void> {
+  reconnect(): Promise<void> {
     this.assertUsable()
-    return this.sanitizePublicPromise(this.clientTransport.reconnect(options?.reason))
+    if (!this.attached)
+      return Promise.reject(new SocketFuseError('CLIENT_DISCONNECTED', 'Client is not open'))
+    return this.sanitizePublicPromise(this.clientTransport.reconnect())
   }
 
   /** 返回不含 URL path/query、凭据或 payload 的诊断快照。 */
@@ -302,7 +402,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       attachedClientCount: numberValue(base.attachedClientCount),
       bufferedAmount: numberValue(base.bufferedAmount),
       configFingerprint: stringValue(base.configFingerprint),
-      controlProtocolMajor: 1,
+      controlProtocolMajor: CONTROL_PROTOCOL_MAJOR,
       endpointOrigin: stringValue(base.endpointOrigin),
       idHash: stableHash(this.config.id),
       lastErrorCode: base.lastErrorCode === null ? null : stringValue(base.lastErrorCode),
@@ -327,21 +427,167 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     for (const cleanup of this.lifecycleCleanups)
       cleanup()
     this.lifecycleCleanups = []
+    this.lifetimeSignal.abort()
+    for (const controller of this.keySignals.values())
+      controller.abort()
+    for (const controller of this.reconnectSignals.values())
+      controller.abort()
+    this.reconnectSignals.clear()
+    this.keySignals.clear()
+    this.heldKeys.clear()
+    this.frozenKeyBarriers.clear()
+    this.deferredKeyGrants.clear()
+    this.validatedAuthorityGeneration = this.authorityGeneration
+    this.keyReferences.clear()
     this.handlers.clear()
     this.clientTransport.dispose()
     this.setState('closed', 'CLIENT_DISPOSED')
   }
 
   /** 创建 transport 事件到页面 client 的 sink。 */
-  private createSink(): ConnectionSink<Incoming> {
+  private createSink(): ClientTransportSink<Incoming> {
     return {
       id: this.clientId,
       onClose: event => this.handleClose(event),
       onError: error => this.handleError(error),
       onMessage: (data, receivedAt, replayed) => this.handleMessage(data, receivedAt, replayed),
+      onKeyBarrier: key => this.handleKeyBarrier(key),
+      onKeyChange: (key, held) => this.handleKeyChange(key, held),
+      onBeforeReconnect: plan => this.handleBeforeReconnect(plan),
+      onReconnectAbort: planId => this.abortReconnectPlan(planId),
       onOverflow: event => this.dispatchRemoteOverflow(event),
       onOpen: snapshot => this.handleOpen(snapshot),
       onState: (snapshot, reasonCode) => this.handleState(snapshot, reasonCode),
+    }
+  }
+
+  /** 应用 transport 授权变化，并在 revoke 时 abort 旧 grant 的在途 handler。 */
+  private handleKeyChange(key: string, held: boolean): void {
+    if (!held) {
+      this.frozenKeyBarriers.delete(key)
+      this.deferredKeyGrants.delete(key)
+    }
+    else if (this.frozenKeyBarriers.has(key)) {
+      this.deferredKeyGrants.add(key)
+      return
+    }
+    if (held === this.heldKeys.has(key))
+      return
+    if (held) {
+      this.heldKeys.add(key)
+      this.keySignals.set(key, new AbortController())
+    }
+    else {
+      this.heldKeys.delete(key)
+      this.keySignals.get(key)?.abort()
+      this.keySignals.delete(key)
+    }
+    this.dispatchEvent(createKeyChangeEvent(key, held))
+  }
+
+  /** 消费 Worker 的明确 revoke 屏障，并丢弃屏障前积压的 grant。 */
+  private handleKeyBarrier(key: string): void {
+    this.frozenKeyBarriers.delete(key)
+    this.deferredKeyGrants.delete(key)
+  }
+
+  /** 保守撤销全部本地 grant；重新执行必须等待 transport 新的明确授权。 */
+  private revokeLocalKeyAuthority(): void {
+    this.deferredKeyGrants.clear()
+    for (const key of [...this.heldKeys]) {
+      this.heldKeys.delete(key)
+      this.keySignals.get(key)?.abort()
+      this.keySignals.delete(key)
+      this.dispatchEvent(createKeyChangeEvent(key, false))
+    }
+  }
+
+  /** 在页面 realm 执行被选中的 hook，并在成功返回后一次性提交本地草案。 */
+  private handleBeforeReconnect(plan: Readonly<ReconnectPlan>): void {
+    const handler = this.beforeReconnectHandler
+    if (handler === undefined) {
+      void this.clientTransport.rejectReconnectPlan(plan.id).catch(error => this.handleTransportError(error))
+      return
+    }
+    const abort = new AbortController()
+    this.reconnectSignals.set(plan.id, abort)
+    const draft: { delay?: number, url?: string } = {}
+    const context: Readonly<BeforeReconnectContext> = Object.freeze({
+      attempt: plan.attempt,
+      close: plan.close,
+      defaultDelay: plan.defaultDelay,
+      reason: plan.reason,
+      setDelay: (delay: number): void => {
+        if (abort.signal.aborted)
+          throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer active')
+        if (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0)
+          throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect delay must be a non-negative finite number')
+        draft.delay = delay
+      },
+      setOptions: (options: { readonly url: string }): void => {
+        if (abort.signal.aborted)
+          throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer active')
+        if (options === null || typeof options !== 'object' || Object.keys(options).some(key => key !== 'url'))
+          throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect options only accept url')
+        draft.url = normalizeReconnectUrl(options.url)
+      },
+      signal: abort.signal,
+    })
+    void this.runBeforeReconnectHandler(handler, plan.id, context, draft, abort)
+  }
+
+  /** 隔离 hook 异常，成功时原子提交，失败时只发送无异常文本的 reject。 */
+  private async runBeforeReconnectHandler(
+    handler: BeforeReconnectHandler,
+    planId: string,
+    context: Readonly<BeforeReconnectContext>,
+    draft: ReconnectPlanOverride,
+    abort: AbortController,
+  ): Promise<void> {
+    try {
+      await handler(context)
+      if (abort.signal.aborted)
+        return
+      await this.clientTransport.completeReconnectPlan(planId, draft)
+    }
+    catch (error) {
+      if (abort.signal.aborted)
+        return
+      try {
+        await this.clientTransport.rejectReconnectPlan(planId)
+      }
+      catch {
+        // Worker 已转移或提交的 plan 不再需要二次失败通知。
+      }
+      const code = error instanceof SocketFuseError && (error.code === 'INVALID_OPTIONS' || error.code === 'STALE_RECONNECT_PLAN')
+        ? error.code
+        : 'INTERNAL_STATE_ERROR'
+      this.handleError(new SocketFuseError(code, 'onBeforeReconnect handler failed', { cause: error }))
+    }
+    finally {
+      // 成功提交或失败转移后，context 已不再拥有当前 plan；把 signal
+      // 置为 aborted 也能让 handler 持有的延迟 setter 明确拒绝过期写入。
+      if (!abort.signal.aborted)
+        abort.abort()
+      if (this.reconnectSignals.get(planId) === abort)
+        this.reconnectSignals.delete(planId)
+    }
+  }
+
+  /** 响应 Worker/direct coordinator 的撤销并中止当前页面异步 getter。 */
+  private abortReconnectPlan(planId: string): void {
+    this.reconnectSignals.get(planId)?.abort()
+    this.reconnectSignals.delete(planId)
+  }
+
+  /** 终止本页面旧 hook 持有的计划；替换时显式拒绝以免旧 handler 稍后提交。 */
+  private abortLocalReconnectPlans(reject: boolean): void {
+    const planIds = [...this.reconnectSignals.keys()]
+    for (const planId of planIds)
+      this.abortReconnectPlan(planId)
+    if (reject) {
+      for (const planId of planIds)
+        void this.clientTransport.rejectReconnectPlan(planId).catch(() => undefined)
     }
   }
 
@@ -382,9 +628,18 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
   /** 依次调用动态 handlers 后派发 EventTarget message 事件。 */
   private dispatchMessage(data: Incoming, receivedAt: number, replayed: boolean): void {
     const event = createMessageEvent(data, receivedAt, this.clientTransport.kind, replayed)
-    for (const handler of [...this.handlers.values()]) {
+    for (const entry of [...this.handlers.values()]) {
+      if (entry.key !== undefined
+        && (!this.heldKeys.has(entry.key) || this.frozenKeyBarriers.has(entry.key)))
+        continue
+      const signal = entry.key === undefined
+        ? this.lifetimeSignal.signal
+        : this.keySignals.get(entry.key)?.signal
+      if (signal === undefined)
+        continue
       try {
-        handler(event)
+        const result = entry.handler(event, Object.freeze({ signal })) as unknown
+        void Promise.resolve(result).catch(cause => this.handleError(new SocketFuseError('INTERNAL_STATE_ERROR', 'onMessage handler failed', { cause })))
       }
       catch (cause) {
         this.handleError(new SocketFuseError('INTERNAL_STATE_ERROR', 'onMessage handler failed', { cause }))
@@ -424,7 +679,7 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       this.options.onError?.(this, publicError)
     }
     catch {
-      // User callback errors cannot affect the transport.
+      // 用户错误回调不能反向影响 transport。
     }
   }
 
@@ -450,6 +705,19 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     if (typeof document === 'undefined' || typeof window === 'undefined')
       return
     const suspend = (force = false): void => {
+      this.clientTransport.setVisibility(force ? 'frozen' : 'hidden')
+      if (this.attached)
+        this.authorityGeneration++
+      if (force) {
+        // 浏览器可能在 Worker revoke 返回前冻结页面；先本地撤销只会减少
+        // 执行，恢复后仍必须由新的 grant 才能再次开始 keyed handler。
+        if (this.clientTransport.kind === 'shared-worker') {
+          for (const key of this.keyReferences.keys())
+            this.frozenKeyBarriers.add(key)
+        }
+        this.revokeLocalKeyAuthority()
+        this.abortLocalReconnectPlans(false)
+      }
       if (!this.restore.enabled || !this.attached)
         return
       if (force || document.visibilityState === 'hidden' || document.hidden) {
@@ -458,7 +726,16 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
       }
     }
     const restore = (): void => {
-      if (!this.restore.enabled)
+      const authorityNeedsValidation = this.attached
+        && this.authorityGeneration !== this.validatedAuthorityGeneration
+      if (authorityNeedsValidation && this.clientTransport.kind === 'shared-worker') {
+        // hidden 页面可能在后台被浏览器冻结，随后由 Worker lease 回收。返回
+        // 前先建立内部 gate，只有同一端口 probe 或新端口 grant 能解除不确定性。
+        for (const key of this.keyReferences.keys())
+          this.frozenKeyBarriers.add(key)
+      }
+      this.clientTransport.setVisibility(pageVisibility())
+      if (!authorityNeedsValidation && (!this.restore.enabled || !this.suspended))
         return
       void this.restoreLifecycle()
     }
@@ -503,10 +780,11 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
 
   /** probe Worker，必要时重建 transport，并恢复有限消息回放。 */
   private async performRestoreLifecycle(): Promise<void> {
+    const authorityGeneration = this.authorityGeneration
     const wasSuspended = this.suspended
-    if (!wasSuspended)
+    const authorityNeedsValidation = authorityGeneration !== this.validatedAuthorityGeneration
+    if (!wasSuspended && !authorityNeedsValidation)
       return
-    this.suspended = false
     try {
       await this.clientTransport.probe?.()
     }
@@ -521,6 +799,18 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
         return
       }
     }
+    // 验证期间若页面再次进入后台，旧 probe 不能解除新一代授权不确定性，
+    // 也不能提前恢复 Worker replay。下一次 visible 会继续完成该事务。
+    if (this.authorityGeneration !== authorityGeneration)
+      return
+    this.validatedAuthorityGeneration = authorityGeneration
+    const deferredGrants = [...this.deferredKeyGrants]
+      .filter(key => this.frozenKeyBarriers.has(key) && this.keyReferences.has(key))
+    this.frozenKeyBarriers.clear()
+    this.deferredKeyGrants.clear()
+    for (const key of deferredGrants)
+      this.handleKeyChange(key, true)
+    this.suspended = false
     this.clientTransport.restore?.()
     if (wasSuspended && this.restore.replay) {
       const entries = this.replay.splice(0)
@@ -530,26 +820,27 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
     }
   }
 
-  /** 重建已失效 SharedWorker transport 并按 endpoint→auth→open 顺序重放状态。 */
+  /** 重建已失效 SharedWorker transport，并重放 key、hook 与连接需求。 */
   private async recreateTransport(): Promise<void> {
     if (this.clientTransport.kind !== 'shared-worker' || this.recreateSharedTransport === undefined)
       return
     const oldTransport = this.clientTransport
     oldTransport.dispose()
+    // 新 Worker/port 不可能携带旧端口 freeze 前的 grant，清除旧屏障后
+    // 仍只接受 replacement 明确下发的新授权。
+    this.frozenKeyBarriers.clear()
+    this.deferredKeyGrants.clear()
+    this.revokeLocalKeyAuthority()
     const replacement = this.recreateSharedTransport()
     this.clientTransport = replacement
     this.currentTransport = replacement.kind
     this.currentWorkerMode = replacement.workerMode
     replacement.attach(this.createSink())
     this.attached = true
-    if (this.latestEndpoint !== undefined)
-      await replacement.updateUrl(this.latestEndpoint.url, this.latestEndpoint.revision)
-    if (this.latestAuth !== undefined) {
-      if (this.latestAuth.value === undefined)
-        await replacement.clearAuth(this.latestAuth.revision)
-      else
-        await replacement.updateAuth(this.latestAuth.value, this.latestAuth.revision)
-    }
+    replacement.setVisibility(pageVisibility())
+    for (const key of this.keyReferences.keys())
+      await replacement.registerExclusiveKey(key)
+    await replacement.setReconnectHook(this.beforeReconnectHandler !== undefined)
     if (this.hadDemand)
       await this.sanitizePublicPromise(replacement.open())
   }
@@ -565,6 +856,13 @@ export class PageWebSocketClient<Incoming, Outgoing, Auth> extends EventTargetBa
         : toSocketFuseError(error, 'INTERNAL_STATE_ERROR', 'WebSocket operation failed')
       throw sanitizeError(value)
     }
+  }
+
+  /** 将 transport 后台控制失败送入既有安全错误路径。 */
+  private handleTransportError(error: unknown): void {
+    this.handleError(error instanceof SocketFuseError
+      ? error
+      : toSocketFuseError(error, 'INTERNAL_STATE_ERROR', 'Transport control operation failed'))
   }
 
   /** 向有界页面 replay 队列追加消息，溢出时丢弃最旧项。 */

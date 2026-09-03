@@ -63,7 +63,7 @@ function serialize(value: unknown, seen: Set<object>): string {
       return `date:${value.toISOString()}`
 
     if (typeof Blob !== 'undefined' && value instanceof Blob)
-      return `blob:${value.size}:${value.type}`
+      throw invalidOptions('Blob contents cannot participate in a synchronous configuration fingerprint')
 
     if (value instanceof RegExp)
       return `regexp:${JSON.stringify(value.source)}/${value.flags}`

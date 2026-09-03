@@ -5,6 +5,8 @@ import type { SocketData } from '../shared/types'
 import { createSharedWebSocketRuntime, type MessagePortLike } from './runtime'
 import { SharedWorkerTransport } from '../transport/shared-worker'
 import { normalizeWebSocketOptions } from '../config/normalize'
+import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
+import { PageWebSocketClient } from '../page/client'
 import { isClientControlMessage } from './control'
 
 /** 双向连接的测试 MessagePort，模拟异步结构化克隆投递。 */
@@ -43,6 +45,11 @@ class LinkedPort implements MessagePortLike {
 
   /** 测试 port 无需显式启动。 */
   start(): void {}
+
+  /** 模拟当前端口收到无法反序列化的 Worker 消息。 */
+  messageError(): void {
+    this.emit('messageerror', undefined)
+  }
 
   /** 向当前 port 的监听器派发事件。 */
   private emit(type: string, data: unknown): void {
@@ -164,6 +171,591 @@ describe('shared worker runtime', () => {
     }
   })
 
+  it('reopens a logically closed client and accepts a new creator URL after entry release', async () => {
+    const sockets: FakeSocket[] = []
+    const urls: string[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: (url) => {
+      urls.push(url)
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const firstConfig = normalizeWebSocketOptions('wss://example.test/first', { id: 'released-endpoint', idleGraceMs: 0 })
+      const createFirstTransport = (): SharedWorkerTransport<SocketData, SocketData> => {
+        const pair = createPortPair()
+        runtime.connect(pair[1])
+        return new SharedWorkerTransport({ clientId: 'first', config: firstConfig, mode: 'inline', worker: { port: pair[0] } })
+      }
+      const first = new PageWebSocketClient(firstConfig, createFirstTransport(), { id: 'released-endpoint', idleGraceMs: 0 }, 'first', createFirstTransport)
+      const firstOpen = first.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await firstOpen
+      await first.close()
+      await waitFor(() => sockets[0]?.readyState === 3)
+
+      const reopened = first.open()
+      await waitFor(() => sockets.length === 2)
+      sockets[1]?.open()
+      await reopened
+      expect(urls).toEqual(['wss://example.test/first', 'wss://example.test/first'])
+      await first.close()
+      await waitFor(() => sockets[1]?.readyState === 3)
+      await first.dispose()
+
+      const secondPair = createPortPair()
+      runtime.connect(secondPair[1])
+      const secondConfig = normalizeWebSocketOptions('wss://example.test/second', { id: 'released-endpoint', idleGraceMs: 0 })
+      const second = new SharedWorkerTransport({ clientId: 'second', config: secondConfig, mode: 'inline', worker: { port: secondPair[0] } })
+      second.attach({ id: 'second' })
+      const secondOpen = second.open()
+      await waitFor(() => sockets.length === 3)
+      sockets[2]?.open()
+      await secondOpen
+      expect(urls.at(-1)).toBe('wss://example.test/second')
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('broadcasts every frame while transferring one execution key after freeze', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'exclusive-shared' })
+      const firstMessages: unknown[] = []
+      const secondMessages: unknown[] = []
+      const firstKeys: boolean[] = []
+      const secondKeys: boolean[] = []
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      first.attach({ id: 'first', onKeyChange: (_key, held) => firstKeys.push(held), onMessage: data => firstMessages.push(data) })
+      second.attach({ id: 'second', onKeyChange: (_key, held) => secondKeys.push(held), onMessage: data => secondMessages.push(data) })
+      await first.registerExclusiveKey('confirm')
+      await second.registerExclusiveKey('confirm')
+      await waitFor(() => firstKeys.length === 1)
+      expect(firstKeys).toEqual([true])
+      expect(secondKeys).toEqual([])
+
+      const opening = Promise.all([first.open(), second.open()])
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      sockets[0]?.message('broadcast')
+      await waitFor(() => firstMessages.length === 1 && secondMessages.length === 1)
+
+      first.setVisibility('frozen')
+      await waitFor(() => firstKeys.length === 2 && secondKeys.length === 1)
+      expect(firstKeys).toEqual([true, false])
+      expect(secondKeys).toEqual([true])
+      expect(firstMessages).toEqual(['broadcast'])
+      expect(secondMessages).toEqual(['broadcast'])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('does not accept a stale grant queued before the page freeze barrier', async () => {
+    const documentTarget = new EventTarget()
+    Object.defineProperties(documentTarget, { hidden: { value: false }, visibilityState: { value: 'visible' } })
+    vi.stubGlobal('document', documentTarget)
+    vi.stubGlobal('window', new EventTarget())
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const holderPair = createPortPair()
+      const candidatePair = createPortPair()
+      runtime.connect(holderPair[1])
+      runtime.connect(candidatePair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'freeze-grant-barrier' })
+      const holder = new SharedWorkerTransport({ clientId: 'holder', config, mode: 'inline', worker: { port: holderPair[0] } })
+      const candidateTransport = new SharedWorkerTransport({ clientId: 'candidate', config, mode: 'inline', worker: { port: candidatePair[0] } })
+      const candidate = new PageWebSocketClient(config, candidateTransport, { id: 'freeze-grant-barrier' }, 'candidate')
+      const keyed: string[] = []
+      holder.attach({ id: 'holder' })
+      await holder.registerExclusiveKey('write')
+      candidate.onMessage(event => keyed.push(String(event.data)), { key: 'write' })
+      const opening = Promise.all([holder.open(), candidate.open()])
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+
+      const transfer = holder.unregisterExclusiveKey('write')
+      documentTarget.dispatchEvent(new Event('freeze'))
+      await transfer
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(candidate.holdsKey('write')).toBe(false)
+      sockets[0]?.message('while-frozen')
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(keyed).toEqual([])
+
+      documentTarget.dispatchEvent(new Event('resume'))
+      await waitFor(() => candidate.holdsKey('write'))
+      sockets[0]?.message('after-resume')
+      await waitFor(() => keyed.length === 1)
+      expect(keyed).toEqual(['after-resume'])
+      await candidate.dispose()
+      holder.dispose()
+    }
+    finally {
+      runtime.dispose()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('gates keyed handlers while a returning hidden page validates its Worker authority', async () => {
+    let hidden = false
+    const documentTarget = new EventTarget()
+    Object.defineProperties(documentTarget, {
+      hidden: { get: () => hidden },
+      visibilityState: { get: () => hidden ? 'hidden' : 'visible' },
+    })
+    vi.stubGlobal('document', documentTarget)
+    vi.stubGlobal('window', new EventTarget())
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'hidden-authority-validation' })
+      const transport = new SharedWorkerTransport({ clientId: 'client', config, mode: 'inline', worker: { port: pair[0] } })
+      const client = new PageWebSocketClient(config, transport, { id: 'hidden-authority-validation' }, 'client')
+      const keyed: string[] = []
+      const views: string[] = []
+      client.onMessage(event => keyed.push(String(event.data)), { key: 'write' })
+      client.onMessage(event => views.push(String(event.data)))
+      const opening = client.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      await waitFor(() => client.holdsKey('write'))
+      sockets[0]?.message('before')
+      await waitFor(() => keyed.length === 1)
+
+      hidden = true
+      documentTarget.dispatchEvent(new Event('visibilitychange'))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      let heldResponse: unknown
+      const postToPage = pair[1].postMessage.bind(pair[1])
+      pair[1].postMessage = (message): void => {
+        const record = message as { readonly ok?: unknown, readonly type?: unknown, readonly value?: unknown }
+        if (heldResponse === undefined
+          && record.type === 'response'
+          && record.ok === true
+          && typeof record.value === 'object'
+          && record.value !== null
+          && 'attached' in record.value) {
+          heldResponse = message
+          return
+        }
+        postToPage(message)
+      }
+      hidden = false
+      documentTarget.dispatchEvent(new Event('visibilitychange'))
+      await waitFor(() => heldResponse !== undefined)
+
+      sockets[0]?.message('during-validation')
+      await waitFor(() => views.length === 2)
+      expect(client.holdsKey('write')).toBe(true)
+      expect(keyed).toEqual(['before'])
+      postToPage(heldResponse)
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      sockets[0]?.message('after-validation')
+      await waitFor(() => keyed.length === 2)
+      expect(keyed).toEqual(['before', 'after-validation'])
+      await client.dispose()
+    }
+    finally {
+      runtime.dispose()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('does not let an unattached page reserve a key before it opens', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'unattached-key' })
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      const firstKeys: boolean[] = []
+      const secondKeys: boolean[] = []
+
+      await first.registerExclusiveKey('single')
+      second.attach({ id: 'second', onKeyChange: (_key, held) => secondKeys.push(held) })
+      await second.registerExclusiveKey('single')
+      const secondOpen = second.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await secondOpen
+      await waitFor(() => secondKeys.length === 1)
+      expect(secondKeys).toEqual([true])
+
+      first.attach({ id: 'first', onKeyChange: (_key, held) => firstKeys.push(held) })
+      await first.open()
+      expect(firstKeys).toEqual([])
+      expect(secondKeys).toEqual([true])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('does not let a hidden holder lose its key until an explicit transfer event', async () => {
+    const runtime = createSharedWebSocketRuntime()
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'hidden-holder' })
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      const firstKeys: boolean[] = []
+      const secondKeys: boolean[] = []
+      first.attach({ id: 'first', onKeyChange: (_key, held) => firstKeys.push(held) })
+      second.attach({ id: 'second', onKeyChange: (_key, held) => secondKeys.push(held) })
+      await first.registerExclusiveKey('single')
+      await second.registerExclusiveKey('single')
+      await waitFor(() => firstKeys.length === 1)
+
+      first.setVisibility('hidden')
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(firstKeys).toEqual([true])
+      expect(secondKeys).toEqual([])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('transfers an execution key when the current holder closes', async () => {
+    const runtime = createSharedWebSocketRuntime()
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'close-holder' })
+      const firstKeys: boolean[] = []
+      const secondKeys: boolean[] = []
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      first.attach({ id: 'first', onKeyChange: (_key, held) => firstKeys.push(held) })
+      second.attach({ id: 'second', onKeyChange: (_key, held) => secondKeys.push(held) })
+      await first.registerExclusiveKey('single')
+      await second.registerExclusiveKey('single')
+      await waitFor(() => firstKeys.length === 1)
+
+      await first.close()
+      await waitFor(() => secondKeys.length === 1)
+      expect(firstKeys).toEqual([true, false])
+      expect(secondKeys).toEqual([true])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('transfers an execution key after the holder lease expires', async () => {
+    vi.useFakeTimers()
+    let currentTime = 0
+    const runtime = createSharedWebSocketRuntime({ now: () => currentTime })
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        id: 'lease-holder',
+        lease: { interval: 10, timeout: 20 },
+      })
+      const firstMessages: unknown[] = []
+      const secondMessages: unknown[] = []
+      firstPair[0].addEventListener('message', event => firstMessages.push(event.data))
+      secondPair[0].addEventListener('message', event => secondMessages.push(event.data))
+      const hello = (port: LinkedPort, clientId: string, requestId: string): void => {
+        port.postMessage({
+          clientId,
+          configCanonical: config.configCanonical,
+          configFingerprint: config.configFingerprint,
+          id: config.id,
+          protocolMajor: CONTROL_PROTOCOL_MAJOR,
+          requestId,
+          restore: config.local.lifecycle,
+          shared: config.shared,
+          type: 'hello',
+          url: config.url,
+          visibility: 'visible',
+        })
+      }
+      hello(firstPair[0], 'first', 'hello-first')
+      hello(secondPair[0], 'second', 'hello-second')
+      await Promise.resolve()
+      await Promise.resolve()
+      firstPair[0].postMessage({ key: 'single', requestId: 'key-first', type: 'register-key' })
+      secondPair[0].postMessage({ key: 'single', requestId: 'key-second', type: 'register-key' })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(firstMessages).toContainEqual({ key: 'single', type: 'key-granted' })
+
+      currentTime = 10
+      secondPair[0].postMessage({ type: 'lease' })
+      await Promise.resolve()
+      currentTime = 25
+      await vi.advanceTimersByTimeAsync(1_000)
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(secondMessages).toContainEqual({ key: 'single', type: 'key-granted' })
+    }
+    finally {
+      runtime.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects new distinct keys at the Worker limit without revoking existing holders', async () => {
+    const pair = createPortPair()
+    const runtime = createSharedWebSocketRuntime({ workerLimits: { maxExclusiveKeys: 1 } })
+    try {
+      runtime.connect(pair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'exclusive-limit' })
+      const held: string[] = []
+      const transport = new SharedWorkerTransport({ clientId: 'client', config, mode: 'inline', worker: { port: pair[0] } })
+      transport.attach({ id: 'client', onKeyChange: (key, value) => value && held.push(key) })
+      await transport.registerExclusiveKey('first')
+      await waitFor(() => held.length === 1)
+      await expect(transport.registerExclusiveKey('second')).rejects.toMatchObject({ code: 'RESOURCE_LIMIT_EXCEEDED' })
+      expect(held).toEqual(['first'])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('keeps the global key limit exact when a transferred grant closes its target port', async () => {
+    const firstPair = createPortPair()
+    const secondPair = createPortPair()
+    const thirdPair = createPortPair()
+    const runtime = createSharedWebSocketRuntime({ workerLimits: { maxExclusiveKeys: 1 } })
+    try {
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      runtime.connect(thirdPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'exclusive-limit-reentrant-release' })
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      const third = new SharedWorkerTransport({ clientId: 'third', config, mode: 'inline', worker: { port: thirdPair[0] } })
+      const firstHeld: boolean[] = []
+      const thirdHeld: boolean[] = []
+      first.attach({ id: 'first', onKeyChange: (_key, held) => firstHeld.push(held) })
+      second.attach({ id: 'second' })
+      third.attach({ id: 'third', onKeyChange: (_key, held) => thirdHeld.push(held) })
+      await first.registerExclusiveKey('transferred')
+      await second.registerExclusiveKey('transferred')
+      await waitFor(() => firstHeld.length === 1)
+
+      const postToSecondPage = secondPair[1].postMessage.bind(secondPair[1])
+      secondPair[1].postMessage = (message): void => {
+        if ((message as { readonly type?: unknown }).type === 'key-granted')
+          throw new Error('target port failed')
+        postToSecondPage(message)
+      }
+      await first.unregisterExclusiveKey('transferred')
+
+      await third.registerExclusiveKey('replacement')
+      await waitFor(() => thirdHeld.length === 1)
+      await expect(first.registerExclusiveKey('must-overflow')).rejects.toMatchObject({ code: 'RESOURCE_LIMIT_EXCEEDED' })
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('keeps open usable when a pre-open key is rejected by the Worker limit', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({
+      socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+      workerLimits: { maxExclusiveKeys: 1 },
+    })
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'pre-open-key-limit' })
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      const errors: unknown[] = []
+      first.attach({ id: 'first' })
+      await first.registerExclusiveKey('existing')
+      const firstOpen = first.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await firstOpen
+
+      await second.registerExclusiveKey('rejected-before-open')
+      second.attach({ id: 'second', onError: error => errors.push(error) })
+      await expect(second.open()).resolves.toMatchObject({ state: 'open' })
+      expect(errors).toEqual([expect.objectContaining({ code: 'RESOURCE_LIMIT_EXCEEDED' })])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('revokes cached key authority when the SharedWorker control channel fails', async () => {
+    const pair = createPortPair()
+    const runtime = createSharedWebSocketRuntime()
+    try {
+      runtime.connect(pair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'exclusive-disconnect' })
+      const held: boolean[] = []
+      const transport = new SharedWorkerTransport({ clientId: 'client', config, mode: 'inline', worker: { port: pair[0] } })
+      transport.attach({ id: 'client', onKeyChange: (_key, value) => held.push(value) })
+      await transport.registerExclusiveKey('write')
+      await waitFor(() => held.length === 1)
+
+      pair[0].messageError()
+
+      expect(held).toEqual([true, false])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('lets one Worker-selected page atomically replace the next reconnect URL and delay', async () => {
+    const sockets: FakeSocket[] = []
+    const urls: string[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: (url) => {
+      urls.push(url)
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/old', {
+        autoReconnect: { initialDelay: 1_000, jitter: 0 },
+        id: 'worker-reconnect-plan',
+      })
+      const transport = new SharedWorkerTransport({ clientId: 'client', config, mode: 'inline', worker: { port: pair[0] } })
+      const plans: string[] = []
+      transport.attach({
+        id: 'client',
+        onBeforeReconnect: (plan) => {
+          plans.push(plan.id)
+          void transport.completeReconnectPlan(plan.id, { delay: 0, url: 'wss://example.test/new?token=secret' })
+        },
+      })
+      await transport.setReconnectHook(true)
+      const opening = transport.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      sockets[0]?.close(1006)
+
+      await waitFor(() => sockets.length === 2)
+      expect(plans).toHaveLength(1)
+      expect(urls).toEqual(['wss://example.test/old', 'wss://example.test/new?token=secret'])
+
+      const laterPair = createPortPair()
+      runtime.connect(laterPair[1])
+      const laterConfig = normalizeWebSocketOptions('wss://example.test/other', {
+        autoReconnect: { initialDelay: 1_000, jitter: 0 },
+        id: 'worker-reconnect-plan',
+      })
+      const later = new SharedWorkerTransport({ clientId: 'later', config: laterConfig, mode: 'inline', worker: { port: laterPair[0] } })
+      later.attach({ id: 'later' })
+      const laterOpen = later.open()
+      sockets[1]?.open()
+      await laterOpen
+      expect(urls).toHaveLength(2)
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('aborts a frozen reconnect owner and rejects its stale submission after transfer', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const firstPair = createPortPair()
+      const secondPair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(secondPair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'worker-reconnect-transfer' })
+      const first = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const second = new SharedWorkerTransport({ clientId: 'second', config, mode: 'inline', worker: { port: secondPair[0] } })
+      let firstPlan = ''
+      let firstAborted = ''
+      first.attach({
+        id: 'first',
+        onBeforeReconnect: (plan) => { firstPlan = plan.id },
+        onReconnectAbort: (planId) => { firstAborted = planId },
+      })
+      second.attach({
+        id: 'second',
+        onBeforeReconnect: (plan) => { void second.completeReconnectPlan(plan.id, { delay: 0 }) },
+      })
+      await first.setReconnectHook(true)
+      await second.setReconnectHook(true)
+      const opening = Promise.all([first.open(), second.open()])
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      sockets[0]?.close(1006)
+      await waitFor(() => firstPlan.length > 0)
+      first.setVisibility('frozen')
+      await waitFor(() => sockets.length === 2)
+
+      expect(firstAborted).toBe(firstPlan)
+      await expect(first.completeReconnectPlan(firstPlan, { delay: 0 })).rejects.toMatchObject({ code: 'STALE_RECONNECT_PLAN' })
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
   it('rejects a later client with a conflicting shared config', async () => {
     const sockets: FakeSocket[] = []
     const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
@@ -188,6 +780,37 @@ describe('shared worker runtime', () => {
       await opening
       await expect(second.open()).rejects.toMatchObject({ code: 'CONNECTION_CONFIG_CONFLICT' })
       expect(sockets).toHaveLength(1)
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('rejects duplicate logical client ids without replacing the existing control route', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const firstPair = createPortPair()
+      const duplicatePair = createPortPair()
+      runtime.connect(firstPair[1])
+      runtime.connect(duplicatePair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'duplicate-client-id' })
+      const first = new SharedWorkerTransport({ clientId: 'same-client', config, mode: 'inline', worker: { port: firstPair[0] } })
+      const duplicate = new SharedWorkerTransport({ clientId: 'same-client', config, mode: 'inline', worker: { port: duplicatePair[0] } })
+      first.attach({ id: 'same-client' })
+      const opening = first.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+
+      duplicate.attach({ id: 'same-client' })
+      await expect(duplicate.open()).rejects.toMatchObject({ code: 'INVALID_CONTROL_MESSAGE' })
+      await expect(first.send('still-routed')).resolves.toMatchObject({ status: 'accepted' })
+      expect(sockets[0]?.sent).toEqual(['still-routed'])
     }
     finally {
       runtime.dispose()
@@ -284,7 +907,7 @@ describe('shared worker runtime', () => {
     }
   })
 
-  it('reclaims a closed logical client port immediately', async () => {
+  it('keeps a reusable closed port within maxPorts until the client is disposed', async () => {
     const runtime = createSharedWebSocketRuntime({ workerLimits: { maxPorts: 1 } })
     try {
       const first = createPortPair()
@@ -293,12 +916,17 @@ describe('shared worker runtime', () => {
       const firstTransport = new SharedWorkerTransport({ clientId: 'first', config, mode: 'inline', worker: { port: first[0] } })
       firstTransport.attach({ id: 'first' })
       await waitFor(() => !first[1].closed)
-      firstTransport.close()
-      await new Promise(resolve => setTimeout(resolve, 0))
+      await firstTransport.close()
 
       const second = createPortPair()
       runtime.connect(second[1])
-      expect(second[1].closed).toBe(false)
+      expect(second[1].closed).toBe(true)
+
+      firstTransport.dispose()
+      await Promise.resolve()
+      const third = createPortPair()
+      runtime.connect(third[1])
+      expect(third[1].closed).toBe(false)
     }
     finally {
       runtime.dispose()
@@ -412,12 +1040,13 @@ describe('shared worker runtime', () => {
         configCanonical: 'not-the-canonical-config',
         configFingerprint: config.configFingerprint,
         id: config.id,
-        protocolMajor: 1,
+        protocolMajor: CONTROL_PROTOCOL_MAJOR,
         requestId: 'forged',
         restore: config.local.lifecycle,
         shared: config.shared,
         type: 'hello',
         url: config.url,
+        visibility: 'visible',
       }
       expect(isClientControlMessage(forged)).toBe(true)
       const secondAttacker = createPortPair()
@@ -463,12 +1092,13 @@ describe('shared worker runtime', () => {
         configCanonical: config.configCanonical,
         configFingerprint: config.configFingerprint,
         id: config.id,
-        protocolMajor: 1,
+        protocolMajor: CONTROL_PROTOCOL_MAJOR,
         requestId: 'slow-hello',
         restore: config.local.lifecycle,
         shared: config.shared,
         type: 'hello',
         url: config.url,
+        visibility: 'visible',
       })
       const opening = healthy.open()
       await waitFor(() => sockets.length === 1)
@@ -513,12 +1143,13 @@ describe('shared worker runtime', () => {
         configCanonical: config.configCanonical,
         configFingerprint: config.configFingerprint,
         id: config.id,
-        protocolMajor: 1,
+        protocolMajor: CONTROL_PROTOCOL_MAJOR,
         requestId: 'slow-hello',
         restore: config.local.lifecycle,
         shared: config.shared,
         type: 'hello',
         url: config.url,
+        visibility: 'visible',
       })
       pair[0].postMessage({ requestId: 'open', type: 'open' })
       await waitFor(() => sockets.length === 1)

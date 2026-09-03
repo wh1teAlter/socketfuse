@@ -14,7 +14,7 @@ describe('reconnect policy', () => {
     const policy = new ReconnectPolicy({ ...DEFAULT_RECONNECT_OPTIONS, stableThreshold: 100 }, () => 0.5)
     policy.recordAttempt()
     policy.recordOpen(0)
-    expect(policy.decide(99).attempt).toBe(2)
+    expect(policy.decide(99)).toMatchObject({ attempt: 1, delay: 1000 })
     expect(policy.decide(100).attempt).toBe(1)
   })
 })

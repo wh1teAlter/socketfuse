@@ -83,14 +83,22 @@ server.on('upgrade', (request, socket, head) => {
 })
 
 webSockets.on('connection', (socket, request) => {
-  const stats = statsFor(namespaceFor(request.url ?? '/socket'))
+  const requestUrl = request.url ?? '/socket'
+  const stats = statsFor(namespaceFor(requestUrl))
+  /** 测试 namespace 显式开启时，把应用字符串 ping 转换为 pong。 */
+  const applicationHeartbeat = new URL(requestUrl, `http://127.0.0.1:${port}`).searchParams.get('applicationHeartbeat') === '1'
   stats.sockets.add(socket)
-  stats.lastUrl = request.url ?? '/socket'
+  stats.lastUrl = requestUrl
   stats.totalConnections++
   socket.on('message', (data, isBinary) => {
     stats.totalMessages++
-    if (socket.readyState === socket.OPEN)
-      socket.send(data, { binary: isBinary })
+    if (socket.readyState !== socket.OPEN)
+      return
+    if (applicationHeartbeat && !isBinary && data.toString() === 'ping') {
+      socket.send('pong')
+      return
+    }
+    socket.send(data, { binary: isBinary })
   })
   socket.on('close', () => {
     stats.sockets.delete(socket)

@@ -3,7 +3,6 @@
  * 分类为业务帧或控制帧。适配器只在拥有它的运行时执行，不能通过 MessagePort 传递函数。
  */
 import type {
-  AuthContext,
   ClassifyContext,
   DecodeContext,
   EncodeContext,
@@ -13,7 +12,6 @@ import type {
   JsonValue,
   MaybePromise,
   ProtocolAdapter,
-  ProtocolCapabilities,
   ProtocolFrame,
   SocketData,
 } from '../shared/types'
@@ -21,12 +19,8 @@ import { assertStructuredCloneable, isPlainRecord, stableSerialize } from '../sh
 import { invalidOptions, SocketFuseError } from '../shared/errors'
 import { isValidAdapterId } from '../config/normalize'
 
-/** raw adapter 的能力快照；raw 不消费控制帧且不支持 SocketFuse heartbeat/auth。 */
-const rawCapabilities: ProtocolCapabilities = Object.freeze({ auth: false, binary: true, heartbeat: false })
-
-/** raw 协议：原样透传 WebSocket payload，并在 socket open 时 ready。 */
+/** raw 协议：原样透传 WebSocket payload，不增加应用协议状态。 */
 export const rawProtocol: ProtocolAdapter<SocketData, SocketData> = Object.freeze({
-  capabilities: rawCapabilities,
   /** 将 raw 入站 payload 作为业务 data。 */
   classify(data: SocketData): ProtocolFrame<SocketData> {
     return { data, type: 'data' }
@@ -40,7 +34,6 @@ export const rawProtocol: ProtocolAdapter<SocketData, SocketData> = Object.freez
     return data
   },
   id: 'raw',
-  readyWhen: 'socket-open',
   version: 1,
 })
 
@@ -140,48 +133,14 @@ function readJson(data: SocketData): MaybePromise<JsonValue> {
   }
 }
 
-/** 解析 `$auth` 占位符；未命中时保留原字符串。 */
-function resolvePlaceholder(value: string, auth: unknown): unknown {
-  if (value === '$auth')
-    return auth
-  if (!value.startsWith('$auth.'))
-    return value
-  return getPath(auth, value.slice('$auth.'.length))
-}
-
-/** 递归复制模板并替换认证占位符。 */
-function applyTemplate(value: JsonValue, auth: unknown): JsonValue {
-  if (typeof value === 'string')
-    return resolvePlaceholder(value, auth) as JsonValue
-  if (Array.isArray(value))
-    return value.map(item => applyTemplate(item, auth))
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, applyTemplate(item, auth)]))
-  }
-  return value
-}
-
 /** 在创建适配器前校验 JSON 协议的可克隆性和 matcher 约束。 */
 function validateJsonOptions(options: JsonProtocolOptions): void {
   if (options.type !== 'json')
     throw invalidOptions('JSON protocol type must be json', 'protocol.type')
-  const id = options.id ?? 'json'
-  if (!isValidAdapterId(id))
-    throw invalidOptions('protocol.id must be a stable lowercase adapter id', 'protocol.id')
-  const version = options.version ?? 1
-  if (!Number.isSafeInteger(version) || version <= 0)
-    throw invalidOptions('protocol.version must be a positive safe integer', 'protocol.version')
-  if (options.ready !== undefined)
-    validateMatcher(options.ready, 'protocol.ready')
   if (options.ignore !== undefined) {
     if (!Array.isArray(options.ignore))
       throw invalidOptions('protocol.ignore must be an array', 'protocol.ignore')
     options.ignore.forEach((matcher, index) => validateMatcher(matcher, `protocol.ignore[${index}]`))
-  }
-  if (options.auth !== undefined) {
-    if (!isPlainRecord(options.auth) || !('template' in options.auth) || !isJsonValue(options.auth.template))
-      throw invalidOptions('protocol.auth must contain a JSON template', 'protocol.auth')
-    assertStructuredCloneable(options.auth, 'protocol.auth')
   }
   if (options.heartbeat !== undefined) {
     if (!isPlainRecord(options.heartbeat) || !('ping' in options.heartbeat) || !('pong' in options.heartbeat))
@@ -197,26 +156,16 @@ function validateJsonOptions(options: JsonProtocolOptions): void {
 }
 
 /** 创建声明式 JSON 协议适配器。同步/异步 API 失败会转为稳定 SocketFuse 错误码。 */
-export function createJsonProtocolAdapter(options: JsonProtocolOptions): ProtocolAdapter<JsonValue, JsonValue, unknown> {
+export function createJsonProtocolAdapter(options: JsonProtocolOptions): ProtocolAdapter<JsonValue, JsonValue> {
   validateJsonOptions(options)
-  const id = options.id ?? 'json'
-  const version = options.version ?? 1
-  const ready = options.ready
   const ignore = options.ignore ?? []
   const heartbeat = options.heartbeat
-  const capabilities: ProtocolCapabilities = Object.freeze({
-    auth: options.auth !== undefined,
-    binary: false,
-    heartbeat: heartbeat !== undefined,
-  })
+  const serverPong = heartbeat?.serverPong
   const descriptorConfig = Object.freeze(JSON.parse(JSON.stringify(options)) as Record<string, unknown>)
 
   return Object.freeze({
-    capabilities,
-    /** 识别 ready、heartbeat、ignore 与业务帧。 */
+    /** 识别 heartbeat、ignore 与业务帧。 */
     classify(data: JsonValue): ProtocolFrame<JsonValue> {
-      if (ready !== undefined && matches(data, ready))
-        return { type: 'ready' }
       if (heartbeat !== undefined && matches(data, heartbeat.pong))
         return { type: 'pong' }
       if (heartbeat?.serverPing !== undefined && matches(data, heartbeat.serverPing))
@@ -225,28 +174,25 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
         return { type: 'ignore' }
       return { data, type: 'data' }
     },
-    /** 按 auth 模板生成认证业务帧。 */
-    createAuth(auth: unknown, context: AuthContext): JsonValue {
-      void context
-      if (options.auth === undefined)
-        throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare an auth template')
-      return applyTemplate(options.auth.template, auth)
-    },
-    /** 返回声明式 JSON ping 模板。 */
-    createPing(context: HeartbeatContext): JsonValue {
-      void context
-      if (heartbeat === undefined)
-        throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a heartbeat template')
-      return heartbeat.ping
-    },
-    /** 返回声明式 JSON server-pong 模板。 */
-    createPong(ping: ProtocolFrame<JsonValue>, context: HeartbeatContext): JsonValue {
-      void ping
-      void context
-      if (heartbeat?.serverPong === undefined)
-        throw new SocketFuseError('CAPABILITY_UNSUPPORTED', 'JSON protocol does not declare a server pong template')
-      return heartbeat.serverPong
-    },
+    ...(heartbeat === undefined
+      ? {}
+      : {
+          /** 返回声明式 JSON ping 模板。 */
+          createPing(context: HeartbeatContext): JsonValue {
+            void context
+            return heartbeat.ping
+          },
+        }),
+    ...(serverPong === undefined
+      ? {}
+      : {
+          /** 返回声明式 JSON server-pong 模板。 */
+          createPong(ping: ProtocolFrame<JsonValue>, context: HeartbeatContext): JsonValue {
+            void ping
+            void context
+            return serverPong
+          },
+        }),
     /** 将原始 payload 解码为 JSON 值。 */
     decode(data: SocketData, context: DecodeContext): MaybePromise<JsonValue> {
       void context
@@ -264,10 +210,9 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
         throw new SocketFuseError('ENCODE_FAILED', 'Unable to encode JSON message', { cause })
       }
     },
-    id,
-    readyWhen: ready === undefined ? 'socket-open' : 'adapter-frame',
+    id: 'json',
     sharedConfig: descriptorConfig,
-    version,
+    version: 1,
   })
 }
 
@@ -276,28 +221,22 @@ export function getProtocolDescriptor(protocol: 'raw' | JsonProtocolOptions): {
   readonly kind: 'raw' | 'json'
   readonly id: string
   readonly version: number
-  readonly capabilities: ProtocolCapabilities
-  readonly readyWhen: 'socket-open' | 'adapter-frame'
   readonly sharedConfig: Readonly<Record<string, unknown>>
 } {
   if (protocol === 'raw')
-    return Object.freeze({ capabilities: rawCapabilities, id: 'raw', kind: 'raw', readyWhen: 'socket-open', sharedConfig: {}, version: 1 })
+    return Object.freeze({ id: 'raw', kind: 'raw', sharedConfig: {}, version: 1 })
   const adapter = createJsonProtocolAdapter(protocol)
-  return Object.freeze({ capabilities: adapter.capabilities, id: adapter.id, kind: 'json', readyWhen: adapter.readyWhen ?? 'socket-open', sharedConfig: adapter.sharedConfig ?? {}, version: adapter.version })
+  return Object.freeze({ id: adapter.id, kind: 'json', sharedConfig: adapter.sharedConfig ?? {}, version: adapter.version })
 }
 
 /** 校验 custom adapter 的跨 Worker 注册形状。 */
-export function validateProtocolAdapter(value: unknown): asserts value is ProtocolAdapter<unknown, unknown, unknown> {
+export function validateProtocolAdapter(value: unknown): asserts value is ProtocolAdapter<unknown, unknown> {
   if (!isPlainRecord(value)
     || typeof value.id !== 'string'
     || !isValidAdapterId(value.id)
     || typeof value.version !== 'number'
     || !Number.isSafeInteger(value.version)
     || value.version <= 0
-    || !isPlainRecord(value.capabilities)
-    || typeof value.capabilities.auth !== 'boolean'
-    || typeof value.capabilities.binary !== 'boolean'
-    || typeof value.capabilities.heartbeat !== 'boolean'
     || typeof value.encode !== 'function'
     || typeof value.decode !== 'function'
     || typeof value.classify !== 'function') {
@@ -306,8 +245,8 @@ export function validateProtocolAdapter(value: unknown): asserts value is Protoc
 }
 
 /** 调用 adapter 编码业务值并校验返回的原生 WebSocket payload。 */
-export async function encodeWithAdapter<Incoming, Outgoing, Auth>(
-  adapter: ProtocolAdapter<Incoming, Outgoing, Auth>,
+export async function encodeWithAdapter<Incoming, Outgoing>(
+  adapter: ProtocolAdapter<Incoming, Outgoing>,
   data: Outgoing,
   context: EncodeContext,
 ): Promise<SocketData> {
@@ -329,8 +268,8 @@ export async function encodeWithAdapter<Incoming, Outgoing, Auth>(
 }
 
 /** 顺序解码并分类一条原始 socket payload，保护协议帧到达顺序。 */
-export async function decodeAndClassify<Incoming, Outgoing, Auth>(
-  adapter: ProtocolAdapter<Incoming, Outgoing, Auth>,
+export async function decodeAndClassify<Incoming, Outgoing>(
+  adapter: ProtocolAdapter<Incoming, Outgoing>,
   data: SocketData,
   context: DecodeContext & ClassifyContext,
 ): Promise<ProtocolFrame<Incoming>> {
@@ -345,7 +284,7 @@ export async function decodeAndClassify<Incoming, Outgoing, Auth>(
   }
   try {
     const frame = await adapter.classify(decoded, context)
-    if (frame === null || typeof frame !== 'object' || !['data', 'ready', 'ping', 'pong', 'ignore', 'fatal'].includes(frame.type))
+    if (frame === null || typeof frame !== 'object' || !['data', 'ping', 'pong', 'ignore', 'fatal'].includes(frame.type))
       throw new Error('Adapter returned an invalid protocol frame')
     return frame
   }
@@ -356,12 +295,12 @@ export async function decodeAndClassify<Incoming, Outgoing, Auth>(
   }
 }
 
-export class OrderedProtocol<Incoming, Outgoing, Auth = unknown> {
+export class OrderedProtocol<Incoming, Outgoing> {
   /** 上一条 decode/classify 完成 promise，确保异步 adapter 不乱序。 */
   private tail: Promise<void> = Promise.resolve()
 
   /** 创建绑定 adapter 的顺序处理器。 */
-  constructor(readonly adapter: ProtocolAdapter<Incoming, Outgoing, Auth>) {}
+  constructor(readonly adapter: ProtocolAdapter<Incoming, Outgoing>) {}
 
   /** 排队处理一条 payload，并返回其协议帧。 */
   process(data: SocketData, context: DecodeContext & ClassifyContext): Promise<ProtocolFrame<Incoming>> {

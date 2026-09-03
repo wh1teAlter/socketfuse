@@ -8,6 +8,8 @@ import type { SocketFuseError } from './errors'
 
 /** 浏览器原生 WebSocket 与 raw 协议可收发的 payload 类型。 */
 export type SocketData = string | Blob | ArrayBuffer | ArrayBufferView
+/** 可同步形成共享 fingerprint 的 raw 心跳 payload；Blob 内容无法同步参与身份计算。 */
+export type HeartbeatPayload = string | ArrayBuffer | ArrayBufferView
 /** 兼容浏览器和测试注入时钟的定时器句柄。 */
 export type TimerHandle = number | ReturnType<typeof setTimeout>
 
@@ -18,7 +20,6 @@ export type WebSocketStatus = 'OPEN' | 'CONNECTING' | 'CLOSED'
 export type ConnectionState
   = | 'idle'
     | 'connecting'
-    | 'handshaking'
     | 'open'
     | 'reconnecting'
     | 'closing'
@@ -31,16 +32,8 @@ export type ReadyState = 0 | 1 | 2 | 3
 export type Transport = 'pending' | 'shared-worker' | 'direct'
 /** 选定传输通道所使用的 Worker 部署方式。 */
 export type WorkerMode = 'inline' | 'custom' | 'none'
-
-/** 选定协议适配器实现的能力集合。 */
-export interface ProtocolCapabilities {
-  /** 是否能根据 revision 生成认证帧。 */
-  readonly auth: boolean
-  /** 是否能生成和识别应用层心跳帧。 */
-  readonly heartbeat: boolean
-  /** 是否能安全处理二进制 WebSocket payload。 */
-  readonly binary: boolean
-}
+/** Worker 选主时使用的页面执行活性状态。 */
+export type ClientVisibility = 'visible' | 'hidden' | 'frozen'
 
 /** 多标签页共享的重连策略；所有时间字段单位均为毫秒。 */
 export interface ReconnectOptions {
@@ -56,6 +49,8 @@ export interface ReconnectOptions {
   jitter: number
   /** 连接连续保持 open 多久后重置重试计数，默认值为 `30000`。 */
   stableThreshold: number
+  /** 整个重连计划的总准备时间，默认值为 `10000`。 */
+  hookTimeout: number
 }
 
 /** 多标签页共享的应用层心跳策略；时间字段单位均为毫秒。 */
@@ -64,12 +59,12 @@ export interface HeartbeatOptions {
   mode: 'pong' | 'activity'
   /** 两次心跳发送之间的间隔。 */
   interval: number
-  /** `pong` 模式等待应答的最长时间。 */
-  pongTimeout: number
-  /** 发送给服务端的原生 WebSocket payload。 */
-  message: SocketData
-  /** 在 `pong` 模式下被视为应答的原生 payload。 */
-  responseMessage: SocketData
+  /** 等待心跳应答或活动的最长时间；省略时只发送保活帧，不主动断线。 */
+  pongTimeout?: number
+  /** raw 协议发送给服务端的原生 payload；其他协议不得设置。 */
+  message?: HeartbeatPayload
+  /** raw 协议在 `pong` 模式下识别的原生 payload；其他协议不得设置。 */
+  responseMessage?: HeartbeatPayload
 }
 
 /** 多标签页共享且有边界的出站队列策略。 */
@@ -116,7 +111,51 @@ export interface WorkerResourceLimits {
   maxControlEnvelopeBytes: number
   /** 端口建立后未完成 hello 时的回收时限，单位为毫秒。 */
   unattachedPortTimeoutMs: number
+  /** 一个 Worker 内允许注册的不同 execution key 总数。 */
+  maxExclusiveKeys: number
 }
+
+/** 动态消息 handler 的可选执行约束。 */
+export interface MessageHandlerOptions {
+  /** 同一共享连接内至多由一个页面执行的非空业务 key；最长 1024 字符。 */
+  readonly key?: string
+}
+
+/** 每次业务 handler 调用收到的页面本地上下文。 */
+export interface MessageHandlerContext {
+  /** key 撤销或 client dispose 时终止的协作式信号。 */
+  readonly signal: AbortSignal
+}
+
+/** 重连计划可公开给页面的安全原因。 */
+export type BeforeReconnectReason = 'explicit' | 'socket-close' | 'socket-error' | 'connection-timeout' | 'heartbeat-timeout'
+
+/** 当前重连计划允许页面覆盖的 WebSocket 配置。 */
+export interface BeforeReconnectOptions {
+  /** 下一次连接尝试使用的绝对 `ws:` 或 `wss:` URL 字符串；最长 16384 字符。 */
+  readonly url: string
+}
+
+/** 页面准备一次重连计划时收到的有界上下文。 */
+export interface BeforeReconnectContext {
+  /** 从一开始计数的本次重连序号。 */
+  readonly attempt: number
+  /** 未覆盖时使用的指数退避延迟。 */
+  readonly defaultDelay: number
+  /** 已移除 reason 文本的安全 close 信息。 */
+  readonly close: SafeCloseInfo
+  /** 当前准备权成功提交、超时、冻结、转移或计划失效时终止。 */
+  readonly signal: AbortSignal
+  /** 当前重连的安全原因。 */
+  readonly reason: BeforeReconnectReason
+  /** 覆盖当前计划下一次连接使用的固定 URL。 */
+  readonly setOptions: (options: BeforeReconnectOptions) => void
+  /** 覆盖从成功提交到下一次连接尝试的等待时间。 */
+  readonly setDelay: (delay: number) => void
+}
+
+/** 页面本地的重连计划准备函数。 */
+export type BeforeReconnectHandler = (context: Readonly<BeforeReconnectContext>) => void | Promise<void>
 
 /** 页面启用生命周期恢复后，在挂起期间使用的本地回放缓冲配置。 */
 export interface RestoreOptions {
@@ -150,8 +189,6 @@ export interface NormalizedRestoreOptions {
 export interface SendOptions {
   /** 覆盖本次发送是否可按共享队列策略入队。 */
   queue?: boolean
-  /** 随排队消息保留的业务幂等键；SocketFuse 不将其解释为服务端 Ack。 */
-  idempotencyKey?: string
 }
 
 /** `sendMessage` 的本地接纳结果；它绝不是服务端投递回执。 */
@@ -171,27 +208,6 @@ export type SendReceipt
     readonly messageId: string
     /** 消息在 FIFO 队列中的位置。 */
     readonly position: number
-  }
-
-/** 单调 endpoint/auth revision 更新的结果。 */
-export type RevisionReceipt
-  = | {
-    /** 新 revision 已应用。 */
-    readonly status: 'applied'
-    /** 生效的正安全整数 revision。 */
-    readonly revision: number
-  }
-  | {
-    /** revision 早于当前值，状态未改变。 */
-    readonly status: 'stale'
-    /** 当前已知 revision。 */
-    readonly revision: number
-  }
-  | {
-    /** revision 与当前值相同，状态未改变。 */
-    readonly status: 'unchanged'
-    /** 已存在的 revision。 */
-    readonly revision: number
   }
 
 /** `open()` 成功 resolve 时返回的不可变连接快照。 */
@@ -246,6 +262,14 @@ export interface SocketFuseStateChangeEvent extends Event {
   readonly attempt: number
   /** 可安全暴露的状态迁移原因码。 */
   readonly reasonCode?: string
+}
+
+/** 当前页面 execution key 持有状态实际变化时的通知。 */
+export interface SocketFuseKeyChangeEvent extends Event {
+  /** 发生变化的 execution key。 */
+  readonly key: string
+  /** 当前页面是否得到该 key 的 Worker 授权。 */
+  readonly held: boolean
 }
 
 /** 出站队列、入站 credit 或回放缓冲触及边界时的通知。 */
@@ -321,12 +345,6 @@ export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: 
 /** matcher 的键为点/方括号字段路径，值按 JSON 结构比较。 */
 export type JsonMatcher = Readonly<Record<string, JsonValue>>
 
-/** `$auth` 或 `$auth.` 开头的字符串会在生成认证帧时从 auth 数据替换。 */
-export interface JsonAuthTemplate {
-  /** 可含 auth 占位符的认证业务帧模板。 */
-  readonly template: JsonValue
-}
-
 /** 声明式 JSON ping/pong 模板与匹配器。 */
 export interface JsonHeartbeatTemplate {
   /** 客户端主动发送的 ping 帧。 */
@@ -343,14 +361,6 @@ export interface JsonHeartbeatTemplate {
 export interface JsonProtocolOptions {
   /** 固定为 JSON 协议选择器。 */
   readonly type: 'json'
-  /** 可选的稳定适配器 id；默认使用内置 JSON id。 */
-  readonly id?: string
-  /** 可选的适配器 major 版本；变更会触发共享配置冲突。 */
-  readonly version?: number
-  /** 将入站帧标记为 ready 的匹配器。 */
-  readonly ready?: JsonMatcher
-  /** 根据最新 auth revision 生成认证帧的模板。 */
-  readonly auth?: JsonAuthTemplate
   /** 该协议的应用层心跳定义。 */
   readonly heartbeat?: JsonHeartbeatTemplate
   /** 被协议消费、不会派发给业务的入站帧匹配器。 */
@@ -381,12 +391,6 @@ export interface ClassifyContext extends ProtocolContext {
   readonly receivedAt: number
 }
 
-/** 调用适配器认证帧工厂时附加的上下文。 */
-export interface AuthContext extends ProtocolContext {
-  /** 当前被应用的认证 revision。 */
-  readonly revision: number
-}
-
 /** 调用适配器心跳工厂时附加的上下文。 */
 export interface HeartbeatContext extends ProtocolContext {
   /** 当前物理连接尝试计数。 */
@@ -410,10 +414,6 @@ export type ProtocolFrame<Data>
     readonly type: 'data'
     /** 解码后的业务值。 */
     readonly data: Data
-  }
-  | {
-    /** 表示协议握手已完成。 */
-    readonly type: 'ready'
   }
   | {
     /** 服务端 ping 控制帧。 */
@@ -442,33 +442,25 @@ export type MaybePromise<Value> = Value | Promise<Value>
 /**
  * 定义一个应用协议的编码与控制帧语义。
  *
- * 适配器函数只能在 custom Worker 内执行，不能跨 `MessagePort`。`id`、`version`、
- * capabilities、ready 语义与 `sharedConfig` 共同构成共享连接身份；相同 `id` 的
- * 不同身份必须被拒绝，不能静默复用。
+ * 适配器函数只能在 custom Worker 内执行，不能跨 `MessagePort`。`id`、`version` 与
+ * `sharedConfig` 共同构成共享连接身份；相同连接 id 的不同协议身份必须被拒绝。
  *
  * @typeParam Incoming 解码后派发给页面监听器的业务 payload。
  * @typeParam Outgoing `sendMessage` 接受的业务值。
- * @typeParam Auth `updateAuth` 接受的带 revision 认证值。
  */
-export interface ProtocolAdapter<Incoming, Outgoing, Auth = unknown> {
+export interface ProtocolAdapter<Incoming, Outgoing> {
   /** 在 Worker 注册表中查找适配器的稳定 id。 */
   readonly id: string
   /** 参与共享配置冲突检测的正整数版本。 */
   readonly version: number
-  /** 声明可用的 auth、heartbeat 与 binary 能力。 */
-  readonly capabilities: ProtocolCapabilities
   /** 参与共享身份的可结构化克隆静态配置；不得含页面秘密。 */
   readonly sharedConfig?: Readonly<Record<string, unknown>>
-  /** socket open 即 ready，或必须等待 adapter 分类出的 ready 帧。 */
-  readonly readyWhen?: 'socket-open' | 'adapter-frame'
   /** 编码一次 `sendMessage`；失败会以 `ENCODE_FAILED` 拒绝调用。 */
   encode: (data: Outgoing, context: EncodeContext) => MaybePromise<SocketData>
   /** 解码一个原始 socket payload；失败会以 `DECODE_FAILED` 处理。 */
   decode: (data: SocketData, context: DecodeContext) => MaybePromise<Incoming>
   /** 将已解码 payload 分类为业务帧或协议控制帧。 */
   classify: (data: Incoming, context: ClassifyContext) => MaybePromise<ProtocolFrame<Incoming>>
-  /** 在 open 前根据最新 auth revision 生成认证帧；缺失时不支持 auth 更新。 */
-  createAuth?: (auth: Auth, context: AuthContext) => MaybePromise<Outgoing | readonly Outgoing[]>
   /** 生成主动心跳帧；缺失时不支持 SocketFuse heartbeat。 */
   createPing?: (context: HeartbeatContext) => MaybePromise<Outgoing>
   /** 对分类出的服务端 ping 生成响应；缺失时不自动回复。 */
@@ -478,10 +470,10 @@ export interface ProtocolAdapter<Incoming, Outgoing, Auth = unknown> {
 }
 
 /** raw、声明式 JSON 或已在 custom Worker 注册的协议选择。 */
-export type ProtocolSelector<Incoming, Outgoing, Auth>
+export type ProtocolSelector<Incoming, Outgoing>
   = | 'raw'
     | JsonProtocolOptions
-    | ProtocolAdapter<Incoming, Outgoing, Auth>
+    | ProtocolAdapter<Incoming, Outgoing>
 
 /**
  * 页面 client 及其共享物理连接的创建配置。
@@ -490,15 +482,15 @@ export type ProtocolSelector<Incoming, Outgoing, Auth>
  * 必须在同一 `id` 下完全一致；页面本地字段不参与共享 fingerprint。无效配置在创建
  * 阶段同步抛出 `SocketFuseError`，Worker 构造/握手失败按 `fallback` 决定拒绝或降级。
  */
-export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = SocketData, Auth = unknown> {
-  /** 同源标签页共享连接的稳定业务 identity；不能为空，且不得包含凭据。 */
+export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = SocketData> {
+  /** 同源标签页共享连接的稳定业务 identity；不能为空、最长 1024 字符，且不得包含凭据。 */
   id: string
   /** 原生 WebSocket subprotocol token 或有序 token 列表；默认不传。 */
   protocols?: string | readonly string[]
   /** 页面本地 custom SharedWorker 工厂；默认使用内置 inline Worker。 */
   worker?: () => SharedWorker
   /** 消息协议；默认 raw 适配器。自定义 adapter 必须同时静态注册在 Worker。 */
-  protocol?: ProtocolSelector<Incoming, Outgoing, Auth>
+  protocol?: ProtocolSelector<Incoming, Outgoing>
   /** Worker 构造或初始化失败时的页面本地策略；默认 `direct`。 */
   fallback?: 'direct' | 'error'
   /** 创建后是否立即异步打开；页面本地，默认 `true`。 */
@@ -507,11 +499,11 @@ export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = Socket
   autoClose?: boolean
   /** 共享重连策略；`true` 或省略使用指数退避默认值。 */
   autoReconnect?: boolean | Partial<ReconnectOptions>
-  /** 共享 socket open 与 adapter handshake 共用的超时，单位毫秒，默认 `10000`。 */
+  /** 共享 socket 建连超时，单位毫秒，默认 `10000`。 */
   connectionTimeout?: number
   /** 共享二进制接收表示，默认 `arraybuffer`。 */
   binaryType?: 'arraybuffer' | 'blob'
-  /** 共享心跳策略；默认关闭，且必须由协议 adapter 声明支持。 */
+  /** 共享应用层心跳策略；默认关闭。 */
   heartbeat?: boolean | Partial<HeartbeatOptions>
   /** 共享有界出站队列策略；默认不允许离线或背压入队。 */
   queue?: boolean | Partial<QueueOptions>
@@ -528,13 +520,13 @@ export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = Socket
   /** 接收已脱敏运行诊断的页面本地 sink。 */
   logger?: SocketFuseLogger
   /** 逻辑 client open 后调用的页面本地回调。 */
-  onConnected?: (client: WebSocketClient<Incoming, Outgoing, Auth>, snapshot: ConnectionSnapshot) => void
+  onConnected?: (client: WebSocketClient<Incoming, Outgoing>, snapshot: ConnectionSnapshot) => void
   /** 逻辑 client close 后调用的页面本地回调。 */
-  onDisconnected?: (client: WebSocketClient<Incoming, Outgoing, Auth>, event: SocketFuseCloseEvent) => void
+  onDisconnected?: (client: WebSocketClient<Incoming, Outgoing>, event: SocketFuseCloseEvent) => void
   /** 收到已脱敏 `SocketFuseError` 时调用的页面本地回调。 */
-  onError?: (client: WebSocketClient<Incoming, Outgoing, Auth>, error: SocketFuseError) => void
+  onError?: (client: WebSocketClient<Incoming, Outgoing>, error: SocketFuseError) => void
   /** 初始业务消息回调；创建后仍可通过 `onMessage` 动态增加。 */
-  onMessage?: (client: WebSocketClient<Incoming, Outgoing, Auth>, event: SocketFuseMessageEvent<Incoming>) => void
+  onMessage?: (client: WebSocketClient<Incoming, Outgoing>, event: SocketFuseMessageEvent<Incoming>) => void
 }
 
 /**
@@ -545,9 +537,8 @@ export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = Socket
  *
  * @typeParam Incoming `onMessage` 派发的解码业务 payload。
  * @typeParam Outgoing `sendMessage` 接受的应用值。
- * @typeParam Auth `updateAuth` 接受的带 revision 认证值。
  */
-export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, Auth = unknown> extends EventTarget {
+export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData> extends EventTarget {
   /** 最近一次已派发业务 payload；首条消息前为 `null`。 */
   readonly data: Incoming | null
   /** 紧凑的 `CONNECTING`、`OPEN` 或 `CLOSED` 状态。 */
@@ -560,13 +551,11 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, A
   readonly transport: Transport
   /** inline、custom 或 direct/no Worker 部署方式。 */
   readonly workerMode: WorkerMode
-  /** 选定协议 adapter 声明的能力。 */
-  readonly capabilities: ProtocolCapabilities
   /**
    * 在未 dispose 阶段打开逻辑 client；并发调用共享同一次物理 open。
    *
    * @param options 可选 AbortSignal；仅取消当前等待者，不会关闭其他 client 的共享连接。
-   * @returns socket 与协议均 ready 时的连接快照。
+   * @returns 原生 socket 打开时的连接快照。
    * @throws `ABORTED`、`CONNECTION_TIMEOUT`、协议或 transport 的安全错误。
    */
   open: (options?: { signal?: AbortSignal }) => Promise<ConnectionSnapshot>
@@ -581,7 +570,7 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, A
    * 在已创建且未 dispose 阶段提交一条业务消息，或在配置允许时将其有界入队。
    *
    * @param data 由选定 adapter 接受的业务值。
-   * @param options 本次发送的队列覆盖和业务幂等键。
+   * @param options 本次发送的队列覆盖。
    * @returns 本地 `accepted` 或 `queued` 回执；不代表服务器已收到。
    * @throws `SEND_WHILE_DISCONNECTED`、`BACKPRESSURE`、队列/大小限制或编码错误。
    */
@@ -590,47 +579,35 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData, A
    * 在 client 存活阶段添加一个页面本地业务消息 handler。
    *
    * @param handler 接收业务帧与回放标记的回调；抛出不会阻塞其他 handler 或 Worker。
+   * @param options 可选 execution key；省略时继续在每个收到帧的页面执行。
    * @returns 幂等移除函数；dispose 后仍可安全调用。
    */
-  onMessage: (handler: (event: SocketFuseMessageEvent<Incoming>) => void) => () => void
+  onMessage: (handler: (event: SocketFuseMessageEvent<Incoming>, context: Readonly<MessageHandlerContext>) => void | Promise<void>, options?: MessageHandlerOptions) => () => void
   /**
-   * 以更大的单调 revision 应用认证数据；仅在 adapter 声明 auth 能力时可用。
+   * 查询当前页面是否持有指定 execution key。
    *
-   * @param auth 不会写入诊断或跨 client 暴露的认证值。
-   * @param options 共享 auth register 的正整数 revision。
-   * @returns applied、stale 或 unchanged revision 回执。
-   * @throws `CAPABILITY_UNSUPPORTED`、`CLIENT_DISPOSED` 或 transport 错误。
+   * @param key 要查询的业务 key。
+   * @returns 仅反映 Worker 最近一次 grant/revoke 的权威状态。
    */
-  updateAuth: (auth: Auth, options: { revision: number }) => Promise<RevisionReceipt>
+  holdsKey: (key: string) => boolean
   /**
-   * 以更大的 revision 清除认证与该页面拥有的待发业务数据。
+   * 注册当前逻辑 client 唯一的自动重连准备 hook。
    *
-   * @param options 共享 auth register 的正整数 revision。
-   * @returns applied、stale 或 unchanged revision 回执。
-   * @throws `CAPABILITY_UNSUPPORTED`、`CLIENT_DISPOSED` 或 transport 错误。
+   * @param handler 可异步更新当前计划 URL 与 delay 的页面函数。
+   * @returns 幂等注销函数；新注册会替换当前页面旧 hook。
    */
-  clearAuth: (options: { revision: number }) => Promise<RevisionReceipt>
+  onBeforeReconnect: (handler: BeforeReconnectHandler) => () => void
   /**
-   * 以更大的 revision 更新共享 endpoint；必要时取消旧连接尝试并重连。
+   * 在 client 已 open 且未 close/dispose 时显式开始新的共享连接尝试。
    *
-   * @param url 新的绝对 `ws:` 或 `wss:` URL。
-   * @param options 共享 endpoint register 的正整数 revision。
-   * @returns applied、stale 或 unchanged revision 回执。
-   * @throws `INVALID_OPTIONS`、`CLIENT_DISPOSED` 或 transport 错误。
-   */
-  updateUrl: (url: string | URL, options: { revision: number }) => Promise<RevisionReceipt>
-  /**
-   * 在 client 未 dispose 时显式开始新的共享连接尝试。
-   *
-   * @param options 可安全记录的调用原因；不会作为服务端 payload 发送。
    * @returns 重连请求被接纳后的 Promise，不代表 socket 已 open。
-   * @throws `CLIENT_DISPOSED` 或 transport 控制错误。
+   * @throws `CLIENT_DISCONNECTED`、`CLIENT_DISPOSED` 或 transport 控制错误。
    */
-  reconnect: (options?: { reason?: string }) => Promise<void>
+  reconnect: () => Promise<void>
   /**
    * 返回当前已脱敏运行指标；任意 client 状态均可调用。
    *
-   * @returns 不含 auth、URL query、业务 payload 或内部堆栈的快照。
+   * @returns 不含 URL query、业务 payload 或内部堆栈的快照。
    */
   diagnostics: () => Readonly<ConnectionDiagnostics>
   /**

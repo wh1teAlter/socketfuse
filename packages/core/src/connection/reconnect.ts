@@ -59,7 +59,7 @@ export class ReconnectPolicy {
     this.maybeReset(now)
     if (!retryable || this.attemptValue - 1 >= this.options.retries)
       return { allowed: false, attempt: this.attemptValue, delay: 0 }
-    const attempt = this.attemptValue + 1
+    const attempt = Math.max(1, this.attemptValue)
     return { allowed: true, attempt, delay: calculateReconnectDelay(this.options, attempt, this.random) }
   }
 

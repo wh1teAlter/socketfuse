@@ -15,10 +15,10 @@ import { type CreateWebSocketOptions, DirectTransport, type JsonProtocolOptions,
 import { INLINE_WORKER_SOURCE } from '../worker/source.generated'
 
 /** 在当前页面环境创建 direct transport，供明确允许的 Worker 初始化降级使用。 */
-function createDirectFallback<Incoming, Outgoing, Auth>(
-  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
+function createDirectFallback<Incoming, Outgoing>(
+  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing>>,
   clientId: string,
-): DirectTransport<Incoming, Outgoing, Auth> | undefined {
+): DirectTransport<Incoming, Outgoing> | undefined {
   if (typeof WebSocket === 'undefined')
     return undefined
   return new DirectTransport({ clientId, config })
@@ -30,16 +30,16 @@ function createInlineWorkerUrl(): string {
 }
 
 /** 创建 SharedWorker transport，并保留只在初始化失败时使用的 fallback 工厂。 */
-function createSharedTransport<Incoming, Outgoing, Auth>(
-  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing, Auth>>,
+function createSharedTransport<Incoming, Outgoing>(
+  config: ReturnType<typeof normalizeWebSocketOptions<Incoming, Outgoing>>,
   clientId: string,
-  options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
+  options: CreateWebSocketOptions<Incoming, Outgoing>,
   allowFallback = true,
-): SharedWorkerTransport<Incoming, Outgoing, Auth> {
+): SharedWorkerTransport<Incoming, Outgoing> {
   const worker = options.worker === undefined
     ? new SharedWorker(createInlineWorkerUrl())
     : options.worker()
-  const createFallback = (): DirectTransport<Incoming, Outgoing, Auth> => {
+  const createFallback = (): DirectTransport<Incoming, Outgoing> => {
     const fallback = createDirectFallback(config, clientId)
     if (fallback === undefined)
       throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')
@@ -70,32 +70,31 @@ function createClientId(): string {
  *
  * @typeParam Incoming 由 `onMessage` 接收的已解码业务 payload。
  * @typeParam Outgoing `sendMessage` 可接受的应用值。
- * @typeParam Auth `updateAuth` 可接受的带 revision 认证值。
- * @param url 初始的绝对 `ws:` 或 `wss:` endpoint。
+ * @param url 初始的绝对 `ws:` 或 `wss:` endpoint，最长 16384 字符。
  * @param options 共享连接与页面本地行为。
  * @returns 稳定的页面本地客户端；`immediate` 为 true 时首次打开会在后台进行。
  * @throws 在非浏览器页面 realm、选项无效、`fallback` 为 `error` 且 Worker 不可用，
  * 或 direct WebSocket 降级不可用时，同步抛出 `SocketFuseError`。
  */
 export function createWebSocket(
-  url: string | URL,
-  options: CreateWebSocketOptions<JsonValue, JsonValue, unknown> & { readonly protocol: JsonProtocolOptions },
-): WebSocketClient<JsonValue, JsonValue, unknown>
-export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
-  url: string | URL,
-  options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
-): WebSocketClient<Incoming, Outgoing, Auth>
-export function createWebSocket<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
-  url: string | URL,
-  options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
-): WebSocketClient<Incoming, Outgoing, Auth> {
+  url: string,
+  options: CreateWebSocketOptions<JsonValue, JsonValue> & { readonly protocol: JsonProtocolOptions },
+): WebSocketClient<JsonValue, JsonValue>
+export function createWebSocket<Incoming = SocketData, Outgoing = SocketData>(
+  url: string,
+  options: CreateWebSocketOptions<Incoming, Outgoing>,
+): WebSocketClient<Incoming, Outgoing>
+export function createWebSocket<Incoming = SocketData, Outgoing = SocketData>(
+  url: string,
+  options: CreateWebSocketOptions<Incoming, Outgoing>,
+): WebSocketClient<Incoming, Outgoing> {
   if (typeof window === 'undefined' || typeof document === 'undefined')
     throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'SocketFuse clients require a browser page environment')
   const config = normalizeWebSocketOptions(url, options)
   const clientId = createClientId()
-  let transport: DirectTransport<Incoming, Outgoing, Auth> | SharedWorkerTransport<Incoming, Outgoing, Auth>
+  let transport: DirectTransport<Incoming, Outgoing> | SharedWorkerTransport<Incoming, Outgoing>
 
-  const createFallback = (): DirectTransport<Incoming, Outgoing, Auth> => {
+  const createFallback = (): DirectTransport<Incoming, Outgoing> => {
     const fallback = createDirectFallback(config, clientId)
     if (fallback === undefined)
       throw new SocketFuseError('ENVIRONMENT_UNSUPPORTED', 'WebSocket is not available for direct fallback')

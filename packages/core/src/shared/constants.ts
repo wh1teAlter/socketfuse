@@ -7,11 +7,13 @@
 import type { BackpressureOptions, ConnectionLimits, HeartbeatOptions, LeaseOptions, QueueOptions, ReconnectOptions, WorkerResourceLimits } from './types'
 
 /** page-to-Worker 控制协议的当前破坏性版本号。 */
-export const CONTROL_PROTOCOL_MAJOR: number = 1
+export const CONTROL_PROTOCOL_MAJOR: number = 2
 /** 一个 mebibyte 的字节数，统一用于内存与 payload 上限。 */
 export const MIB: number = 1024 * 1024
+/** 初始与重连 endpoint 允许的最大 UTF-16 字符数。 */
+export const MAX_ENDPOINT_LENGTH: number = 16_384
 
-/** socket open 与 adapter handshake 共用的默认超时，单位为毫秒。 */
+/** 原生 WebSocket 等待 open 的默认超时，单位为毫秒。 */
 export const DEFAULT_CONNECTION_TIMEOUT: number = 10_000
 /** 最后一个 client 离开后关闭物理 socket 前的默认宽限期，单位为毫秒。 */
 export const DEFAULT_IDLE_GRACE_MS: number = 5_000
@@ -28,14 +30,14 @@ export const DEFAULT_RECONNECT_OPTIONS: Readonly<ReconnectOptions> = Object.free
   maxDelay: 30_000,
   retries: Number.POSITIVE_INFINITY,
   stableThreshold: 30_000,
+  hookTimeout: 10_000,
 })
 
 /** 未指定时使用的共享应用层心跳策略。 */
-export const DEFAULT_HEARTBEAT_OPTIONS: Readonly<HeartbeatOptions> = Object.freeze({
+export const DEFAULT_HEARTBEAT_OPTIONS: Readonly<HeartbeatOptions & Required<Pick<HeartbeatOptions, 'message' | 'responseMessage'>>> = Object.freeze({
   interval: 25_000,
   message: 'ping',
   mode: 'pong',
-  pongTimeout: 10_000,
   responseMessage: 'pong',
 })
 
@@ -68,6 +70,7 @@ export const DEFAULT_CONNECTION_LIMITS: Readonly<ConnectionLimits> = Object.free
 /** custom 或 inline Worker 的默认控制平面资源上限。 */
 export const DEFAULT_WORKER_RESOURCE_LIMITS: Readonly<WorkerResourceLimits> = Object.freeze({
   maxControlEnvelopeBytes: 2 * MIB,
+  maxExclusiveKeys: 1_024,
   maxPorts: 256,
   unattachedPortTimeoutMs: 5_000,
 })

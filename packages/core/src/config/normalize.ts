@@ -9,11 +9,11 @@ import type {
   ConnectionLimits,
   CreateWebSocketOptions,
   HeartbeatOptions,
+  HeartbeatPayload,
   JsonProtocolOptions,
   LeaseOptions,
   NormalizedRestoreOptions,
   ProtocolAdapter,
-  ProtocolCapabilities,
   QueueOptions,
   ReconnectOptions,
   SocketData,
@@ -30,6 +30,7 @@ import {
   DEFAULT_RECONNECT_OPTIONS,
   DEFAULT_REPLAY_MAX_BYTES,
   DEFAULT_REPLAY_MAX_MESSAGES,
+  MAX_ENDPOINT_LENGTH,
 } from '../shared/constants'
 import { createJsonProtocolAdapter, getProtocolDescriptor, rawProtocol, validateProtocolAdapter } from '../protocol/adapter'
 import { assertStructuredCloneable, stableHash, stableSerialize } from '../shared/structured'
@@ -42,10 +43,6 @@ export interface NormalizedProtocolDescriptor {
   readonly id: string
   /** 适配器主版本，变更必须触发配置冲突。 */
   readonly version: number
-  /** 协议可用能力快照。 */
-  readonly capabilities: ProtocolCapabilities
-  /** 判定连接 ready 的边界。 */
-  readonly readyWhen: 'socket-open' | 'adapter-frame'
   /** 可跨 Worker 的共享协议配置，不得包含页面秘密。 */
   readonly sharedConfig: Readonly<Record<string, unknown>>
 }
@@ -53,13 +50,13 @@ export interface NormalizedProtocolDescriptor {
 export interface SharedConnectionConfig {
   /** 原生 WebSocket subprotocol token 列表。 */
   readonly protocols: readonly string[]
-  /** 规范化协议身份及能力。 */
+  /** 规范化协议身份与共享静态配置。 */
   readonly protocol: NormalizedProtocolDescriptor
   /** Worker socket 的二进制接收表示。 */
   readonly binaryType: 'arraybuffer' | 'blob'
   /** 物理连接共用的重连策略。 */
   readonly reconnect: false | Readonly<ReconnectOptions>
-  /** 建连或协议握手超时，单位为毫秒。 */
+  /** 原生 WebSocket 建连超时，单位为毫秒。 */
   readonly connectionTimeout: number
   /** 物理连接共用的心跳策略。 */
   readonly heartbeat: false | Readonly<HeartbeatOptions>
@@ -90,7 +87,7 @@ export interface LocalClientConfig {
   readonly logger: SocketFuseLogger | undefined
 }
 
-export interface NormalizedWebSocketConfig<Incoming, Outgoing, Auth> {
+export interface NormalizedWebSocketConfig<Incoming, Outgoing> {
   /** 共享连接的业务 identity。 */
   readonly id: string
   /** 当前 endpoint 的绝对 ws/wss URL。 */
@@ -104,7 +101,7 @@ export interface NormalizedWebSocketConfig<Incoming, Outgoing, Auth> {
   /** 共享配置的稳定 hash。 */
   readonly configFingerprint: string
   /** 当前 realm 使用的协议适配器实现。 */
-  readonly adapter: ProtocolAdapter<Incoming, Outgoing, Auth>
+  readonly adapter: ProtocolAdapter<Incoming, Outgoing>
 }
 
 /** WebSocket subprotocol token 的语法约束。 */
@@ -133,17 +130,29 @@ function positiveInteger(value: unknown, field: string): number {
 }
 
 /** 解析并校验绝对 ws/wss endpoint。 */
-function normalizeUrl(url: string | URL): string {
+function normalizeUrl(url: string): string {
+  if (typeof url !== 'string')
+    throw invalidOptions('url must be a fixed string', 'url')
+  if (url.length > MAX_ENDPOINT_LENGTH)
+    throw invalidOptions(`url must be at most ${MAX_ENDPOINT_LENGTH} characters`, 'url')
   let parsed: URL
   try {
-    parsed = url instanceof URL ? new URL(url.href) : new URL(url)
+    parsed = new URL(url)
   }
   catch {
     throw invalidOptions('url must be an absolute ws: or wss: URL', 'url')
   }
   if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:')
     throw invalidOptions('url must use the ws: or wss: protocol', 'url')
+  if (parsed.href.length > MAX_ENDPOINT_LENGTH)
+    throw invalidOptions(`url must be at most ${MAX_ENDPOINT_LENGTH} characters after normalization`, 'url')
   return parsed.href
+}
+
+/** 校验可同步参与共享 fingerprint 的 raw 心跳 payload。 */
+function assertHeartbeatPayload(value: unknown, field: string): asserts value is HeartbeatPayload {
+  if (typeof value !== 'string' && !(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value))
+    throw invalidOptions(`${field} must be a string, ArrayBuffer, or ArrayBufferView`, field)
 }
 
 /** 规范化并去重 WebSocket subprotocol token。 */
@@ -185,11 +194,12 @@ function normalizeReconnect(value: boolean | Partial<ReconnectOptions> | undefin
     maxDelay,
     retries,
     stableThreshold: positiveNumber(input.stableThreshold ?? DEFAULT_RECONNECT_OPTIONS.stableThreshold, 'autoReconnect.stableThreshold', true),
+    hookTimeout: positiveNumber(input.hookTimeout ?? DEFAULT_RECONNECT_OPTIONS.hookTimeout, 'autoReconnect.hookTimeout'),
   })
 }
 
 /** 规范化共享心跳策略并验证其 payload 可跨 Worker。 */
-function normalizeHeartbeat(value: boolean | Partial<HeartbeatOptions> | undefined): false | Readonly<HeartbeatOptions> {
+function normalizeHeartbeat(value: boolean | Partial<HeartbeatOptions> | undefined, protocolKind: NormalizedProtocolDescriptor['kind']): false | Readonly<HeartbeatOptions> {
   if (value === false || value === undefined)
     return false
   if (value !== true && (value === null || typeof value !== 'object'))
@@ -198,17 +208,27 @@ function normalizeHeartbeat(value: boolean | Partial<HeartbeatOptions> | undefin
   const mode = input.mode ?? DEFAULT_HEARTBEAT_OPTIONS.mode
   if (mode !== 'pong' && mode !== 'activity')
     throw invalidOptions('heartbeat.mode must be pong or activity', 'heartbeat.mode')
+  const hasRawMessage = Object.prototype.hasOwnProperty.call(input, 'message')
+  const hasRawResponse = Object.prototype.hasOwnProperty.call(input, 'responseMessage')
+  if (protocolKind !== 'raw' && (hasRawMessage || hasRawResponse))
+    throw invalidOptions('heartbeat.message and heartbeat.responseMessage are only available with the raw protocol', 'heartbeat')
+  const pongTimeout = input.pongTimeout === undefined
+    ? undefined
+    : positiveNumber(input.pongTimeout, 'heartbeat.pongTimeout')
+  const timing = {
+    interval: positiveNumber(input.interval ?? DEFAULT_HEARTBEAT_OPTIONS.interval, 'heartbeat.interval'),
+    mode,
+    ...(pongTimeout === undefined ? {} : { pongTimeout }),
+  }
+  if (protocolKind !== 'raw')
+    return Object.freeze(timing)
   const message = input.message ?? DEFAULT_HEARTBEAT_OPTIONS.message
   const responseMessage = input.responseMessage ?? DEFAULT_HEARTBEAT_OPTIONS.responseMessage
+  assertHeartbeatPayload(message, 'heartbeat.message')
+  assertHeartbeatPayload(responseMessage, 'heartbeat.responseMessage')
   assertStructuredCloneable(message, 'heartbeat.message')
   assertStructuredCloneable(responseMessage, 'heartbeat.responseMessage')
-  return Object.freeze({
-    interval: positiveNumber(input.interval ?? DEFAULT_HEARTBEAT_OPTIONS.interval, 'heartbeat.interval'),
-    message,
-    mode,
-    pongTimeout: positiveNumber(input.pongTimeout ?? DEFAULT_HEARTBEAT_OPTIONS.pongTimeout, 'heartbeat.pongTimeout'),
-    responseMessage,
-  })
+  return Object.freeze({ ...timing, message, responseMessage })
 }
 
 /** 规范化有界出站队列策略。 */
@@ -281,9 +301,9 @@ export function normalizeRestoreOptions(value: CreateWebSocketOptions['lifecycle
 }
 
 /** 解析 raw、JSON 或 custom adapter，并生成共享协议描述。 */
-function normalizeProtocol<Incoming, Outgoing, Auth>(
-  protocol: CreateWebSocketOptions<Incoming, Outgoing, Auth>['protocol'],
-): { descriptor: NormalizedProtocolDescriptor, adapter: ProtocolAdapter<Incoming, Outgoing, Auth> | null } {
+function normalizeProtocol<Incoming, Outgoing>(
+  protocol: CreateWebSocketOptions<Incoming, Outgoing>['protocol'],
+): { descriptor: NormalizedProtocolDescriptor, adapter: ProtocolAdapter<Incoming, Outgoing> | null } {
   if (protocol === undefined || protocol === 'raw')
     return { adapter: null, descriptor: getProtocolDescriptor('raw') }
 
@@ -291,21 +311,19 @@ function normalizeProtocol<Incoming, Outgoing, Auth>(
     throw invalidOptions('protocol must be raw, JSON options, or a protocol adapter', 'protocol')
 
   if ('type' in protocol && protocol.type === 'json') {
-    const adapter = createJsonProtocolAdapter(protocol as JsonProtocolOptions) as unknown as ProtocolAdapter<Incoming, Outgoing, Auth>
+    const adapter = createJsonProtocolAdapter(protocol as JsonProtocolOptions) as unknown as ProtocolAdapter<Incoming, Outgoing>
     return { adapter, descriptor: getProtocolDescriptor(protocol as JsonProtocolOptions) }
   }
 
   validateProtocolAdapter(protocol)
-  const adapter = protocol as ProtocolAdapter<Incoming, Outgoing, Auth>
+  const adapter = protocol as ProtocolAdapter<Incoming, Outgoing>
   const sharedConfig = adapter.sharedConfig ?? {}
   assertStructuredCloneable(sharedConfig, 'protocol.sharedConfig')
   return {
     adapter,
     descriptor: Object.freeze({
-      capabilities: Object.freeze({ ...adapter.capabilities }),
       id: adapter.id,
       kind: 'custom',
-      readyWhen: adapter.readyWhen ?? 'socket-open',
       sharedConfig,
       version: adapter.version,
     }),
@@ -313,14 +331,16 @@ function normalizeProtocol<Incoming, Outgoing, Auth>(
 }
 
 /** 将创建选项拆分为共享配置与页面本地配置。 */
-export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = SocketData, Auth = unknown>(
-  url: string | URL,
-  options: CreateWebSocketOptions<Incoming, Outgoing, Auth>,
-): NormalizedWebSocketConfig<Incoming, Outgoing, Auth> {
+export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = SocketData>(
+  url: string,
+  options: CreateWebSocketOptions<Incoming, Outgoing>,
+): NormalizedWebSocketConfig<Incoming, Outgoing> {
   if (options === null || typeof options !== 'object')
     throw invalidOptions('options must be an object', 'options')
   if (typeof options.id !== 'string' || options.id.trim().length === 0)
     throw invalidOptions('id must be a non-empty string', 'id')
+  if (options.id.length > 1_024)
+    throw invalidOptions('id must be at most 1024 characters', 'id')
   if (options.fallback !== undefined && options.fallback !== 'direct' && options.fallback !== 'error')
     throw invalidOptions('fallback must be direct or error', 'fallback')
   if (options.binaryType !== undefined && options.binaryType !== 'arraybuffer' && options.binaryType !== 'blob')
@@ -336,7 +356,7 @@ export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = Sock
     backpressure: normalizeBackpressure(options.backpressure),
     binaryType: options.binaryType ?? 'arraybuffer',
     connectionTimeout: positiveNumber(options.connectionTimeout ?? DEFAULT_CONNECTION_TIMEOUT, 'connectionTimeout'),
-    heartbeat: normalizeHeartbeat(options.heartbeat),
+    heartbeat: normalizeHeartbeat(options.heartbeat, descriptor.kind),
     idleGraceMs: positiveNumber(options.idleGraceMs ?? DEFAULT_IDLE_GRACE_MS, 'idleGraceMs', true),
     lease: normalizeLease(options.lease),
     limits: normalizeLimits(options.limits),
@@ -345,12 +365,12 @@ export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = Sock
     queue: normalizeQueue(options.queue),
     reconnect: normalizeReconnect(options.autoReconnect),
   })
-  if (shared.heartbeat !== false && !descriptor.capabilities.heartbeat)
-    throw invalidOptions('heartbeat requires a protocol with heartbeat capability', 'heartbeat')
+  if (shared.heartbeat !== false && descriptor.kind !== 'raw' && adapter?.createPing === undefined)
+    throw invalidOptions('heartbeat requires the protocol adapter to implement createPing', 'heartbeat')
 
   const configCanonical = stableSerialize(shared)
   return Object.freeze({
-    adapter: adapter ?? rawProtocol as unknown as ProtocolAdapter<Incoming, Outgoing, Auth>,
+    adapter: adapter ?? rawProtocol as unknown as ProtocolAdapter<Incoming, Outgoing>,
     configCanonical,
     configFingerprint: stableHash(shared),
     id: options.id,
@@ -367,10 +387,10 @@ export function normalizeWebSocketOptions<Incoming = SocketData, Outgoing = Sock
   })
 }
 
-/** 比较两个规范化配置是否会在同一 id 下冲突。 */
+/** 比较两个规范化共享字段是否冲突；endpoint 不属于共享身份。 */
 export function hasConfigConflict(
-  current: Pick<NormalizedWebSocketConfig<unknown, unknown, unknown>, 'configCanonical'>,
-  incoming: Pick<NormalizedWebSocketConfig<unknown, unknown, unknown>, 'configCanonical'>,
+  current: Pick<NormalizedWebSocketConfig<unknown, unknown>, 'configCanonical'>,
+  incoming: Pick<NormalizedWebSocketConfig<unknown, unknown>, 'configCanonical'>,
 ): boolean {
   return current.configCanonical !== incoming.configCanonical
 }

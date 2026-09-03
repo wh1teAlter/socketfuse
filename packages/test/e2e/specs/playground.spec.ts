@@ -41,6 +41,11 @@ async function dispatchPageTransition(page: Page, type: 'pagehide' | 'pageshow',
   }, { persisted, type })
 }
 
+/** 在页面 document 派发 freeze/resume，验证 Worker 授权转移而不真正暂停测试进程。 */
+async function dispatchDocumentLifecycle(page: Page, type: 'freeze' | 'resume'): Promise<void> {
+  await page.evaluate(value => document.dispatchEvent(new Event(value)), type)
+}
+
 /** 填充 playground 表单并等待 client 打开。 */
 async function connect(page: Page, url: string, id: string): Promise<void> {
   await page.getByLabel('URL').fill(url)
@@ -94,10 +99,60 @@ test('reconnects the selected SharedWorker transport after an ordinary socket fa
   const testNamespace = namespace('reconnect')
   await page.goto('http://127.0.0.1:4173/playground')
   await connect(page, socketUrl(testNamespace), `reconnect-${testNamespace}`)
+  await page.getByLabel('URL').fill(`${socketUrl(testNamespace)}&generation=2`)
   await closeSockets(request, testNamespace)
   await expect(page.locator('#transport')).toHaveText('shared-worker')
   await expect(page.locator('#status')).toHaveText('OPEN')
+  await expect(page.locator('#reconnect-hook-count')).toHaveText('1')
   await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(2)
+  await expect.poll(async () => (await stats(request, testNamespace)).lastUrl).toContain('generation=2')
+})
+
+test('sends and consumes raw application heartbeat without exposing pong as a message', async ({ page, request }) => {
+  const testNamespace = namespace('raw-heartbeat')
+  await page.goto('http://127.0.0.1:4173/playground?e2eHeartbeat=1')
+  await connect(page, `${socketUrl(testNamespace)}&applicationHeartbeat=1`, `raw-heartbeat-${testNamespace}`)
+
+  await expect.poll(async () => (await stats(request, testNamespace)).totalMessages).toBeGreaterThan(0)
+  await expect(page.locator('#status')).toHaveText('OPEN')
+  await expect(page.locator('#message-count')).toHaveText('0')
+  await expect(page.locator('#exclusive-message-count')).toHaveText('0')
+})
+
+test('executes a keyed handler in one tab and transfers it after freeze', async ({ browser, request }) => {
+  const testNamespace = namespace('exclusive-key')
+  const context = await browser.newContext()
+  const first = await context.newPage()
+  const second = await context.newPage()
+  try {
+    await Promise.all([
+      first.goto('http://127.0.0.1:4173/playground'),
+      second.goto('http://127.0.0.1:4173/playground'),
+    ])
+    await connect(first, socketUrl(testNamespace), `exclusive-key-${testNamespace}`)
+    await connect(second, socketUrl(testNamespace), `exclusive-key-${testNamespace}`)
+    await expect(first.locator('#exclusive-key-held')).toHaveText('HELD')
+    await expect(second.locator('#exclusive-key-held')).toHaveText('WAITING')
+
+    await broadcast(request, testNamespace, 'before-freeze')
+    await expect(first.locator('#messages')).toContainText('before-freeze')
+    await expect(second.locator('#messages')).toContainText('before-freeze')
+    await expect(first.locator('#exclusive-message-count')).toHaveText('1')
+    await expect(second.locator('#exclusive-message-count')).toHaveText('0')
+
+    await dispatchDocumentLifecycle(first, 'freeze')
+    await expect(first.locator('#exclusive-key-held')).toHaveText('WAITING')
+    await expect(second.locator('#exclusive-key-held')).toHaveText('HELD')
+    await broadcast(request, testNamespace, 'after-freeze')
+    await expect(first.locator('#messages')).toContainText('after-freeze')
+    await expect(second.locator('#messages')).toContainText('after-freeze')
+    await expect(first.locator('#exclusive-message-count')).toHaveText('1')
+    await expect(second.locator('#exclusive-message-count')).toHaveText('1')
+    await dispatchDocumentLifecycle(first, 'resume')
+  }
+  finally {
+    await context.close()
+  }
 })
 
 test('reloads a page and releases its logical client without leaking the physical socket', async ({ page, request }) => {
@@ -160,33 +215,6 @@ test('rebuilds a terminated SharedWorker after BFCache restore without direct fa
   await expect(page.locator('#transport')).toHaveText('shared-worker')
   await expect(page.locator('#status')).toHaveText('OPEN')
   await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(2)
-})
-
-test('replays the latest URL and auth revisions after Worker restart', async ({ page, request }) => {
-  const testNamespace = namespace('revision-replay')
-  const initialUrl = socketUrl(testNamespace)
-  const revisedUrl = `${initialUrl}&revision=2`
-  await page.goto('http://127.0.0.1:4173/playground?e2eWorkerRestart=1&e2eRevisionReplay=1')
-  await page.getByLabel('页面隐藏时回放').check()
-  await connect(page, initialUrl, `revision-replay-${testNamespace}`)
-  await page.evaluate((url) => {
-    const playground = window as unknown as { __socketfusePlaygroundApplyRevisions: (nextUrl: string) => Promise<void> }
-    return playground.__socketfusePlaygroundApplyRevisions(url)
-  }, revisedUrl)
-  await expect.poll(async () => (await stats(request, testNamespace)).lastUrl).toContain('revision=2')
-  await expect.poll(async () => (await stats(request, testNamespace)).totalMessages).toBe(1)
-  await dispatchPageTransition(page, 'pagehide', true)
-  await page.evaluate(() => {
-    const playground = window as unknown as { __socketfusePlaygroundTerminateWorker: () => void }
-    playground.__socketfusePlaygroundTerminateWorker()
-  })
-  await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(0)
-  await dispatchPageTransition(page, 'pageshow', true)
-  await expect(page.locator('#transport')).toHaveText('shared-worker')
-  await expect(page.locator('#status')).toHaveText('OPEN')
-  await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(3)
-  await expect.poll(async () => (await stats(request, testNamespace)).lastUrl).toContain('revision=2')
-  await expect.poll(async () => (await stats(request, testNamespace)).totalMessages).toBe(2)
 })
 
 test('releases the physical socket after every client disconnects', async ({ page, request }) => {

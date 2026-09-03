@@ -4,12 +4,11 @@ import { SocketFuseError } from '../shared/errors'
 
 /** 连接状态机允许的有向迁移图；未列出的边必须失败。 */
 const transitions: Readonly<Record<ConnectionState, readonly ConnectionState[]>> = {
-  closed: ['connecting', 'idle', 'failed'],
-  closing: ['closed', 'idle', 'connecting'],
-  connecting: ['handshaking', 'open', 'reconnecting', 'closing', 'closed', 'failed'],
-  failed: ['connecting', 'idle'],
-  handshaking: ['open', 'reconnecting', 'closing', 'closed', 'failed'],
-  idle: ['connecting', 'closed'],
+  closed: ['connecting', 'reconnecting', 'idle', 'failed'],
+  closing: ['closed', 'idle', 'connecting', 'reconnecting'],
+  connecting: ['open', 'reconnecting', 'closing', 'closed', 'failed'],
+  failed: ['connecting', 'reconnecting', 'idle'],
+  idle: ['connecting', 'reconnecting', 'closed'],
   open: ['reconnecting', 'closing', 'closed', 'failed'],
   reconnecting: ['connecting', 'closing', 'closed', 'failed'],
 }
@@ -55,7 +54,7 @@ export class ConnectionStateMachine {
 
 /** 将详细状态映射到原生 WebSocket readyState 数值。 */
 export function readyStateFor(state: ConnectionState): ReadyState {
-  if (state === 'connecting' || state === 'handshaking' || state === 'reconnecting')
+  if (state === 'connecting' || state === 'reconnecting')
     return 0
   if (state === 'open')
     return 1
@@ -66,7 +65,7 @@ export function readyStateFor(state: ConnectionState): ReadyState {
 
 /** 将详细状态压缩为公开的 OPEN/CONNECTING/CLOSED 状态。 */
 export function statusFor(state: ConnectionState): WebSocketStatus {
-  if (state === 'connecting' || state === 'handshaking' || state === 'reconnecting')
+  if (state === 'connecting' || state === 'reconnecting')
     return 'CONNECTING'
   if (state === 'open')
     return 'OPEN'

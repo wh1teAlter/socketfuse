@@ -7,7 +7,6 @@ describe('connection state machine', () => {
   it('accepts the physical connection lifecycle', () => {
     const machine = new ConnectionStateMachine()
     machine.transition('connecting')
-    machine.transition('handshaking')
     machine.transition('open')
     machine.transition('reconnecting')
     machine.transition('connecting')
@@ -21,7 +20,7 @@ describe('connection state machine', () => {
   })
 
   it('maps browser-compatible state values', () => {
-    expect(readyStateFor('handshaking')).toBe(0)
+    expect(readyStateFor('connecting')).toBe(0)
     expect(readyStateFor('open')).toBe(1)
     expect(readyStateFor('closing')).toBe(2)
     expect(statusFor('failed')).toBe('CLOSED')

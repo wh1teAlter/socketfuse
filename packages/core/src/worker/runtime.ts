@@ -4,7 +4,7 @@
  * hello 是 attach 的事务边界：只有配置重建、controller.attach 和 client 提交都成功，
  * 端口才成为已附着 client；任一失败都必须回滚临时连接和端口 timer。
  */
-import type { JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, TimerHandle, WorkerResourceLimits } from '../shared/types'
+import type { ClientVisibility, JsonProtocolOptions, NormalizedRestoreOptions, ProtocolAdapter, TimerHandle, WorkerResourceLimits } from '../shared/types'
 import type { WebSocketFactory } from '../transport/socket'
 import { type ClientControlMessage, type ControlError, type ControlResponseValue, type HelloRequest, isClientControlMessage, type WorkerControlMessage } from './control'
 import { type NormalizedWebSocketConfig, normalizeRestoreOptions, normalizeWebSocketOptions, type SharedConnectionConfig } from '../config/normalize'
@@ -13,6 +13,8 @@ import { createJsonProtocolAdapter, rawProtocol, validateProtocolAdapter } from 
 import { CONTROL_PROTOCOL_MAJOR, DEFAULT_WORKER_RESOURCE_LIMITS } from '../shared/constants'
 import { ConnectionController, type ConnectionSink } from '../connection/controller'
 import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
+import { ReconnectCoordinator } from '../transport/reconnect-coordinator'
+import { ExclusiveKeyRegistry } from './exclusive-keys'
 
 /** 自定义 Worker runtime 使用的最小 MessagePort 能力面。 */
 export interface MessagePortLike {
@@ -35,7 +37,7 @@ export interface MessagePortLike {
 /** 自定义 Worker runtime 的依赖、时钟与静态协议注册。 */
 export interface SharedWebSocketRuntimeOptions {
   /** 在 Worker 内静态注册的 custom adapter。 */
-  readonly protocols?: readonly ProtocolAdapter<unknown, unknown, unknown>[]
+  readonly protocols?: readonly ProtocolAdapter<unknown, unknown>[]
   /** 可注入的 WebSocket 工厂。 */
   readonly socketFactory?: WebSocketFactory
   /** 当前时间源，单位为 Unix 毫秒。 */
@@ -81,15 +83,21 @@ interface RuntimeClient {
   inboundDroppedMessages: number
   /** credit 满时待通知的入站丢弃字节。 */
   inboundDroppedBytes: number
+  /** Worker 最近收到的页面执行活性。 */
+  visibility: ClientVisibility
 }
 
 interface ConnectionEntry {
   /** 共享配置 canonical，用于冲突检测。 */
   readonly canonical: string
   /** Worker 重建物理连接所需配置。 */
-  readonly config: NormalizedWebSocketConfig<unknown, unknown, unknown>
+  readonly config: NormalizedWebSocketConfig<unknown, unknown>
   /** 该 id 唯一的物理连接 controller。 */
-  readonly controller: ConnectionController<unknown, unknown, unknown>
+  readonly controller: ConnectionController<unknown, unknown>
+  /** 该共享连接作用域内的 execution key 仲裁器。 */
+  readonly exclusiveKeys: ExclusiveKeyRegistry
+  /** 页面候选与 connection plan 之间的有界协调器。 */
+  readonly reconnect: ReconnectCoordinator
 }
 
 /** SharedWorker 端 runtime：接受页面 port 并拥有共享物理连接。 */
@@ -134,6 +142,7 @@ function normalizeWorkerLimits(value: Partial<WorkerResourceLimits> | undefined)
     throw new SocketFuseError('INVALID_OPTIONS', 'workerLimits must be an options object')
   return Object.freeze({
     maxControlEnvelopeBytes: positiveInteger(value?.maxControlEnvelopeBytes ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxControlEnvelopeBytes, 'workerLimits.maxControlEnvelopeBytes'),
+    maxExclusiveKeys: positiveInteger(value?.maxExclusiveKeys ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxExclusiveKeys, 'workerLimits.maxExclusiveKeys'),
     maxPorts: positiveInteger(value?.maxPorts ?? DEFAULT_WORKER_RESOURCE_LIMITS.maxPorts, 'workerLimits.maxPorts'),
     unattachedPortTimeoutMs: positiveNumber(value?.unattachedPortTimeoutMs ?? DEFAULT_WORKER_RESOURCE_LIMITS.unattachedPortTimeoutMs, 'workerLimits.unattachedPortTimeoutMs'),
   })
@@ -167,12 +176,12 @@ const MAX_OUTSTANDING_DELIVERY_BYTES = 4 * 1024 * 1024
 /** 从共享协议描述解析 Worker 内的 adapter 实现。 */
 function resolveAdapter(
   shared: SharedConnectionConfig,
-  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
-): ProtocolAdapter<unknown, unknown, unknown> {
+  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown>>,
+): ProtocolAdapter<unknown, unknown> {
   if (shared.protocol.kind === 'raw')
-    return rawProtocol as ProtocolAdapter<unknown, unknown, unknown>
+    return rawProtocol as ProtocolAdapter<unknown, unknown>
   if (shared.protocol.kind === 'json')
-    return createJsonProtocolAdapter(shared.protocol.sharedConfig as never) as ProtocolAdapter<unknown, unknown, unknown>
+    return createJsonProtocolAdapter(shared.protocol.sharedConfig as never) as ProtocolAdapter<unknown, unknown>
   const adapter = adapters.get(adapterKey(shared.protocol.id, shared.protocol.version))
   if (adapter === undefined)
     throw new SocketFuseError('ADAPTER_NOT_REGISTERED', 'Custom protocol adapter is not registered in this Worker')
@@ -182,8 +191,8 @@ function resolveAdapter(
 /** 根据 hello 重建 Worker 侧规范化配置并校验 canonical/fingerprint。 */
 function createWorkerConfig(
   message: HelloRequest,
-  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown, unknown>>,
-): { readonly config: NormalizedWebSocketConfig<unknown, unknown, unknown>, readonly restore: Readonly<NormalizedRestoreOptions> } {
+  adapters: ReadonlyMap<string, ProtocolAdapter<unknown, unknown>>,
+): { readonly config: NormalizedWebSocketConfig<unknown, unknown>, readonly restore: Readonly<NormalizedRestoreOptions> } {
   const adapter = resolveAdapter(message.shared, adapters)
   const protocol = message.shared.protocol.kind === 'raw'
     ? 'raw'
@@ -204,7 +213,7 @@ function createWorkerConfig(
     protocols: message.shared.protocols,
     queue: message.shared.queue,
     worker: () => null as unknown as SharedWorker,
-  }) as NormalizedWebSocketConfig<unknown, unknown, unknown>
+  }) as NormalizedWebSocketConfig<unknown, unknown>
   if (normalized.configCanonical !== message.configCanonical || normalized.configFingerprint !== message.configFingerprint)
     throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'Hello configuration does not match its canonical fingerprint')
   return { config: normalized, restore: normalizeRestoreOptions({ restore: message.restore.enabled
@@ -229,45 +238,73 @@ function serializeError(error: unknown): ControlError {
  */
 export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOptions = {}): SharedWebSocketRuntime {
   const workerLimits = normalizeWorkerLimits(options.workerLimits)
-  const adapters = new Map<string, ProtocolAdapter<unknown, unknown, unknown>>()
+  const adapters = new Map<string, ProtocolAdapter<unknown, unknown>>()
   for (const adapter of options.protocols ?? []) {
     validateProtocolAdapter(adapter)
     adapters.set(adapterKey(adapter.id, adapter.version), adapter)
   }
   const connections = new Map<string, ConnectionEntry>()
   const clients = new Map<MessagePortLike, RuntimeClient>()
+  const clientsById = new Map<string, RuntimeClient>()
   const connectedPorts = new Set<MessagePortLike>()
   const unattachedTimers = new Map<MessagePortLike, TimerHandle>()
+  /** 正在回收的坏端口；阻止撤销通知再次递归回收同一端口。 */
+  const detachingPorts = new Set<MessagePortLike>()
   const now = options.now ?? Date.now
   const instanceId = createId()
   let leaseTimer: TimerHandle | undefined
   let disposed = false
 
+  /** 动态统计所有连接当前不同 execution key，避免授权投递失败的递归回收重复记账。 */
+  const countExclusiveKeys = (): number => {
+    let count = 0
+    for (const entry of connections.values())
+      count += entry.exclusiveKeys.size
+    return count
+  }
+
   /** 将页面 port 从 client、连接 owner 和 Worker 资源集合中释放。 */
   const detach = (port: MessagePortLike, closePort: boolean, releasePort = closePort): void => {
+    if (detachingPorts.has(port)) {
+      if (closePort)
+        port.close?.()
+      return
+    }
+    detachingPorts.add(port)
     const client = clients.get(port)
-    if (client !== undefined) {
-      const entry = connections.get(client.connectionId)
-      entry?.controller.detach(client.clientId)
-      clients.delete(port)
+    try {
+      if (client !== undefined) {
+        const entry = connections.get(client.connectionId)
+        // 先删除路由，再触发 key/reconnect 撤销回调；坏端口不能再次收到
+        // 自己的 revoke/abort 通知并递归进入 detach。
+        clients.delete(port)
+        clientsById.delete(client.clientId)
+        entry?.exclusiveKeys.removeClient(client.clientId)
+        entry?.reconnect.unregister(client.clientId)
+        entry?.controller.detach(client.clientId)
+      }
+      if (releasePort) {
+        connectedPorts.delete(port)
+        const timer = unattachedTimers.get(port)
+        if (timer !== undefined)
+          (options.clearTimeout ?? globalThis.clearTimeout)(timer)
+        unattachedTimers.delete(port)
+      }
+      if (closePort)
+        port.close?.()
     }
-    if (releasePort) {
-      connectedPorts.delete(port)
-      const timer = unattachedTimers.get(port)
-      if (timer !== undefined)
-        (options.clearTimeout ?? globalThis.clearTimeout)(timer)
-      unattachedTimers.delete(port)
+    finally {
+      detachingPorts.delete(port)
     }
-    if (closePort)
-      port.close?.()
   }
 
   /** 只移除仍由指定 controller 拥有且没有 client 的连接项。 */
-  const removeIdleConnection = (id: string, controller: ConnectionController<unknown, unknown, unknown>): void => {
+  const removeIdleConnection = (id: string, controller: ConnectionController<unknown, unknown>): void => {
     const entry = connections.get(id)
     if (entry?.controller !== controller || controller.attachedClientCount !== 0)
       return
     connections.delete(id)
+    entry.reconnect.dispose()
     controller.dispose()
   }
 
@@ -400,11 +437,37 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         connectedPorts.add(port)
       }
       const workerConfig = createWorkerConfig(message, adapters)
+      const existingClient = clientsById.get(message.clientId)
+      if (existingClient !== undefined && existingClient.port !== port)
+        throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'Client id is already attached')
       let entry = connections.get(message.id)
       if (entry !== undefined && entry.canonical !== message.configCanonical)
         throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Connection id already uses a different shared configuration')
       if (entry === undefined) {
         const config = workerConfig.config
+        /** reconnect 回调只会在 controller 构造完成并开始连接后触发。 */
+        const controllerHolder: { current?: ConnectionController<unknown, unknown> } = {}
+        const reconnect = new ReconnectCoordinator({
+          ...(options.clearTimeout === undefined ? {} : { clearTimeout: options.clearTimeout }),
+          onAbort: (clientId, planId) => {
+            const target = clientsById.get(clientId)
+            if (target !== undefined)
+              post(target.port, { planId, type: 'abort-reconnect' })
+          },
+          onAssign: (clientId, plan) => {
+            const target = clientsById.get(clientId)
+            if (target !== undefined)
+              post(target.port, { plan, type: 'before-reconnect' })
+          },
+          onCommit: (planId, override) => {
+            const current = controllerHolder.current
+            if (current === undefined)
+              throw new SocketFuseError('INTERNAL_STATE_ERROR', 'Worker reconnect controller is unavailable')
+            current.commitReconnectPlan(planId, override)
+          },
+          ...(options.setTimeout === undefined ? {} : { setTimeout: options.setTimeout }),
+          timeout: config.shared.reconnect === false ? 10_000 : config.shared.reconnect.hookTimeout,
+        })
         const controller = new ConnectionController({
           ...(options.clearTimeout === undefined ? {} : { clearTimeout: options.clearTimeout }),
           config,
@@ -412,13 +475,25 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
           ...(options.setTimeout === undefined ? {} : { setTimeout: options.setTimeout }),
           ...(options.socketFactory === undefined ? {} : { socketFactory: options.socketFactory }),
           onIdle: idleController => removeIdleConnection(message.id, idleController),
+          onReconnectPlan: plan => reconnect.start(plan),
+          onReconnectPlanCancel: planId => reconnect.cancel(planId),
         })
-        entry = { canonical: message.configCanonical, config, controller }
+        controllerHolder.current = controller
+        const exclusiveKeys = new ExclusiveKeyRegistry({
+          onGrant: (clientId, key) => {
+            const target = clientsById.get(clientId)
+            if (target !== undefined)
+              post(target.port, { key, type: 'key-granted' })
+          },
+          onRevoke: (clientId, key) => {
+            const target = clientsById.get(clientId)
+            if (target !== undefined)
+              post(target.port, { key, type: 'key-revoked' })
+          },
+        })
+        entry = { canonical: message.configCanonical, config, controller, exclusiveKeys, reconnect }
         createdEntry = entry
         connections.set(message.id, entry)
-      }
-      else if (entry.controller.endpointRevision === 0 && entry.config.url !== message.url) {
-        throw new SocketFuseError('CONNECTION_CONFIG_CONFLICT', 'Initial endpoint conflicts with the current endpoint')
       }
       detach(port, false, false)
       const sink = createSink(port, message)
@@ -439,9 +514,11 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         nextDeliveryId: 0,
         outstandingBytes: 0,
         outstandingDeliveries: new Map(),
+        visibility: message.visibility,
       }
       entry.controller.attach(sink)
       clients.set(port, client)
+      clientsById.set(client.clientId, client)
       const unattachedTimer = unattachedTimers.get(port)
       if (unattachedTimer !== undefined)
         (options.clearTimeout ?? globalThis.clearTimeout)(unattachedTimer)
@@ -494,6 +571,22 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       }
       return
     }
+    if (message.type === 'visibility') {
+      const client = clients.get(port)
+      if (client !== undefined) {
+        client.visibility = message.visibility
+        const entry = connections.get(client.connectionId)
+        entry?.exclusiveKeys.setVisibility(client.clientId, message.visibility)
+        entry?.reconnect.setVisibility(client.clientId, message.visibility)
+        if (message.visibility === 'frozen' && entry !== undefined) {
+          // 即使当前不是 holder，也发送每个候选 key 的 revoke 屏障。这样
+          // thaw 后排队的旧 grant 必先经过 revoke，不能恢复冻结前权威。
+          for (const key of entry.exclusiveKeys.keysForClient(client.clientId))
+            post(client.port, { key, type: 'key-revoked' })
+        }
+      }
+      return
+    }
     if (message.type === 'receipt') {
       const client = clients.get(port)
       if (client !== undefined) {
@@ -511,26 +604,56 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
       switch (message.type) {
         case 'open':
           entry.controller.attach(client.sink)
-          respond(port, message.requestId, { ...await entry.controller.open(), transport: 'shared-worker' })
+          {
+            const snapshot = await entry.controller.open()
+            // close/dispose 可能在 open waiter 等待期间先提交；旧 client 不能
+            // 在脱离后收到成功响应，也不能把新 hello 的页面误认为仍在 open。
+            if (clients.get(port) !== client)
+              throw new SocketFuseError('CLIENT_DISCONNECTED', 'Client is no longer attached')
+            respond(port, message.requestId, { ...snapshot, transport: 'shared-worker' })
+          }
           break
         case 'close':
-          detach(port, false, true)
+          // 逻辑 close 只释放 client/connection 参与，不释放仍可重新 open 的
+          // MessagePort。端口继续计入 maxPorts，避免大量可发消息的未计数通道
+          // 绕过 Worker 控制平面上限；只有 dispose/坏端口才释放该额度。
+          detach(port, false, false)
           respond(port, message.requestId, null)
           break
         case 'send':
           respond(port, message.requestId, await entry.controller.send(client.clientId, message.data, message.options))
           break
-        case 'update-auth':
-          respond(port, message.requestId, await entry.controller.updateAuth(message.auth, message.revision))
+        case 'register-key': {
+          if (!entry.exclusiveKeys.has(message.key) && countExclusiveKeys() >= workerLimits.maxExclusiveKeys)
+            throw new SocketFuseError('RESOURCE_LIMIT_EXCEEDED', 'Maximum exclusive keys has been reached')
+          entry.exclusiveKeys.register(client.clientId, message.key, client.visibility)
+          respond(port, message.requestId, null)
           break
-        case 'clear-auth':
-          respond(port, message.requestId, await entry.controller.clearAuth(message.revision))
+        }
+        case 'unregister-key':
+          entry.exclusiveKeys.unregister(client.clientId, message.key)
+          respond(port, message.requestId, null)
           break
-        case 'update-url':
-          respond(port, message.requestId, await entry.controller.updateUrl(message.url, message.revision))
+        case 'set-reconnect-hook':
+          if (message.enabled)
+            entry.reconnect.register(client.clientId, client.visibility)
+          else
+            entry.reconnect.unregister(client.clientId)
+          respond(port, message.requestId, null)
+          break
+        case 'complete-reconnect-plan':
+          entry.reconnect.accept(client.clientId, message.planId, {
+            ...(message.delay === undefined ? {} : { delay: message.delay }),
+            ...(message.url === undefined ? {} : { url: message.url }),
+          })
+          respond(port, message.requestId, null)
+          break
+        case 'reject-reconnect-plan':
+          entry.reconnect.reject(client.clientId, message.planId)
+          respond(port, message.requestId, null)
           break
         case 'reconnect':
-          await entry.controller.reconnect(message.reason)
+          await entry.controller.reconnect()
           respond(port, message.requestId, null)
           break
         case 'diagnostics':
@@ -604,8 +727,10 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
         detach(port, true)
       for (const port of [...connectedPorts])
         detach(port, true)
-      for (const entry of connections.values())
+      for (const entry of connections.values()) {
+        entry.reconnect.dispose()
         entry.controller.dispose()
+      }
       connections.clear()
     },
     instanceId,

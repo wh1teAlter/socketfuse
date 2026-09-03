@@ -15,12 +15,15 @@ const {
   connectionId,
   disconnect,
   error,
+  exclusiveKeyHeld,
+  exclusiveMessageCount,
   fallback,
   isConnected,
   messageCount,
   messages,
   openAnotherTab,
   physicalConnections,
+  reconnectHookCount,
   replayWhileHidden,
   sendBinaryMessage,
   sendMessage,
@@ -71,6 +74,15 @@ const {
       </div>
       <div class="playground-metric">
         <span>消息数</span><strong id="message-count">{{ messageCount }}</strong>
+      </div>
+      <div class="playground-metric">
+        <span>独占 key</span><strong id="exclusive-key-held">{{ exclusiveKeyHeld ? 'HELD' : 'WAITING' }}</strong>
+      </div>
+      <div class="playground-metric">
+        <span>独占执行数</span><strong id="exclusive-message-count">{{ exclusiveMessageCount }}</strong>
+      </div>
+      <div class="playground-metric">
+        <span>重连 hook</span><strong id="reconnect-hook-count">{{ reconnectHookCount }}</strong>
       </div>
     </section>
 

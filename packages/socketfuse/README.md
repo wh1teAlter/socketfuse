@@ -18,7 +18,7 @@ ws.onMessage(event => console.log(event.data))
 await ws.open()
 ```
 
-只有 `id` 是必填配置。`sendMessage` 的成功代表本地 accepted/queued，不是服务器 Ack；`onMessage` 可在创建后动态添加。详细配置和限制见文档站。
+只有 `id` 是必填配置，URL 必须是已经求值的固定字符串。`sendMessage` 的成功代表本地 accepted/queued，不是服务器 Ack；`onMessage(handler, { key })` 可选择跨标签页单点执行，`onBeforeReconnect` 可为当前重连计划更新 URL 与延迟。credential、session、游标和消息幂等均由应用协议维护。详细配置和限制见文档站。
 
 ## 依赖与边界
 
