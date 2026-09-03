@@ -352,6 +352,47 @@ describe('connection-scoped extension lifecycle', () => {
     }
   })
 
+  it('keeps filtered frames out of a suspended tab replay buffer', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({
+      createExtension: (): ConnectionExtension => ({
+        filterInbound: data => String(data).startsWith('noise') ? 'drop' : 'deliver',
+      }),
+      socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    try {
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        id: 'ext-filter-replay',
+        lifecycle: { restore: { replay: true } },
+      })
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const received: { data: unknown, replayed: boolean }[] = []
+      const transport = new SharedWorkerTransport({ clientId: 'a', config, mode: 'inline', worker: { port: pair[0] } })
+      transport.attach({ id: 'a', onMessage: (data, _receivedAt, replayed) => received.push({ data, replayed: replayed ?? false }) })
+      const opening = transport.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+
+      transport.suspend()
+      sockets[0]?.message('noise-a')
+      sockets[0]?.message('wanted-a')
+      await new Promise(resolve => setTimeout(resolve, 0))
+      transport.restore()
+      await waitFor(() => received.length === 1)
+      // 过滤发生在 sink 之前，因此被丢弃的帧根本不会进入回放缓冲。
+      expect(received).toEqual([{ data: 'wanted-a', replayed: true }])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
   it('delivers the frame when the filter throws', async () => {
     const sockets: FakeSocket[] = []
     const runtime = createSharedWebSocketRuntime({
@@ -372,7 +413,8 @@ describe('connection-scoped extension lifecycle', () => {
       runtime.connect(pair[1])
       const received: unknown[] = []
       const transport = new SharedWorkerTransport({ clientId: 'a', config, mode: 'inline', worker: { port: pair[0] } })
-      transport.attach({ id: 'a', onMessage: data => received.push(data) })
+      const errors: { readonly code: string }[] = []
+      transport.attach({ id: 'a', onError: error => errors.push(error), onMessage: data => received.push(data) })
       const opening = transport.open()
       await waitFor(() => sockets.length === 1)
       sockets[0]?.open()
@@ -381,6 +423,11 @@ describe('connection-scoped extension lifecycle', () => {
       await waitFor(() => received.length === 1)
       // 静默丢弃全局消息比重复投递严重得多，因此过滤异常必须按放行降级。
       expect(received).toEqual(['must-not-vanish'])
+      // 但失败必须可观测：扩展 bug 不能静默，否则业务无法发现自己的过滤器坏了。
+      await waitFor(() => errors.length > 0)
+      expect(errors[0]?.code).toBe('INTERNAL_STATE_ERROR')
+      // 异常文本绝不跨端口传播。
+      expect(JSON.stringify(errors)).not.toContain('filter boom')
     }
     finally {
       runtime.dispose()
@@ -430,6 +477,168 @@ describe('connection-scoped extension lifecycle', () => {
       expect(reasons).toEqual(['socket-close'])
       // 扩展接管后页面不再被选为候选。
       expect(plans).toEqual([])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('does not prepare an attempt for the very first open', async () => {
+    const sockets: FakeSocket[] = []
+    let prepared = 0
+    const runtime = createSharedWebSocketRuntime({
+      createExtension: (): ConnectionExtension => ({
+        prepareAttempt: () => {
+          prepared++
+        },
+      }),
+      socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    try {
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'ext-first-open' })
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const transport = new SharedWorkerTransport({ clientId: 'c', config, mode: 'inline', worker: { port: pair[0] } })
+      transport.attach({ id: 'c' })
+      const opening = transport.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      expect(prepared).toBe(0)
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('applies a url-only or delay-only draft and falls back for the field left untouched', async () => {
+    for (const mode of ['url-only', 'delay-only', 'neither'] as const) {
+      const sockets: FakeSocket[] = []
+      const urls: string[] = []
+      const runtime = createSharedWebSocketRuntime({
+        createExtension: (): ConnectionExtension => ({
+          prepareAttempt: (context) => {
+            if (mode === 'url-only')
+              context.setOptions({ url: 'wss://example.test/only-url' })
+            if (mode === 'delay-only')
+              context.setDelay(0)
+          },
+        }),
+        socketFactory: (url) => {
+          urls.push(url)
+          const socket = new FakeSocket()
+          sockets.push(socket)
+          return socket
+        },
+      })
+      try {
+        const config = normalizeWebSocketOptions('wss://example.test/original', {
+          autoReconnect: { initialDelay: 0, jitter: 0 },
+          id: `ext-partial-${mode}`,
+        })
+        const pair = createPortPair()
+        runtime.connect(pair[1])
+        const transport = new SharedWorkerTransport({ clientId: 'c', config, mode: 'inline', worker: { port: pair[0] } })
+        transport.attach({ id: 'c' })
+        const opening = transport.open()
+        await waitFor(() => sockets.length === 1)
+        sockets[0]?.open()
+        await opening
+        sockets[0]?.close(1006)
+        await waitFor(() => sockets.length === 2)
+        // 未覆盖的字段必须回退到计划默认值，而不是被部分应用。
+        expect(urls[1]).toBe(mode === 'url-only' ? 'wss://example.test/only-url' : 'wss://example.test/original')
+      }
+      finally {
+        runtime.dispose()
+      }
+    }
+  })
+
+  it('rejects an invalid url without changing the endpoint', async () => {
+    const sockets: FakeSocket[] = []
+    const urls: string[] = []
+    const codes: string[] = []
+    const runtime = createSharedWebSocketRuntime({
+      createExtension: (): ConnectionExtension => ({
+        prepareAttempt: (context) => {
+          for (const invalid of ['/relative', 'https://example.test/x']) {
+            try {
+              context.setOptions({ url: invalid })
+            }
+            catch (error) {
+              codes.push((error as { code?: string }).code ?? 'unknown')
+            }
+          }
+        },
+      }),
+      socketFactory: (url) => {
+        urls.push(url)
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    try {
+      const config = normalizeWebSocketOptions('wss://example.test/original', {
+        autoReconnect: { initialDelay: 0, jitter: 0 },
+        id: 'ext-invalid-url',
+      })
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const transport = new SharedWorkerTransport({ clientId: 'c', config, mode: 'inline', worker: { port: pair[0] } })
+      transport.attach({ id: 'c' })
+      const opening = transport.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      sockets[0]?.close(1006)
+      await waitFor(() => sockets.length === 2)
+      expect(codes).toEqual(['INVALID_OPTIONS', 'INVALID_OPTIONS'])
+      expect(urls).toEqual(['wss://example.test/original', 'wss://example.test/original'])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('prepares an attempt for a heartbeat timeout as well as a socket close', async () => {
+    const sockets: FakeSocket[] = []
+    const reasons: string[] = []
+    const runtime = createSharedWebSocketRuntime({
+      createExtension: (): ConnectionExtension => ({
+        prepareAttempt: (context) => {
+          reasons.push(context.reason)
+          context.setDelay(0)
+        },
+      }),
+      socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    try {
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        autoReconnect: { initialDelay: 0, jitter: 0 },
+        heartbeat: { interval: 10, pongTimeout: 15 },
+        id: 'ext-heartbeat-reason',
+      })
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const transport = new SharedWorkerTransport({ clientId: 'c', config, mode: 'inline', worker: { port: pair[0] } })
+      transport.attach({ id: 'c' })
+      const opening = transport.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      // 服务端不回 pong，心跳超时必须进入同一条准备路径。
+      await waitFor(() => reasons.includes('heartbeat-timeout'))
+      expect(reasons[0]).toBe('heartbeat-timeout')
     }
     finally {
       runtime.dispose()

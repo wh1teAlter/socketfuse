@@ -297,16 +297,19 @@ function createWorkerConfig(
  * 执行一段业务扩展代码并吞掉其异常。
  *
  * 扩展由应用提供，其失败不得影响连接状态机、其他标签页或 Worker 控制平面；
- * 异常文本也绝不跨端口传播。
+ * 异常文本也绝不跨端口传播。但失败必须可观测，否则扩展的 bug 会静默改变全局
+ * 投递行为；调用方通过 `onFailure` 把它转成已脱敏诊断。
  *
  * @param run 待执行的扩展回调。
+ * @param onFailure 捕获到异常时调用；只接收稳定错误码，不接收原始异常。
  * @returns 回调返回值；抛出时返回 undefined。
  */
-function runExtension<Value>(run: () => Value): Value | undefined {
+function runExtension<Value>(run: () => Value, onFailure?: () => void): Value | undefined {
   try {
     return run()
   }
   catch {
+    onFailure?.()
     return undefined
   }
 }
@@ -329,6 +332,7 @@ function startExtensionPreparation(
   plan: Readonly<ReconnectPlan>,
   config: NormalizedWebSocketConfig<unknown, unknown>,
   timers: Pick<SharedWebSocketRuntimeOptions, 'clearTimeout' | 'setTimeout'> = {},
+  onFailure?: () => void,
 ): boolean {
   const setTimer = timers.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay))
   const clearTimer = timers.clearTimeout ?? (handle => globalThis.clearTimeout(handle))
@@ -384,11 +388,12 @@ function startExtensionPreparation(
       commit(draft)
     }
     catch {
-      // 扩展失败不得修改 endpoint，也不把异常文本跨端口传播。
+      // 扩展失败不得修改 endpoint，也不把异常文本跨端口传播；但失败必须可观测。
       if (abort.signal.aborted)
         return
       clearTimer(timer)
       abort.abort()
+      onFailure?.()
       commit({})
     }
   })()
@@ -646,10 +651,23 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
           connectionId: message.id,
           endpointOrigin: safeEndpointOrigin(config.url),
         })
+        /**
+         * 向该连接当前附着的全部页面报告一次扩展失败。
+         *
+         * 扩展不属于任何单个端口，因此失败必须广播；只发送稳定错误码，
+         * 不含异常文本、stack 或 endpoint，避免内部细节跨端口泄漏。
+         */
+        const reportExtensionFailure = (): void => {
+          const failure: ControlError = { code: 'INTERNAL_STATE_ERROR', fatal: false, retryable: false }
+          for (const client of clients.values()) {
+            if (client.connectionId === message.id)
+              post(client.port, { error: failure, type: 'error' })
+          }
+        }
         /** 扩展是业务代码；其异常绝不能影响连接状态机或其他标签页。 */
         const extension = options.createExtension === undefined
           ? undefined
-          : runExtension(() => options.createExtension?.(extensionContext(0)))
+          : runExtension(() => options.createExtension?.(extensionContext(0)), reportExtensionFailure)
         /** reconnect 回调只会在 controller 构造完成并开始连接后触发。 */
         const controllerHolder: { current?: ConnectionController<unknown, unknown> } = {}
         const reconnect = new ReconnectCoordinator({
@@ -686,17 +704,17 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
             : startExtensionPreparation(extension, controllerHolder, plan, config, {
                 ...(options.clearTimeout === undefined ? {} : { clearTimeout: options.clearTimeout }),
                 ...(options.setTimeout === undefined ? {} : { setTimeout: options.setTimeout }),
-              }),
+              }, reportExtensionFailure),
           onReconnectPlanCancel: planId => reconnect.cancel(planId),
           ...(extension?.onSocketOpen === undefined
             ? {}
-            : { onSocketOpen: (attempt: number) => runExtension(() => extension.onSocketOpen?.(extensionContext(attempt))) }),
+            : { onSocketOpen: (attempt: number) => runExtension(() => extension.onSocketOpen?.(extensionContext(attempt)), reportExtensionFailure) }),
           ...(extension?.filterInbound === undefined
             ? {}
             : {
                 // 过滤异常按放行降级：静默丢弃全局消息比重复投递严重得多。
                 shouldDeliverInbound: (data: unknown) =>
-                  runExtension(() => extension.filterInbound?.(data, extensionContext(controllerHolder.current?.retryAttempt ?? 0))) !== 'drop',
+                  runExtension(() => extension.filterInbound?.(data, extensionContext(controllerHolder.current?.retryAttempt ?? 0)), reportExtensionFailure) !== 'drop',
               }),
         })
         controllerHolder.current = controller
