@@ -110,38 +110,38 @@ SocketFuse 不提供入站去重或幂等检查。它只把业务帧派发到各
 
 ### Execution key
 
-- [ ] 相同 `id` 的两页共享一个物理 socket；每帧仍到达两页，keyed handler 只由当前 holder 启动，无 key handler 与 `message` 事件逐页执行。
-- [ ] 同 key 先注册者不被后注册抢占；visible 优先、同级 FIFO 只用于下一次选择，hidden 不主动转移。
-- [ ] close、dispose、端口失败、显式 freeze 与 lease 失效均 revoke 并转移；未 open/已 close 页不参与仲裁。
-- [ ] freeze 后排队消息不能以旧授权在 thaw 后启动 keyed handler；regrant 使用新的 AbortSignal。
-- [ ] `maxExclusiveKeys` 超限回滚失败意图，不影响 open、普通 handler、既有 key 或连接。
+- [x] 相同 `id` 的两页共享一个物理 socket；每帧仍到达两页，keyed handler 只由当前 holder 启动，无 key handler 与 `message` 事件逐页执行。
+- [x] 同 key 先注册者不被后注册抢占；visible 优先、同级 FIFO 只用于下一次选择，hidden 不主动转移。
+- [x] close、dispose、端口失败、显式 freeze 与 lease 失效均 revoke 并转移；未 open/已 close 页不参与仲裁。
+- [x] freeze 后排队消息不能以旧授权在 thaw 后启动 keyed handler；regrant 使用新的 AbortSignal。
+- [x] `maxExclusiveKeys` 超限回滚失败意图，不影响 open、普通 handler、既有 key 或连接。
 
 ### Endpoint and reconnect
 
-- [ ] 初始化拒绝 URL 对象/getter/Promise/模板，只接受固定绝对 ws/wss 字符串。
-- [ ] 同 id、同共享配置、不同 URL 可加入现有连接；后来 URL 不覆盖 endpoint；不同共享配置仍显式冲突。
-- [ ] 自动、heartbeat timeout 与显式 reconnect 都通过唯一 plan；显式 reconnect 默认 delay 为零，首次 open 不调用 hook。
-- [ ] URL/delay 只在候选 hook 成功后原子提交；异常、冻结、注销与 stale completion 不更新连接。
-- [ ] `hookTimeout` 是 plan 总 deadline，候选数增加不会线性放大最坏等待时间。
-- [ ] 第一次自动重连使用 `initialDelay`，后续指数增长并按稳定窗口重置。
+- [x] 初始化拒绝 URL 对象/getter/Promise/模板，只接受固定绝对 ws/wss 字符串。
+- [x] 同 id、同共享配置、不同 URL 可加入现有连接；后来 URL 不覆盖 endpoint；不同共享配置仍显式冲突。
+- [x] 自动、heartbeat timeout 与显式 reconnect 都通过唯一 plan；显式 reconnect 默认 delay 为零，首次 open 不调用 hook。
+- [x] URL/delay 只在候选 hook 成功后原子提交；异常、冻结、注销与 stale completion 不更新连接。
+- [x] `hookTimeout` 是 plan 总 deadline，候选数增加不会线性放大最坏等待时间。
+- [x] 第一次自动重连使用 `initialDelay`，后续指数增长并按稳定窗口重置。
 
 ### Protocol boundary and heartbeat
 
-- [ ] 公开类型、导出、源码、控制帧、生成 Worker、文档与 tarball 中不存在 auth/revision/`$auth`/adapter-ready API。
-- [ ] `open` 只代表原生 socket open；应用可在 `onConnected` 后发送普通认证帧并自行维护业务 ready。
-- [ ] 不存在 `ProtocolCapabilities`/client `capabilities`、`SendOptions.idempotencyKey`、`CAPABILITY_UNSUPPORTED` 或公开 reconnect reason。
-- [ ] 库没有入站 checker/dedupe/idempotency API；服务端重复帧仍派发，应用可在 handler 内自行过滤。
-- [ ] raw 默认字符串 ping/pong 与二进制按 wire bytes 工作；未配置 `pongTimeout` 不主动断线。
-- [ ] JSON `{ messageType: 'ping' }`/`{ messageType: 'pong' }` 与任意嵌套 matcher 可工作；custom adapter 不回落到 raw 比较。
-- [ ] pong/activity timeout 不重叠，识别出的控制帧不进入业务 handler，timeout 进入同一 plan。
+- [x] 公开类型、导出、源码、控制帧、生成 Worker、文档与 tarball 中不存在 auth/revision/`$auth`/adapter-ready API。
+- [x] `open` 只代表原生 socket open；应用可在 `onConnected` 后发送普通认证帧并自行维护业务 ready。
+- [x] 不存在 `ProtocolCapabilities`/client `capabilities`、`SendOptions.idempotencyKey`、`CAPABILITY_UNSUPPORTED` 或公开 reconnect reason。
+- [x] 库没有入站 checker/dedupe/idempotency API；服务端重复帧仍派发，应用可在 handler 内自行过滤。
+- [x] raw 默认字符串 ping/pong 与二进制按 wire bytes 工作；未配置 `pongTimeout` 不主动断线。
+- [x] JSON `{ messageType: 'ping' }`/`{ messageType: 'pong' }` 与任意嵌套 matcher 可工作；custom adapter 不回落到 raw 比较。
+- [x] pong/activity timeout 不重叠，识别出的控制帧不进入业务 handler，timeout 进入同一 plan。
 
 ### Security and delivery
 
-- [ ] endpoint path/query、payload、hook 异常文本与 plan id 不进入 fingerprint、logger、diagnostics、错误控制响应或非候选页回显。
-- [ ] 字符串 endpoint 与无 key `onMessage` 行为不变；本次获准的 beta 删除不提供运行时兼容层。
-- [ ] 文档站、模块 README、playground、生成 API、release tarball/SSR 验收与 Changeset 同步。
-- [ ] Chromium、Firefox、WebKit 覆盖广播、key 转移、freeze/lease、reconnect plan 和 heartbeat。
-- [ ] `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm docs:check`、`pnpm release:verify`、`pnpm test:e2e` 与 `git diff --check` 全绿，构建 dist 的命令不并行运行。
+- [x] endpoint path/query、payload、hook 异常文本与 plan id 不进入 fingerprint、logger、diagnostics、错误控制响应或非候选页回显。
+- [x] 字符串 endpoint 与无 key `onMessage` 行为不变；本次获准的 beta 删除不提供运行时兼容层。
+- [x] 文档站、模块 README、playground、生成 API、release tarball/SSR 验收与 Changeset 同步。
+- [x] Chromium、Firefox、WebKit 覆盖广播、key 转移、freeze/lease、reconnect plan 和 heartbeat。
+- [x] `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm docs:check`、`pnpm release:verify`、`pnpm test:e2e` 与 `git diff --check` 全绿，构建 dist 的命令不并行运行。
 
 ## Testing Decisions
 

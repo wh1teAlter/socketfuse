@@ -12,7 +12,7 @@ import { ConnectionController, type ConnectionSink, type ReconnectPlan, type Rec
 import { CONTROL_PROTOCOL_MAJOR, DEFAULT_LEASE_OPTIONS, DEFAULT_WORKER_RESOURCE_LIMITS } from '../shared/constants'
 import { isSocketFuseError, SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
 import { createJsonProtocolAdapter, rawProtocol, validateProtocolAdapter } from '../protocol/adapter'
-import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
+import { estimatePayloadBytes, estimateStructuredCloneBytes, stableHash } from '../shared/structured'
 import { normalizeEndpointUrl, safeEndpointOrigin } from '../shared/endpoint'
 import { ReconnectCoordinator } from '../transport/reconnect-coordinator'
 import { ExclusiveKeyRegistry } from './exclusive-keys'
@@ -222,7 +222,7 @@ function normalizeWorkerLimits(value: Partial<WorkerResourceLimits> | undefined)
 
 /** 向有界 replay 队列追加消息，必要时按 oldest-first 丢弃。 */
 function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, maxMessages: number, maxBytes: number): void {
-  const bytes = estimateStructuredCloneBytes(data, maxBytes)
+  const bytes = estimatePayloadBytes(data, maxBytes)
   while (client.replay.length >= maxMessages || client.replayBytes + bytes > maxBytes) {
     const removed = client.replay.shift()
     if (removed === undefined)
@@ -242,7 +242,13 @@ function pushReplay(client: RuntimeClient, data: unknown, receivedAt: number, ma
 
 /** Worker→page delivery 的数量上限，防止慢页面无限积压。 */
 const MAX_OUTSTANDING_DELIVERIES = 256
-/** Worker→page delivery 的字节上限，单位为字节。 */
+/**
+ * Worker→page delivery 的字节上限，单位为字节。
+ *
+ * 它同时是未确认投递的总额度和单条消息的硬上限：单条消息超过此值时，即使额度全空也无法
+ * 投递，因此会被直接丢弃而不重试。Worker 是所有标签页共享的单线程，放开单帧上限会让一个
+ * 慢页面的待克隆 payload 占满整个 Worker 的内存。
+ */
 const MAX_OUTSTANDING_DELIVERY_BYTES = 4 * 1024 * 1024
 
 /** 从共享协议描述解析 Worker 内的 adapter 实现。 */
@@ -550,7 +556,7 @@ export function createSharedWebSocketRuntime(options: SharedWebSocketRuntimeOpti
 
   /** 在数量与字节 credit 内投递消息，并登记待回收 delivery。 */
   const deliver = (client: RuntimeClient, data: unknown, receivedAt: number, replayed: boolean): boolean => {
-    const bytes = estimateStructuredCloneBytes(data, MAX_OUTSTANDING_DELIVERY_BYTES)
+    const bytes = estimatePayloadBytes(data, MAX_OUTSTANDING_DELIVERY_BYTES)
     if (client.outstandingDeliveries.size >= MAX_OUTSTANDING_DELIVERIES
       || client.outstandingBytes + bytes > MAX_OUTSTANDING_DELIVERY_BYTES) {
       if (replayed) {

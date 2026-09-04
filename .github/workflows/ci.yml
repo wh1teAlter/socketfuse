@@ -34,6 +34,10 @@ jobs:
       - name: Verify a business pull request
         if: env.IS_VERSION_PR != 'true'
         run: pnpm check:runtime
+      - name: Check generated inline Worker is current
+        if: env.IS_VERSION_PR != 'true'
+        # 上一步的 build 已重新生成 inline Worker；仓库副本与之不一致说明提交里带着过期产物。
+        run: git diff --exit-code -- packages/socketfuse/src/worker/source.generated.ts
       - name: Verify business browser behavior
         if: env.IS_VERSION_PR != 'true'
         run: |

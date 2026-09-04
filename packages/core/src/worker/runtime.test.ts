@@ -976,6 +976,72 @@ describe('shared worker runtime', () => {
     }
   })
 
+  it('keeps an attached client alive while its page lease timer keeps reporting', async () => {
+    let currentTime = 0
+    const sockets: FakeSocket[] = []
+    const sweeps: (() => void)[] = []
+    /** 页面 lease 周期回调；由测试驱动，代替真实 setInterval。 */
+    const leaseTicks: (() => void)[] = []
+    const runtime = createSharedWebSocketRuntime({
+      clearTimeout: () => undefined,
+      now: () => currentTime,
+      setTimeout: (callback, delay) => {
+        if (delay === 1_000)
+          sweeps.push(callback)
+        return 0
+      },
+      socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    try {
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        id: 'lease-liveness',
+        lease: { interval: 10, timeout: 20 },
+      })
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const transport = new SharedWorkerTransport({
+        clientId: 'tab',
+        config,
+        mode: 'inline',
+        setInterval: (callback) => {
+          leaseTicks.push(callback)
+          return 0
+        },
+        worker: { port: pair[0] },
+      })
+      transport.attach({ id: 'tab' })
+      const opening = transport.open()
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await opening
+      await waitFor(() => leaseTicks.length === 1)
+
+      // 越过 lease timeout 但持续报活：sweep 不能回收这个 client。
+      for (let round = 0; round < 3; round++) {
+        currentTime += 15
+        leaseTicks.forEach(tick => tick())
+        await Promise.resolve()
+        await Promise.resolve()
+        sweeps.splice(0).forEach(sweep => sweep())
+        await Promise.resolve()
+      }
+      expect(pair[1].closed).toBe(false)
+
+      // 停止报活并越过 timeout 后才允许回收。
+      currentTime += 50
+      sweeps.splice(0).forEach(sweep => sweep())
+      await waitFor(() => pair[1].closed)
+      expect(pair[1].closed).toBe(true)
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
   it('reclaims a failed hello attach without consuming the Worker port capacity', async () => {
     const runtime = createSharedWebSocketRuntime({ workerLimits: { maxPorts: 2 } })
     try {
@@ -1215,6 +1281,112 @@ describe('shared worker runtime', () => {
         direction: 'replay',
         droppedMessages: 2,
       })
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('drops a single frame above the delivery ceiling without redelivering it later', async () => {
+    const sockets: FakeSocket[] = []
+    const runtime = createSharedWebSocketRuntime({ socketFactory: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    } })
+    try {
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'ceiling-room' })
+      const messages: unknown[] = []
+      pair[0].addEventListener('message', event => messages.push(event.data))
+      pair[0].postMessage({
+        clientId: 'a',
+        configCanonical: config.configCanonical,
+        configFingerprint: config.configFingerprint,
+        id: config.id,
+        protocolMajor: CONTROL_PROTOCOL_MAJOR,
+        requestId: 'hello',
+        restore: config.local.lifecycle,
+        shared: config.shared,
+        type: 'hello',
+        url: config.url,
+        visibility: 'visible',
+      })
+      pair[0].postMessage({ requestId: 'open', type: 'open' })
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await waitFor(() => messages.some(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'open'))
+
+      // 额度全空时投递单条超限消息；它不能被排队等待额度恢复。
+      sockets[0]?.message('x'.repeat(5 * 1024 * 1024))
+      await waitFor(() => messages.some(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'overflow'))
+      expect(messages.filter(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'message')).toEqual([])
+
+      // 后续正常消息仍能投递，证明超限帧没有占用额度。
+      sockets[0]?.message('small')
+      await waitFor(() => messages.some(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'message'))
+      expect(messages.filter(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'message')).toMatchObject([{ data: 'small' }])
+    }
+    finally {
+      runtime.dispose()
+    }
+  })
+
+  it('delivers decoded payloads whose prototype is not Object.prototype', async () => {
+    const sockets: FakeSocket[] = []
+    /** 业务 adapter 常见的解码产物：可结构化克隆但原型不是 Object.prototype。 */
+    class Order {
+      constructor(readonly orderId: string) {}
+    }
+    const adapter = {
+      classify: (data: unknown) => ({ data, type: 'data' as const }),
+      decode: (data: SocketData) => new Order(String(data)),
+      encode: (value: unknown) => String(value),
+      id: 'order.stream',
+      version: 1,
+    }
+    const runtime = createSharedWebSocketRuntime({
+      protocols: [adapter as never],
+      socketFactory: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    try {
+      const pair = createPortPair()
+      runtime.connect(pair[1])
+      const config = normalizeWebSocketOptions('wss://example.test/socket', {
+        id: 'prototype-room',
+        protocol: adapter as never,
+        worker: () => ({ port: pair[0] }) as never,
+      })
+      const messages: unknown[] = []
+      pair[0].addEventListener('message', event => messages.push(event.data))
+      pair[0].postMessage({
+        clientId: 'a',
+        configCanonical: config.configCanonical,
+        configFingerprint: config.configFingerprint,
+        id: config.id,
+        protocolMajor: CONTROL_PROTOCOL_MAJOR,
+        requestId: 'hello',
+        restore: config.local.lifecycle,
+        shared: config.shared,
+        type: 'hello',
+        url: config.url,
+        visibility: 'visible',
+      })
+      pair[0].postMessage({ requestId: 'open', type: 'open' })
+      await waitFor(() => sockets.length === 1)
+      sockets[0]?.open()
+      await waitFor(() => messages.some(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'open'))
+      sockets[0]?.message('order-1')
+      await waitFor(() => messages.some(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'message'))
+      expect(messages.find(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'message')).toMatchObject({
+        data: { orderId: 'order-1' },
+      })
+      expect(messages.filter(message => typeof message === 'object' && message !== null && 'type' in message && message.type === 'overflow')).toEqual([])
     }
     finally {
       runtime.dispose()

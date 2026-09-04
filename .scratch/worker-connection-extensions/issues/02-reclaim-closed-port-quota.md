@@ -8,12 +8,12 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] 逻辑 close 后的端口在 lease 超时后被关闭并归还 `maxPorts` 额度
-- [ ] close 后立刻重新 open 的端口不被回收，且不重复占用额度
-- [ ] 未 hello 的端口仍按 `unattachedPortTimeoutMs` 回收（现有行为不变）
-- [ ] `dispose` 仍立即释放额度（现有行为不变）
-- [ ] 现有那条断言「close 后新端口被拒」的测试改为断言「lease 超时后额度被回收」——它把缺陷固化成了预期，是该问题长期存在的原因
-- [ ] 新增测试：N 次 attach→close（不 dispose）且超过 lease 超时后，新端口仍能成功 hello
-- [ ] 回收路径不影响其他健康端口的投递
+- [x] 逻辑 close 后的端口在 lease 超时后被关闭并归还 `maxPorts` 额度
+- [x] close 后立刻重新 open 的端口不被回收，且不重复占用额度
+- [x] 未 hello 的端口仍按 `unattachedPortTimeoutMs` 回收（现有行为不变）
+- [x] `dispose` 仍立即释放额度（现有行为不变）
+- [x] 现有那条断言「close 后新端口被拒」的测试改为断言「lease 超时后额度被回收」——它把缺陷固化成了预期，是该问题长期存在的原因
+- [x] 新增测试：N 次 attach→close（不 dispose）且超过 lease 超时后，新端口仍能成功 hello
+- [x] 回收路径不影响其他健康端口的投递

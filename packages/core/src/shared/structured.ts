@@ -165,16 +165,13 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
 }
 
 /**
- * 保守估算结构化克隆 payload 的内存相关字节数。
+ * 遍历结构化克隆图并累计字节数。
  *
- * 它不是 JSON 估算：二进制值保留 byteLength，Map/Set 会遍历，重复/循环引用有界。
- * 不支持的值会视为超限，避免畸形控制消息因被当作“零成本”而绕过 Worker 限制。
- *
- * @param value 待发送或缓存的结构化克隆值。
- * @param limit 到达此字节数后可提前终止的上限；默认不设上限。
- * @returns 保守估算的字节数；无法估算时返回大于 limit 的值。
+ * `strict` 决定无法精确估算的对象（类实例、`Error`）是记为超限还是按自有可枚举
+ * 属性继续遍历；两个导出入口只在这一点上不同，其余会计规则必须完全一致，否则
+ * 控制平面与投递额度会对同一值给出不同结论。
  */
-export function estimateStructuredCloneBytes(value: unknown, limit: number = Number.POSITIVE_INFINITY): number {
+function measureBytes(value: unknown, limit: number, strict: boolean): number {
   const encoder = new TextEncoder()
   const seen = new Set<object>()
   let total = 0
@@ -259,11 +256,15 @@ export function estimateStructuredCloneBytes(value: unknown, limit: number = Num
         return
       }
       if (current instanceof Error) {
-        add(limit + 1)
+        if (strict) {
+          add(limit + 1)
+          return
+        }
+        add(16 + textBytes(current.name) + textBytes(current.message))
         return
       }
       const prototype = Object.getPrototypeOf(current)
-      if (prototype !== Object.prototype && prototype !== null) {
+      if (strict && prototype !== Object.prototype && prototype !== null) {
         add(limit + 1)
         return
       }
@@ -281,4 +282,34 @@ export function estimateStructuredCloneBytes(value: unknown, limit: number = Num
 
   visit(value)
   return total
+}
+
+/**
+ * 保守估算结构化克隆 payload 的内存相关字节数。
+ *
+ * 它不是 JSON 估算：二进制值保留 byteLength，Map/Set 会遍历，重复/循环引用有界。
+ * 不支持的值会视为超限，避免畸形控制消息因被当作“零成本”而绕过 Worker 限制。
+ *
+ * @param value 待发送或缓存的结构化克隆值。
+ * @param limit 到达此字节数后可提前终止的上限；默认不设上限。
+ * @returns 保守估算的字节数；无法估算时返回大于 limit 的值。
+ */
+export function estimateStructuredCloneBytes(value: unknown, limit: number = Number.POSITIVE_INFINITY): number {
+  return measureBytes(value, limit, true)
+}
+
+/**
+ * 估算已由浏览器负责克隆的业务 payload 字节数。
+ *
+ * 与 `estimateStructuredCloneBytes` 的差别只在无法精确估算时的方向：业务 payload
+ * 的可克隆性由 `postMessage` 自身判定，因此类实例、`Error` 与容器内的同类值按自有
+ * 可枚举属性计入，不能因估算保守而被投递额度判为超限并整帧丢弃。真正不可克隆的
+ * 函数与 symbol 仍视为超限。
+ *
+ * @param value 即将跨端口投递或进入 replay 缓冲的业务 payload。
+ * @param limit 到达此字节数后可提前终止的上限。
+ * @returns 保守估算的字节数；含不可克隆值时返回大于 limit 的值。
+ */
+export function estimatePayloadBytes(value: unknown, limit: number): number {
+  return measureBytes(value, limit, false)
 }

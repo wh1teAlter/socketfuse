@@ -4,6 +4,8 @@
 
 两种 transport 必须提供相同的 client 语义。direct 仅在 Worker API 缺失或构造/初始化失败且允许 fallback 时选择；选中 shared transport 后，网络或恢复失败不能切换为 direct。
 
+唯一的例外来自物理通道本身：shared 必须跨 `postMessage` 投递，因此有每页投递额度与单帧字节上限；direct 在同一 realm 内直接调用 sink，没有这两项约束。这不是可以消除的差异，而是必须在面向用户的文档中如实声明的边界。
+
 `ReconnectCoordinator` 只选择一个可用页面准备 connection 创建的计划，并以整个 plan 的单一截止时间限制等待。它不执行页面函数、不读取 URL，也不拥有 socket；页面冻结、离开或失败只会在剩余预算内撤销准备权并选择下一个候选。
 
 应用代码通过 `WebSocketClient.transport` 观察结果，不直接创建 transport。

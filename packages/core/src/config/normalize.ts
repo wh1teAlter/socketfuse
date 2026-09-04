@@ -106,8 +106,6 @@ export interface NormalizedWebSocketConfig<Incoming, Outgoing> {
 
 /** WebSocket subprotocol token 的语法约束。 */
 const webSocketProtocolPattern = /^[!#$%&'*+\-.^`|~\w]+$/
-/** custom adapter id 的稳定命名约束。 */
-const adapterIdPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/
 
 /** 断言值为布尔选项并抛出字段化 INVALID_OPTIONS。 */
 function assertBoolean(value: unknown, field: string): asserts value is boolean {
@@ -373,9 +371,4 @@ export function hasConfigConflict(
   incoming: Pick<NormalizedWebSocketConfig<unknown, unknown>, 'configCanonical'>,
 ): boolean {
   return current.configCanonical !== incoming.configCanonical
-}
-
-/** 判断 custom adapter id 是否符合稳定命名约束。 */
-export function isValidAdapterId(value: string): boolean {
-  return adapterIdPattern.test(value)
 }

@@ -116,7 +116,12 @@ interface OpenWaiter {
   cleanup?: () => void
 }
 
-/** 将原生 close 事件裁剪为不含 reason 的安全信息。 */
+/**
+ * 将原生 close 事件裁剪为不含 reason 的安全信息。
+ *
+ * 只有 1000 视为终态：它表示对端明确完成了这次会话，默认不再重连。服务端优雅重启若希望
+ * 客户端继续重连，应使用 1001/1012 等非 1000 码，或由适配器 `shouldReconnect` 覆盖判定。
+ */
 function safeCloseInfo(event: { readonly code?: number, readonly wasClean?: boolean }): SafeCloseInfo {
   const code = event.code ?? 1006
   return { code, terminal: code === 1000, wasClean: event.wasClean ?? code === 1000 }

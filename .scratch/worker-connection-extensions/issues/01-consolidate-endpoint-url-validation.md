@@ -6,11 +6,11 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] `shared` 提供唯一的 endpoint 校验函数，接受绝对 `ws:`/`wss:` 字符串并返回规范化结果
-- [ ] 页面侧重连 URL 校验与 connection 侧 endpoint 校验都改为调用它，两处副本删除
-- [ ] 超长（超过 `MAX_ENDPOINT_LENGTH`）在规范化前后都被拒绝，与现状一致
-- [ ] 错误仍为 `INVALID_OPTIONS`，且错误详情不含完整 URL 或 query
-- [ ] 依赖方向不倒置：`shared` 不引入对 `config`/`protocol`/`connection` 的依赖
-- [ ] 既有测试全绿，无需修改断言（行为未变）
+- [x] `shared` 提供唯一的 endpoint 校验函数，接受绝对 `ws:`/`wss:` 字符串并返回规范化结果
+- [x] 页面侧重连 URL 校验与 connection 侧 endpoint 校验都改为调用它，两处副本删除
+- [x] 超长（超过 `MAX_ENDPOINT_LENGTH`）在规范化前后都被拒绝，与现状一致
+- [x] 错误仍为 `INVALID_OPTIONS`，且错误详情不含完整 URL 或 query
+- [x] 依赖方向不倒置：`shared` 不引入对 `config`/`protocol`/`connection` 的依赖
+- [x] 既有测试全绿，无需修改断言（行为未变）

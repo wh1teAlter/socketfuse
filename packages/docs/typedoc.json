@@ -16,6 +16,7 @@
   "plugin": ["typedoc-plugin-markdown"],
   "readme": "none",
   "sort": ["source-order"],
+  "sourceLinkTemplate": "https://github.com/wh1teAlter/socketfuse/blob/{gitRevision}/{path}#L{line}",
   "tsconfig": "tsconfig.typedoc.json",
   "visibilityFilters": {
     "external": false,

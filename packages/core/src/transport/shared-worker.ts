@@ -33,6 +33,10 @@ export interface SharedWorkerTransportOptions<Incoming, Outgoing> {
   readonly createFallback?: () => ClientTransport<Incoming, Outgoing>
   /** hello 请求超时，单位为毫秒。 */
   readonly initTimeout?: number
+  /** 注入 lease 报活周期定时器；仅供测试控制时间推进。 */
+  readonly setInterval?: (callback: () => void, delay: number) => TimerHandle
+  /** 与注入的 `setInterval` 配对的清除函数。 */
+  readonly clearInterval?: (handle: TimerHandle) => void
 }
 
 interface PendingRequest {
@@ -500,7 +504,8 @@ export class SharedWorkerTransport<Incoming, Outgoing> implements ClientTranspor
       if (value === null || typeof value !== 'object' || !('workerInstanceId' in value))
         throw new SocketFuseError('INVALID_CONTROL_MESSAGE', 'SharedWorker returned an invalid welcome response')
       this.workerInstanceId = String(value.workerInstanceId)
-      this.leaseTimer = globalThis.setInterval(() => this.post({ type: 'lease' }), this.options.config.shared.lease.interval)
+      const start = this.options.setInterval ?? ((callback, delay) => globalThis.setInterval(callback, delay))
+      this.leaseTimer = start(() => this.post({ type: 'lease' }), this.options.config.shared.lease.interval)
     })
     return this.helloPromise
   }
@@ -508,7 +513,7 @@ export class SharedWorkerTransport<Incoming, Outgoing> implements ClientTranspor
   /** 清除 hello/lease 状态，使后续 open 能重新握手。 */
   private resetHello(): void {
     if (this.leaseTimer !== undefined)
-      globalThis.clearInterval(this.leaseTimer)
+      (this.options.clearInterval ?? (handle => globalThis.clearInterval(handle)))(this.leaseTimer)
     this.leaseTimer = undefined
     this.helloPromise = undefined
     this.workerInstanceId = null

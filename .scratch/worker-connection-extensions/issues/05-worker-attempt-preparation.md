@@ -27,16 +27,16 @@ interface ConnectionExtension {
 
 **Blocked by:** 01 — 复用收敛后的 endpoint 校验，避免第三处副本；03 — 扩展工厂与生命周期是准备 hook 的载体
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] 网络断开、连接超时、心跳超时与显式 reconnect 都会调用扩展的准备函数
-- [ ] 首次 `open()` 不调用准备函数
-- [ ] 准备函数成功返回后，URL 与 delay 一次性原子生效于下一次尝试
-- [ ] 准备函数只提交 URL、只提交 delay、或都不提交，均正确回退到未覆盖的默认值
-- [ ] 准备函数超过计划总期限（复用 `autoReconnect.hookTimeout`）时沿用当前 endpoint 与默认退避，且只创建一次物理连接
-- [ ] 准备函数抛出异常时 endpoint 不被修改，连接仍按默认计划继续
-- [ ] 超时或计划失效后调用 setter 以 `STALE_RECONNECT_PLAN` 拒绝，不影响已提交的计划
-- [ ] 扩展提供准备函数时，页面 `onBeforeReconnect` 不被调用；未提供时页面候选机制行为与现状完全一致
-- [ ] 提交非法 URL（非绝对、非 ws/wss、超长）以 `INVALID_OPTIONS` 拒绝且不改 endpoint
-- [ ] 准备函数的异常文本与内部计划 id 不进入诊断、日志或跨端口回显
-- [ ] 连接在准备期间被显式 close 或 dispose 时，迟到的准备结果不改变任何状态，也不产生未捕获异常
+- [x] 网络断开、连接超时、心跳超时与显式 reconnect 都会调用扩展的准备函数
+- [x] 首次 `open()` 不调用准备函数
+- [x] 准备函数成功返回后，URL 与 delay 一次性原子生效于下一次尝试
+- [x] 准备函数只提交 URL、只提交 delay、或都不提交，均正确回退到未覆盖的默认值
+- [x] 准备函数超过计划总期限（复用 `autoReconnect.hookTimeout`）时沿用当前 endpoint 与默认退避，且只创建一次物理连接
+- [x] 准备函数抛出异常时 endpoint 不被修改，连接仍按默认计划继续
+- [x] 超时或计划失效后调用 setter 以 `STALE_RECONNECT_PLAN` 拒绝，不影响已提交的计划
+- [x] 扩展提供准备函数时，页面 `onBeforeReconnect` 不被调用；未提供时页面候选机制行为与现状完全一致
+- [x] 提交非法 URL（非绝对、非 ws/wss、超长）以 `INVALID_OPTIONS` 拒绝且不改 endpoint
+- [x] 准备函数的异常文本与内部计划 id 不进入诊断、日志或跨端口回显
+- [x] 连接在准备期间被显式 close 或 dispose 时，迟到的准备结果不改变任何状态，也不产生未捕获异常

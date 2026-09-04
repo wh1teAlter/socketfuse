@@ -10,17 +10,17 @@
 
 **Blocked by:** 02, 04, 05 — 文档与验收必须描述最终落地的行为
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] 使用指引新增一节说明入站过滤与 execution key 的选择边界，含各自适用场景
-- [ ] 文档给出动态 ping 示例（custom adapter 内实时生成 payload），并说明它与内联 Worker 零配置路径互斥
-- [ ] 文档说明扩展状态在 Worker 被回收后丢失，语义为 at-least-once，不是 exactly-once
-- [ ] 文档说明扩展只能动态更新 endpoint 与 delay，其余共享参数为启动期共识
-- [ ] Worker 模块 README 说明扩展职责与「Worker 不等待页面 handler」不变量的关系
-- [ ] 协议文档说明适配器保持无状态，跨帧业务状态归扩展
-- [ ] Playground 可通过参数开启演示扩展，直观展示过滤对全部标签页同时生效
-- [ ] Chromium、Firefox、WebKit 验证两标签页共享连接下扩展过滤对全部标签页生效
-- [ ] 顺带修正 `MessageHandlerOptions.key` 的 TSDoc：「至多由一个页面执行」→「至多授权一个页面启动」（审查 F-006，公开 API 上的过度承诺）
-- [ ] 提交面向使用者的 Changeset，准确描述新增扩展能力与端口额度修复
-- [ ] 不手工修改版本号或 CHANGELOG
-- [ ] 生成产物经正式构建流程重新生成，不手工编辑
+- [x] 使用指引新增一节说明入站过滤与 execution key 的选择边界，含各自适用场景
+- [x] 文档给出动态 ping 示例（custom adapter 内实时生成 payload），并说明它与内联 Worker 零配置路径互斥
+- [x] 文档说明扩展状态在 Worker 被回收后丢失，语义为 at-least-once，不是 exactly-once
+- [x] 文档说明扩展只能动态更新 endpoint 与 delay，其余共享参数为启动期共识
+- [x] Worker 模块 README 说明扩展职责与「Worker 不等待页面 handler」不变量的关系
+- [x] 协议文档说明适配器保持无状态，跨帧业务状态归扩展
+- [x] Playground 可通过参数开启演示扩展，直观展示过滤对全部标签页同时生效
+- [x] Chromium、Firefox、WebKit 验证两标签页共享连接下扩展过滤对全部标签页生效
+- [x] 顺带修正 `MessageHandlerOptions.key` 的 TSDoc：「至多由一个页面执行」→「至多授权一个页面启动」（审查 F-006，公开 API 上的过度承诺）
+- [x] 提交面向使用者的 Changeset，准确描述新增扩展能力与端口额度修复
+- [x] 不手工修改版本号或 CHANGELOG
+- [x] 生成产物经正式构建流程重新生成，不手工编辑

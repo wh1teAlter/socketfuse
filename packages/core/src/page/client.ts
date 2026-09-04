@@ -31,7 +31,7 @@ import type { ReconnectPlan, ReconnectPlanOverride } from '../connection/control
 import type { ClientTransport, ClientTransportSink } from '../transport/direct'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
 import { SocketFuseError, toSafePublicError, toSocketFuseError } from '../shared/errors'
-import { estimateStructuredCloneBytes, stableHash } from '../shared/structured'
+import { estimatePayloadBytes, stableHash } from '../shared/structured'
 import { readyStateFor, statusFor } from '../connection/state'
 import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
 import { normalizeEndpointUrl } from '../shared/endpoint'
@@ -128,11 +128,6 @@ function pageVisibility(): ClientVisibility {
   if (typeof document === 'undefined')
     return 'visible'
   return document.visibilityState === 'hidden' || document.hidden ? 'hidden' : 'visible'
-}
-
-/** 估算页面本地 replay 项的结构化克隆字节数。 */
-function estimateValueBytes(value: unknown): number {
-  return estimateStructuredCloneBytes(value)
 }
 
 /** 将未知诊断值收敛为有限数，非法时返回零。 */
@@ -848,7 +843,7 @@ export class PageWebSocketClient<Incoming, Outgoing> extends EventTargetBase imp
 
   /** 向有界页面 replay 队列追加消息，溢出时丢弃最旧项。 */
   private pushReplay(data: Incoming, receivedAt: number): void {
-    const bytes = estimateValueBytes(data)
+    const bytes = estimatePayloadBytes(data, this.restore.maxBytes)
     if (bytes > this.restore.maxBytes) {
       this.overflowCount++
       this.dispatchOverflow(bytes, 'drop-oldest')

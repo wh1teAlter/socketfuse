@@ -17,7 +17,19 @@ import type {
 } from '../shared/types'
 import { assertStructuredCloneable, isPlainRecord, stableSerialize } from '../shared/structured'
 import { invalidOptions, SocketFuseError } from '../shared/errors'
-import { isValidAdapterId } from '../config/normalize'
+
+/** custom adapter id 的稳定命名约束。 */
+const adapterIdPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/
+
+/**
+ * 判断 custom adapter id 是否符合稳定命名约束。
+ *
+ * @param value 待校验的 adapter id。
+ * @returns 符合命名约束时返回 `true`。
+ */
+export function isValidAdapterId(value: string): boolean {
+  return adapterIdPattern.test(value)
+}
 
 /** raw 协议：原样透传 WebSocket payload，不增加应用协议状态。 */
 export const rawProtocol: ProtocolAdapter<SocketData, SocketData> = Object.freeze({
