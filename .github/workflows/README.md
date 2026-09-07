@@ -1,6 +1,6 @@
 # GitHub Actions
 
-本目录只负责仓库质量门禁与未来 npm 发布，不承担文档部署、自动 review、自动生成 Changeset、git tag 或
+本目录只负责仓库质量门禁与 npm 发布，不承担文档部署、自动 review、自动生成 Changeset、git tag 或
 GitHub Release。
 
 - `ci.yml`：只验证 PR，提供一个 `verify` required check。所有 PR 都先执行 ESLint 与全仓 typecheck；业务 PR
@@ -22,9 +22,10 @@ Action 推送专用分支时只使用该 App token。
 还需要在 GitHub 创建受保护的 `npm` Environment（仅 main，按需人工审批），并在 npm 的 `socketfuse` 包设置中把
 GitHub owner `wh1teAlter`、repository `socketfuse`、workflow `.github/workflows/release.yml` 和 environment `npm`
 设为 Trusted Publisher。npm 因而通过 OIDC 颁发一次性发布凭据；仓库不保存 `NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。
-如果 npm 尚无法为未存在的包配置 Trusted Publisher，首发可用一次性 granular npm token 手工完成，成功后立即撤销。
 
-当前发布线使用 `0.0.x-beta.n` 预发布版本，release workflow 固定发布到 npm 的 `beta` dist-tag，不会覆盖
-`latest`。发布前验证 Version Packages PR 的标题、专用分支、App 身份和文件白名单；`ci.yml` 也要求作者为该 App 的 bot，
+已发布基线为 `0.1.0-beta.2`，基线时 `beta` 与 `latest` 均指向它。release workflow 后续固定发布到
+`beta`，不自动移动 `latest`。发布前验证 Version Packages PR 的标题、专用分支、App 身份和文件白名单；`ci.yml` 也要求作者为该 App 的 bot，
 不能仅凭同名分支跳过浏览器测试。该 PR 只能消费 `.changeset/*.md` 并修改 `packages/socketfuse/package.json`、
-`packages/socketfuse/CHANGELOG.md`。因此发布 job 无需重跑浏览器测试，`npm publish` 的 `prepack` 仍会重新构建最终 tarball。
+`packages/socketfuse/CHANGELOG.md`。因此发布 job 无需重跑浏览器测试。验收在独占临时目录执行一次 pack/prepack，
+核验实际解包内容、包名、版本和 SHA-256；publint 不再次 pack。所有检查通过后导出原 tarball，
+发布前再次验证摘要，再用 `npm publish <tarball>` 发布同一文件。

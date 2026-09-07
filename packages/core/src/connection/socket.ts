@@ -10,6 +10,7 @@ export const SOCKET_CLOSING = 2 as const
 /** socket 已 closed 的 readyState。 */
 export const SOCKET_CLOSED = 3 as const
 
+/** 连接控制器所需的原生 socket 能力，不包含页面或 Worker 对象。 */
 export interface WebSocketLike {
   /** 浏览器接收二进制时的表示方式。 */
   binaryType: 'arraybuffer' | 'blob'

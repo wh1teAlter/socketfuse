@@ -6,9 +6,6 @@
  */
 import { invalidOptions } from './errors'
 
-/** 用于识别不受支持对象原型的原生标签函数。 */
-const objectTag = Object.prototype.toString
-
 /** 将二进制值编码成稳定字符串，供 canonical 序列化使用。 */
 function encodeBytes(bytes: Uint8Array): string {
   let result = ''
@@ -48,11 +45,11 @@ function serialize(value: unknown, seen: Set<object>): string {
       return `bigint:${value}`
     case 'function':
     case 'symbol':
-      throw invalidOptions('Configuration must contain structured-cloneable values')
+      throw invalidOptions()
   }
 
   if (seen.has(value))
-    throw invalidOptions('Configuration must not contain circular references')
+    throw invalidOptions()
   seen.add(value)
 
   try {
@@ -63,7 +60,7 @@ function serialize(value: unknown, seen: Set<object>): string {
       return `date:${value.toISOString()}`
 
     if (typeof Blob !== 'undefined' && value instanceof Blob)
-      throw invalidOptions('Blob contents cannot participate in a synchronous configuration fingerprint')
+      throw invalidOptions()
 
     if (value instanceof RegExp)
       return `regexp:${JSON.stringify(value.source)}/${value.flags}`
@@ -90,7 +87,7 @@ function serialize(value: unknown, seen: Set<object>): string {
 
     const prototype = Object.getPrototypeOf(value)
     if (prototype !== Object.prototype && prototype !== null)
-      throw invalidOptions(`Unsupported configuration value ${objectTag.call(value)}`)
+      throw invalidOptions()
 
     const record = value as Record<string, unknown>
     const entries = Object.keys(record)
@@ -131,27 +128,6 @@ export function stableHash(value: unknown): string {
 }
 
 /**
- * 确保一个值可跨 Worker 边界并能形成确定性 canonical。
- *
- * @param value 待验证的共享配置或控制字段。
- * @param field 用于本地校验错误的字段路径。
- * @throws `INVALID_OPTIONS`，当值不能结构化克隆或含循环引用时。
- */
-export function assertStructuredCloneable(value: unknown, field: string): void {
-  try {
-    if (typeof structuredClone === 'function')
-      structuredClone(value)
-    else
-      stableSerialize(value)
-  }
-  catch {
-    throw invalidOptions(`${field} must be structured-cloneable`, field)
-  }
-
-  stableSerialize(value)
-}
-
-/**
  * 判断值是否为普通对象记录。
  *
  * @param value 待验证的未知控制字段。
@@ -174,6 +150,8 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
 function measureBytes(value: unknown, limit: number, strict: boolean): number {
   const encoder = new TextEncoder()
   const seen = new Set<object>()
+  // 字节限额之外还限制遍历工作量，避免深树和零长度容器耗尽调用栈。
+  let nodes = 0
   let total = 0
 
   const add = (bytes: number): void => {
@@ -182,9 +160,13 @@ function measureBytes(value: unknown, limit: number, strict: boolean): number {
       total = limit + 1
   }
   const textBytes = (text: string): number => encoder.encode(text).byteLength
-  const visit = (current: unknown): void => {
+  const visit = (current: unknown, depth = 0): void => {
     if (total > limit)
       return
+    if (++nodes > 16_384 || depth > 64) {
+      total = Number.isFinite(limit) ? limit + 1 : Number.POSITIVE_INFINITY
+      return
+    }
     if (current === null || current === undefined) {
       add(1)
       return
@@ -220,11 +202,19 @@ function measureBytes(value: unknown, limit: number, strict: boolean): number {
         return
       }
       if (current instanceof ArrayBuffer) {
+        // 已分离的 buffer 不能克隆；构造视图也覆盖无法读取的表示。
+        new Uint8Array(current)
         add(16 + current.byteLength)
         return
       }
       if (ArrayBuffer.isView(current)) {
-        add(24 + current.byteLength)
+        // structured clone 复制完整 backing buffer，不能只计可见区间。
+        add(24)
+        visit(current.buffer, depth + 1)
+        return
+      }
+      if (typeof SharedArrayBuffer !== 'undefined' && current instanceof SharedArrayBuffer) {
+        add(limit + 1)
         return
       }
       if (current instanceof Date) {
@@ -236,23 +226,20 @@ function measureBytes(value: unknown, limit: number, strict: boolean): number {
         return
       }
       if (Array.isArray(current)) {
-        add(16)
-        for (const item of current)
-          visit(item)
-        return
+        add(16 + current.length * 8)
       }
       if (current instanceof Map) {
         add(24)
         for (const [key, item] of current) {
-          visit(key)
-          visit(item)
+          visit(key, depth + 1)
+          visit(item, depth + 1)
         }
         return
       }
       if (current instanceof Set) {
         add(24)
         for (const item of current)
-          visit(item)
+          visit(item, depth + 1)
         return
       }
       if (current instanceof Error) {
@@ -264,19 +251,25 @@ function measureBytes(value: unknown, limit: number, strict: boolean): number {
         return
       }
       const prototype = Object.getPrototypeOf(current)
-      if (strict && prototype !== Object.prototype && prototype !== null) {
+      if (strict && !Array.isArray(current) && prototype !== Object.prototype && prototype !== null) {
         add(limit + 1)
         return
       }
       add(16)
       for (const key of Object.keys(current as Record<string, unknown>)) {
+        // 不调用应用 getter；Proxy trap 无法普遍预检，其失败同样按不可估算处理。
+        const descriptor = Object.getOwnPropertyDescriptor(current, key)
+        if (descriptor === undefined || !('value' in descriptor)) {
+          add(limit + 1)
+          return
+        }
         add(textBytes(key))
-        visit((current as Record<string, unknown>)[key])
+        visit(descriptor.value, depth + 1)
       }
     }
-    finally {
-      // A repeated reference remains known; keeping it in `seen` is required
-      // for both shared subgraphs and cycles.
+    catch {
+      // 不把用户 getter、Proxy 或损坏 buffer 的异常文本带出预算边界。
+      total = Number.isFinite(limit) ? limit + 1 : Number.POSITIVE_INFINITY
     }
   }
 
@@ -312,4 +305,28 @@ export function estimateStructuredCloneBytes(value: unknown, limit: number = Num
  */
 export function estimatePayloadBytes(value: unknown, limit: number): number {
   return measureBytes(value, limit, false)
+}
+
+/**
+ * 确保一个值可跨 Worker 边界并能形成确定性 canonical。
+ *
+ * @param value 待验证的共享配置或控制字段。
+ * @param field 用于本地校验错误的字段路径。
+ * @throws `INVALID_OPTIONS`，当值不能结构化克隆或含循环引用时。
+ */
+export function assertStructuredCloneable(value: unknown): void {
+  try {
+    // 在原生复制之前拒绝可见的超额和 accessor，避免检查本身成为大内存入口。
+    if (estimateStructuredCloneBytes(value, 2 * 1024 * 1024) > 2 * 1024 * 1024)
+      throw invalidOptions()
+    if (typeof structuredClone === 'function')
+      structuredClone(value)
+    else
+      stableSerialize(value)
+  }
+  catch {
+    throw invalidOptions()
+  }
+
+  stableSerialize(value)
 }

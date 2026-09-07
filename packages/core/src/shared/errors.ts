@@ -35,6 +35,10 @@ export const SOCKET_FUSE_ERROR_CODES = [
   'ENCODE_FAILED',
   'DECODE_FAILED',
   'PROTOCOL_ERROR',
+  'PROTOCOL_CONTRACT_VIOLATION',
+  'RECONNECT_IN_PROGRESS',
+  'PREPARATION_BUSY',
+  'SEND_OUTCOME_UNKNOWN',
   'INBOUND_OVERFLOW',
   'INTERNAL_STATE_ERROR',
 ] as const
@@ -55,53 +59,12 @@ export function isSocketFuseErrorCode(value: unknown): value is SocketFuseErrorC
   return typeof value === 'string' && socketFuseErrorCodeSet.has(value)
 }
 
-/** 构造 `SocketFuseError` 时的内部元数据；跨 Worker 前必须经过脱敏。 */
+/** 构造安全错误时唯一允许的状态标记。 */
 export interface SocketFuseErrorOptions {
   /** 当前失败是否可能通过重试恢复。 */
   retryable?: boolean
   /** 当前失败是否令逻辑 client 进入终态。 */
   fatal?: boolean
-  /** 仅含允许公开原始值的附加信息。 */
-  details?: Readonly<Record<string, unknown>>
-  /** 仅供本地链路排查的原始原因；不得跨端口发送。 */
-  cause?: unknown
-}
-
-/**
- * 异步操作 reject 与 error callback 使用的错误契约。
- *
- * 调用方必须依据 `code` 而不是匹配 `message`。details 和 cause 在错误跨 Worker
- * 边界或进入页面 callback 前会被移除，维持“不泄露凭据与内部异常”的不变量。
- */
-export class SocketFuseError extends Error {
-  /** 便于跨 realm 判断的稳定错误名称。 */
-  readonly name = 'SocketFuseError' as const
-  /** 面向调用方的稳定错误码。 */
-  readonly code: SocketFuseErrorCode
-  /** 是否允许当前操作自动或手动重试。 */
-  readonly retryable: boolean
-  /** 是否表示 client 不应再尝试恢复。 */
-  readonly fatal: boolean
-  /** 本地可选的已脱敏诊断详情。 */
-  readonly details: Readonly<Record<string, unknown>> | undefined
-  /** 本地原始异常原因；不得序列化到控制协议。 */
-  override readonly cause: unknown
-
-  /**
-   * 创建本地错误对象。
-   *
-   * @param code 供调用方分支处理的稳定错误码。
-   * @param message 当前 realm 中可读的错误文本。
-   * @param options 重试、终态和本地诊断元数据。
-   */
-  constructor(code: SocketFuseErrorCode, message: string, options: SocketFuseErrorOptions = {}) {
-    super(message)
-    this.code = code
-    this.retryable = options.retryable ?? false
-    this.fatal = options.fatal ?? false
-    this.details = options.details
-    this.cause = options.cause
-  }
 }
 
 /** 跨端口时唯一允许使用的稳定英文错误文本映射。 */
@@ -124,6 +87,10 @@ const SAFE_ERROR_MESSAGES: Readonly<Record<SocketFuseErrorCode, string>> = Objec
   INVALID_OPTIONS: 'Invalid SocketFuse options',
   MESSAGE_TOO_LARGE: 'Message exceeds the configured size limit',
   PROTOCOL_ERROR: 'Protocol processing failed',
+  PROTOCOL_CONTRACT_VIOLATION: 'A synchronous protocol hook returned an asynchronous result',
+  RECONNECT_IN_PROGRESS: 'A reconnect with a different counting policy is already in progress',
+  PREPARATION_BUSY: 'Attempt preparation capacity is exhausted',
+  SEND_OUTCOME_UNKNOWN: 'The local send acceptance outcome is unknown',
   PROTOCOL_VERSION_MISMATCH: 'SharedWorker control protocol version mismatch',
   QUEUE_BYTES_EXCEEDED: 'Outbound queue byte limit was reached',
   QUEUE_FULL: 'Outbound queue message limit was reached',
@@ -150,17 +117,47 @@ export function safeErrorMessage(code: SocketFuseErrorCode): string {
 }
 
 /**
+ * 异步操作 reject 与 error callback 使用的错误契约。
+ *
+ * 调用方必须依据 `code` 而不是匹配 `message`。文本完全由库生成，错误对象不保存
+ * 应用异常、凭据、payload 或自由形式诊断字段；创建和跨端口行为一致。
+ */
+export class SocketFuseError extends Error {
+  /** 便于跨 realm 判断的稳定错误名称。 */
+  readonly name = 'SocketFuseError' as const
+  /** 面向调用方的稳定错误码。 */
+  readonly code: SocketFuseErrorCode
+  /** 是否允许当前操作自动或手动重试。 */
+  readonly retryable: boolean
+  /** 是否表示 client 不应再尝试恢复。 */
+  readonly fatal: boolean
+
+  /**
+   * 创建本地错误对象。
+   *
+   * @param code 供调用方分支处理的稳定错误码。
+   * @param options 重试与终态标记；不接受附加异常文本。
+   */
+  constructor(code: SocketFuseErrorCode, options: SocketFuseErrorOptions = {}) {
+    super(safeErrorMessage(isSocketFuseErrorCode(code) ? code : 'INTERNAL_STATE_ERROR'))
+    this.code = isSocketFuseErrorCode(code) ? code : 'INTERNAL_STATE_ERROR'
+    this.retryable = options.retryable ?? false
+    this.fatal = options.fatal ?? false
+  }
+}
+
+/**
  * 从已验证的控制平面字段构造页面安全错误。
  *
  * @param code Worker 发送的稳定错误码。
- * @param options Worker 声明的重试与终态标记；details 只可含白名单原始值。
+ * @param options Worker 声明的重试与终态标记。
  * @returns 不携带原始 cause 的页面安全错误对象。
  */
 export function createSafePublicError(
   code: SocketFuseErrorCode,
-  options: Pick<SocketFuseErrorOptions, 'details' | 'fatal' | 'retryable'> = {},
+  options: SocketFuseErrorOptions = {},
 ): SocketFuseError {
-  return new SocketFuseError(code, safeErrorMessage(code), options)
+  return new SocketFuseError(code, options)
 }
 
 /**
@@ -170,16 +167,7 @@ export function createSafePublicError(
  * @returns 保留 code/retryable/fatal、丢弃内部文本和详情的错误对象。
  */
 export function toSafePublicError(error: SocketFuseError): SocketFuseError {
-  const details = error.details === undefined
-    ? undefined
-    : Object.freeze(Object.fromEntries(Object.entries(error.details).filter(([, value]) => value === null
-      || typeof value === 'boolean'
-      || typeof value === 'number'
-      || typeof value === 'string')))
-  const options = details === undefined
-    ? { fatal: error.fatal, retryable: error.retryable }
-    : { details, fatal: error.fatal, retryable: error.retryable }
-  return createSafePublicError(error.code, options)
+  return createSafePublicError(error.code, { fatal: error.fatal, retryable: error.retryable })
 }
 
 /**
@@ -193,33 +181,26 @@ export function isSocketFuseError(value: unknown): value is SocketFuseError {
 }
 
 /**
- * 将任意异常归一化为 SocketFuse 错误，保留本地 cause 但不负责跨端口传播。
+ * 将应用异常按失败阶段映射，绝不信任应用伪造的 SocketFuseError。
  *
  * @param value 原始异常或任意 throw 值。
  * @param code 非 SocketFuse 错误时采用的稳定错误码。
- * @param message 当前 realm 中的后备文本。
- * @param options 可重试、终态与本地诊断元数据。
+ * @param options 可重试与终态标记。
  * @returns 可被本地状态机处理的 `SocketFuseError`。
  */
 export function toSocketFuseError(
-  value: unknown,
+  _value: unknown,
   code: SocketFuseErrorCode,
-  message: string,
-  options: Omit<SocketFuseErrorOptions, 'cause'> = {},
+  options: SocketFuseErrorOptions = {},
 ): SocketFuseError {
-  if (isSocketFuseError(value))
-    return value
-
-  return new SocketFuseError(code, message, { ...options, cause: value })
+  return new SocketFuseError(code, options)
 }
 
 /**
  * 创建参数校验错误。
  *
- * @param message 描述无效值的本地文本。
- * @param field 可选的字段路径，仅用于本地诊断。
  * @returns 错误码固定为 `INVALID_OPTIONS` 的错误。
  */
-export function invalidOptions(message: string, field?: string): SocketFuseError {
-  return new SocketFuseError('INVALID_OPTIONS', message, field === undefined ? {} : { details: { field } })
+export function invalidOptions(): SocketFuseError {
+  return new SocketFuseError('INVALID_OPTIONS')
 }

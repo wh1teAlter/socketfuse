@@ -1,9 +1,10 @@
 /** 在连接层调度 adapter 定义的应用心跳，并将超时转换为连接失败。 */
 import type { HeartbeatOptions, TimerHandle } from '../shared/types'
 
+/** 心跳引擎的同步发送能力与可控时钟。 */
 export interface HeartbeatRuntime {
   /** 发送一次已编码的心跳帧；失败由连接控制器处理。 */
-  readonly send: () => void | Promise<void>
+  readonly send: () => void
   /** 心跳超时时调用的连接级处理器。 */
   readonly onTimeout: () => void
   /** 可注入的当前时间源。 */
@@ -14,6 +15,7 @@ export interface HeartbeatRuntime {
   readonly clearTimeout?: (handle: TimerHandle) => void
 }
 
+/** 每条物理尝试独占的有界心跳调度器。 */
 export class HeartbeatController {
   /** 当前心跳周期 timer。 */
   private intervalHandle: TimerHandle | undefined
@@ -23,6 +25,8 @@ export class HeartbeatController {
   private running = false
   /** 配置超时时是否正在等待 pong 或入站活动。 */
   private awaiting = false
+  /** 每次 stop/start 变化，保护已开始执行的旧 tick。 */
+  private generation = 0
 
   /** 创建未启动的心跳控制器。 */
   constructor(readonly options: Readonly<HeartbeatOptions>, private readonly runtime: HeartbeatRuntime) {}
@@ -36,6 +40,7 @@ export class HeartbeatController {
 
   /** 停止并清理周期与超时 timer。 */
   stop(): void {
+    this.generation++
     this.running = false
     this.awaiting = false
     if (this.intervalHandle !== undefined)
@@ -66,12 +71,13 @@ export class HeartbeatController {
     if (!this.running)
       return
     this.intervalHandle = (this.runtime.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay)))(() => {
-      void this.tick()
+      this.intervalHandle = undefined
+      this.tick()
     }, this.options.interval)
   }
 
   /** 发送心跳并在需要时安装 pong 超时。 */
-  private async tick(): Promise<void> {
+  private tick(): void {
     if (!this.running)
       return
     if (this.awaiting) {
@@ -79,13 +85,16 @@ export class HeartbeatController {
       return
     }
     this.awaiting = this.options.pongTimeout !== undefined
+    const generation = this.generation
     try {
-      await this.runtime.send()
+      this.runtime.send()
     }
     catch {
       // socket/controller 统一拥有发送失败与重连决策；这里仅维护存活超时，
       // 不能因单次发送异常改变连接状态机的不变量。
     }
+    if (!this.running || this.generation !== generation)
+      return
     if (this.awaiting && this.running && this.options.pongTimeout !== undefined) {
       this.timeoutHandle = (this.runtime.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay)))(() => {
         if (this.running && this.awaiting) {

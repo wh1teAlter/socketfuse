@@ -24,6 +24,26 @@ describe('estimateStructuredCloneBytes', () => {
   it('stops above the supplied limit for a large ArrayBuffer', () => {
     expect(estimateStructuredCloneBytes(new ArrayBuffer(128), 64)).toBe(65)
   })
+
+  it('charges the backing buffer of a tiny view and counts shared backing only once', () => {
+    const buffer = new ArrayBuffer(8192)
+    const view = new Uint8Array(buffer, 4000, 1)
+    expect(estimateStructuredCloneBytes(view, 4096)).toBeGreaterThan(4096)
+    expect(estimateStructuredCloneBytes([view, new DataView(buffer, 0, 1)], 9000)).toBeLessThan(9000)
+    expect(estimateStructuredCloneBytes([view, new DataView(buffer, 0, 1)], 9000)).toBeGreaterThan(8192)
+  })
+
+  it('rejects accessors without invoking them, shared buffers, and excessive depth', () => {
+    let reads = 0
+    const accessor = Object.defineProperty({}, 'data', { enumerable: true, get: () => ++reads })
+    expect(estimateStructuredCloneBytes(accessor, 1024)).toBeGreaterThan(1024)
+    expect(reads).toBe(0)
+    expect(estimateStructuredCloneBytes(new Uint8Array(new SharedArrayBuffer(1)), 1024)).toBeGreaterThan(1024)
+    let nested: unknown = null
+    for (let index = 0; index < 1000; index++)
+      nested = { nested }
+    expect(estimateStructuredCloneBytes(nested, 100_000)).toBeGreaterThan(100_000)
+  })
 })
 
 describe('estimatePayloadBytes', () => {

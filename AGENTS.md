@@ -11,7 +11,7 @@ SocketFuse 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 
 1. 先阅读与改动范围相邻的 `README.md`、规格和 tickets；以公开 API、运行时语义、依赖或模块职责为边界安排工作。
 2. 需要新抽象、结构调整或刻意简化时，先在变更说明或对应 README 写清：现有复用能力为何不足、选择的意图、以及必须保持的不变量。未获批准不得扩大范围。
 3. 新建模块，或改变模块职责、公开 API、依赖或使用方式时，同步创建或更新该模块的 `README.md`。README 只描述职责、公开 API、依赖、使用方式和边界，不复制内部实现。
-4. 保持依赖方向：`shared` → `config/protocol/connection` → `transport/worker/page` → `socketfuse` public facade。`connection` 不得依赖 `page` 或 `worker`；docs 只依赖公开 `socketfuse` 入口；`ws` 及其类型只留在 `packages/test`。
+4. 保持依赖方向：`shared` → `config/protocol/connection` → `runtime` → `transport/worker` → `page` → `socketfuse` public facade。`connection` 不得依赖 `runtime`、`page` 或 `worker`；原生 socket 能力面属于 connection。runtime 拥有连接池与参与期，两种 transport 共用它；docs 只依赖公开 `socketfuse` 入口；`ws` 及其类型只留在 `packages/test`。
 5. 保护现有工作树。不得重置、覆盖或删除无关改动；不得修改 `docs/review/1.md` 与 `docs/review/2.md`。
 6. 面向用户的 `socketfuse` 改动必须提交 Changeset；不得在业务 PR 中直接改版本或 CHANGELOG。只有 release workflow
    创建的 Version Packages PR 可以消费 Changeset，只有该 PR 合并后的版本提交可以发布。

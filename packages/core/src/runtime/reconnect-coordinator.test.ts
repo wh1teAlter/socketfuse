@@ -14,11 +14,11 @@ describe('reconnect coordinator', () => {
       onAbort: client => aborted.push(client),
       onAssign: client => assigned.push(client),
       onCommit: (_plan, override) => committed.push(override),
-      timeout: 100,
+      onDefault: () => committed.push({}),
     })
     coordinator.register('hidden', 'hidden')
     coordinator.register('visible', 'visible')
-    coordinator.start({ attempt: 1, close: { code: 1006, terminal: false, wasClean: false }, defaultDelay: 1000, id: 'plan', reason: 'socket-close' })
+    coordinator.start({ connectionEpoch: 'epoch', originAttempt: 1, attempt: 2, source: 'automatic', countAsRetry: true, retriesUsed: 0, deadline: Date.now() + 100, close: { code: 1006, terminal: false, wasClean: false }, defaultDelay: 1000, id: 'plan', reason: 'socket-close' })
     expect(assigned).toEqual(['visible'])
     coordinator.reject('visible', 'plan')
     expect(assigned).toEqual(['visible', 'hidden'])

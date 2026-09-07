@@ -21,8 +21,9 @@ WebSocket URL。
 </ClientOnly>
 
 只有点击“连接”后才会创建连接。使用相同 URL 与 `id` 打开另一个标签页，即可看到由
-SharedWorker 持有的同一个物理连接。选择 `direct` 可观察有意设置的构造/初始化降级；选择
-`error` 则会直接显示该失败，不会打开另一个物理 socket。
+SharedWorker 持有的同一个物理连接。内置 Worker 不可用时，`direct` 策略允许页面内连接，
+`error` 策略则报告失败。勾选“模拟自定义 Worker 失败”会强制使用 `error`：自定义协议部署
+不能在页面里自动重建，因此始终显式失败。
 
 “物理连接数”表示当前页面观测到的已打开 WebSocket 数：在 SharedWorker 传输下，使用相同
 URL 与 `id` 的多个标签页都应显示 `1`。“共享页面数”是附着到这个共享连接的逻辑页面 client

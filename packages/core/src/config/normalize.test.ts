@@ -38,7 +38,7 @@ describe('normalizeWebSocketOptions', () => {
     expect(() => normalizeWebSocketOptions('https://example.test', { id: 'room' })).toThrowError(SocketFuseError)
     expect(() => normalizeWebSocketOptions('wss://example.test', { id: '' })).toThrowError(SocketFuseError)
     expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', queue: { maxMessages: 0 } })).toThrowError(SocketFuseError)
-    expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', autoReconnect: { jitter: 2 } })).toThrowError(SocketFuseError)
+    expect(() => normalizeWebSocketOptions('wss://example.test', { id: 'room', reconnect: { jitter: 2 } })).toThrowError(SocketFuseError)
   })
 
   it('supports raw string heartbeat without enabling timeout implicitly', () => {
@@ -67,15 +67,16 @@ describe('normalizeWebSocketOptions', () => {
     })).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
   })
 
-  it('rejects URL objects and custom heartbeat adapters without createPing', () => {
+  it('rejects URL objects and obsolete function-based custom protocol options', () => {
     expect(() => normalizeWebSocketOptions(new URL('wss://example.test') as unknown as string, { id: 'fixed-string-only' })).toThrowError(SocketFuseError)
     expect(() => normalizeWebSocketOptions('wss://example.test', {
       heartbeat: true,
       id: 'missing-create-ping',
       protocol: {
-        classify: data => ({ data, type: 'data' }),
-        decode: data => data,
-        encode: data => String(data),
+        // @ts-expect-error 旧版页面函数协议必须在运行时拒绝。
+        classify: (data: unknown) => ({ data, type: 'data' }),
+        decode: (data: unknown) => data,
+        encode: (data: unknown) => String(data),
         id: 'missing-create-ping',
         version: 1,
       },
@@ -108,6 +109,6 @@ describe('normalizeWebSocketOptions', () => {
     const second = normalizeWebSocketOptions('wss://example.test/b', { id: 'room' })
     const third = normalizeWebSocketOptions('wss://example.test/a', { id: 'room', binaryType: 'blob' })
     expect(hasConfigConflict(first, second)).toBe(false)
-    expect(hasConfigConflict(first, third)).toBe(true)
+    expect(hasConfigConflict(first, third)).toBe(false)
   })
 })

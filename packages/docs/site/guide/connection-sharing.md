@@ -2,7 +2,7 @@
 
 ## `id` 是共享标识
 
-只有在同源、连接到同一份 SharedWorker 脚本，并且使用相同 `id` 与共享配置时，多个标签页
+只有在同源、连接到同一个 SharedWorker 实例（origin、脚本 URL、名称及浏览器分区一致），并且使用相同 `id` 与共享配置时，多个标签页
 才会共享一个物理 socket。应将 `id` 视为应用命名空间，例如
 `notifications:${tenantId}:${userId}`；它不是授权边界。
 
@@ -14,7 +14,7 @@
 `CONNECTION_CONFIG_CONFLICT` 拒绝；需要独立连接时请使用不同的 `id`。
 
 下列设置属于页面本地，不会导致冲突：`onMessage`、其他回调、`logger`、生命周期恢复/回放
-选项、`immediate`、`fallback`、`autoClose` 以及 Worker 构造方式。
+选项、`immediate`、`fallback`、`autoClose`、raw binaryType 以及 Worker 构造方式。
 
 ## 应用状态留在应用，URL 使用重连计划
 
@@ -31,8 +31,8 @@ ws.onBeforeReconnect(async (context) => {
 一次重连计划只接受 Worker 选中页面的原子提交；URL query 与应用 payload 不会通过诊断、logger
 或控制响应暴露。应用如需在 open 后认证，应使用普通 `sendMessage()` 并自行维护业务就绪状态。
 
-## handler execution key
+## handler dispatch key
 
 相同 key 的后注册页面不会抢占当前 holder。需要交接时，Worker 优先 visible 页面，并在相同
 可见性内按注册 FIFO 选择；hidden 不主动交接，freeze、close、端口失败与 lease 失效会交接。
-这不是授权机制或跨设备分布式锁。
+每帧携带 session/epoch/grant 代际，并经过本地 lease 校验。它不是授权机制，也不保证跨页面已经启动的异步副作用互斥。Worker 协议回复应使用连接扩展；keyed handler 不接收回放。

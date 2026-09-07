@@ -4,6 +4,18 @@ import { SocketFuseError } from '../shared/errors'
 import { OutboundQueue } from './queue'
 
 describe('outboundQueue', () => {
+  it('owns a compact binary snapshot after accepting a queued view', () => {
+    const queue = new OutboundQueue(2, 8)
+    const buffer = new ArrayBuffer(8192)
+    const view = new Uint8Array(buffer, 4096, 1)
+    view[0] = 7
+    queue.enqueue('a', view, 'm1')
+    view[0] = 99
+    const actual = queue.peek()?.data as Uint8Array
+    expect(actual[0]).toBe(7)
+    expect(actual.buffer.byteLength).toBe(1)
+    expect(queue.bytes).toBe(1)
+  })
   it('is FIFO and tracks encoded bytes', () => {
     const queue = new OutboundQueue(2, 12)
     queue.enqueue('a', 'first', 'm1')

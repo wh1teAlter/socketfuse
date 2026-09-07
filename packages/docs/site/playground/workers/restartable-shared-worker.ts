@@ -10,6 +10,8 @@ import { createSharedWebSocketRuntime } from 'socketfuse/worker'
 interface TestPort {
   postMessage: (message: unknown) => void
   addEventListener: (type: 'message' | 'messageerror', listener: (event: { readonly data: unknown }) => void) => void
+  /** runtime 清理当前端口监听。 */
+  removeEventListener: (type: 'message' | 'messageerror', listener: (event: { readonly data: unknown }) => void) => void
 }
 
 /** E2E 用的最小 SharedWorker global 形状。 */

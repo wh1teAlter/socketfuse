@@ -10,13 +10,14 @@ import type {
   JsonMatcher,
   JsonProtocolOptions,
   JsonValue,
-  MaybePromise,
   ProtocolAdapter,
   ProtocolFrame,
   SocketData,
 } from '../shared/types'
 import { assertStructuredCloneable, isPlainRecord, stableSerialize } from '../shared/structured'
 import { invalidOptions, SocketFuseError } from '../shared/errors'
+import { invokeSynchronous } from '../shared/callbacks'
+import { socketDataByteLength } from '../shared/bytes'
 
 /** custom adapter id 的稳定命名约束。 */
 const adapterIdPattern = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/
@@ -50,7 +51,9 @@ export const rawProtocol: ProtocolAdapter<SocketData, SocketData> = Object.freez
 })
 
 /** 判断值是否为无循环的 JSON 结构。 */
-function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonValue {
+function isJsonValue(value: unknown, seen = new Set<object>(), depth = 0): value is JsonValue {
+  if (depth > 64)
+    return false
   if (value === null || typeof value === 'string' || typeof value === 'boolean')
     return true
   if (typeof value === 'number')
@@ -62,10 +65,10 @@ function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonVal
   seen.add(value)
   try {
     if (Array.isArray(value))
-      return value.every(item => isJsonValue(item, seen))
+      return value.every(item => isJsonValue(item, seen, depth + 1))
     if (!isPlainRecord(value))
       return false
-    return Object.values(value).every(item => isJsonValue(item, seen))
+    return Object.values(value).every(item => isJsonValue(item, seen, depth + 1))
   }
   finally {
     seen.delete(value)
@@ -75,23 +78,23 @@ function isJsonValue(value: unknown, seen = new Set<object>()): value is JsonVal
 /** 将 matcher 点号/下标路径解析为访问片段。 */
 function pathSegments(path: string): (string | number)[] {
   if (path.length === 0)
-    throw invalidOptions('JSON matcher paths must not be empty', 'protocol')
+    throw invalidOptions()
   const segments: (string | number)[] = []
   const pattern = /([A-Z_$][\w$-]*|\[(\d+)\])/gi
   let offset = 0
   for (const match of path.matchAll(pattern)) {
     if (match.index !== offset && !(offset === 0 && match.index === 0))
-      throw invalidOptions(`Invalid JSON matcher path: ${path}`, 'protocol')
+      throw invalidOptions()
     const token = match[1]
     if (token === undefined)
-      throw invalidOptions(`Invalid JSON matcher path: ${path}`, 'protocol')
+      throw invalidOptions()
     segments.push(match[2] === undefined ? token : Number(match[2]))
     offset = match.index + match[0].length
     if (path[offset] === '.')
       offset++
   }
   if (offset !== path.length || segments.length === 0)
-    throw invalidOptions(`Invalid JSON matcher path: ${path}`, 'protocol')
+    throw invalidOptions()
   return segments
 }
 
@@ -112,17 +115,17 @@ function matches(value: unknown, matcher: JsonMatcher): boolean {
 }
 
 /** 校验 JSON matcher 的路径和期望值。 */
-function validateMatcher(matcher: unknown, field: string): asserts matcher is JsonMatcher {
+function validateMatcher(matcher: unknown): asserts matcher is JsonMatcher {
   if (!isPlainRecord(matcher) || !Object.entries(matcher).every(([path, expected]) => {
     pathSegments(path)
     return isJsonValue(expected)
   })) {
-    throw invalidOptions(`${field} must be a JSON matcher`, field)
+    throw invalidOptions()
   }
 }
 
-/** 将字符串、Blob 或二进制 payload 解码为有限 JSON 值。 */
-function readJson(data: SocketData): MaybePromise<JsonValue> {
+/** 同步解析原生文本或 ArrayBuffer 入站；Blob 仅可在页面表示层产生。 */
+function readJson(data: SocketData): JsonValue {
   if (typeof data === 'string') {
     try {
       const parsed: unknown = JSON.parse(data)
@@ -130,50 +133,51 @@ function readJson(data: SocketData): MaybePromise<JsonValue> {
         throw new Error('not JSON value')
       return parsed
     }
-    catch (cause) {
-      throw new SocketFuseError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
+    catch {
+      throw new SocketFuseError('DECODE_FAILED')
     }
   }
-  if (data instanceof Blob)
-    return data.text().then(text => readJson(text))
+  if (!(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data))
+    throw new SocketFuseError('DECODE_FAILED')
   try {
     const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
     return readJson(new TextDecoder().decode(bytes))
   }
-  catch (cause) {
-    throw new SocketFuseError('DECODE_FAILED', 'Unable to decode JSON message', { cause })
+  catch {
+    throw new SocketFuseError('DECODE_FAILED')
   }
 }
 
 /** 在创建适配器前校验 JSON 协议的可克隆性和 matcher 约束。 */
 function validateJsonOptions(options: JsonProtocolOptions): void {
   if (options.type !== 'json')
-    throw invalidOptions('JSON protocol type must be json', 'protocol.type')
+    throw invalidOptions()
   if (options.ignore !== undefined) {
     if (!Array.isArray(options.ignore))
-      throw invalidOptions('protocol.ignore must be an array', 'protocol.ignore')
-    options.ignore.forEach((matcher, index) => validateMatcher(matcher, `protocol.ignore[${index}]`))
+      throw invalidOptions()
+    options.ignore.forEach(matcher => validateMatcher(matcher))
   }
   if (options.heartbeat !== undefined) {
     if (!isPlainRecord(options.heartbeat) || !('ping' in options.heartbeat) || !('pong' in options.heartbeat))
-      throw invalidOptions('protocol.heartbeat must contain ping and pong', 'protocol.heartbeat')
+      throw invalidOptions()
     if (!isJsonValue(options.heartbeat.ping) || !isJsonValue(options.heartbeat.serverPong ?? null))
-      throw invalidOptions('protocol.heartbeat templates must be JSON values', 'protocol.heartbeat')
-    validateMatcher(options.heartbeat.pong, 'protocol.heartbeat.pong')
+      throw invalidOptions()
+    validateMatcher(options.heartbeat.pong)
     if (options.heartbeat.serverPing !== undefined)
-      validateMatcher(options.heartbeat.serverPing, 'protocol.heartbeat.serverPing')
-    assertStructuredCloneable(options.heartbeat, 'protocol.heartbeat')
+      validateMatcher(options.heartbeat.serverPing)
+    assertStructuredCloneable(options.heartbeat)
   }
-  assertStructuredCloneable(options, 'protocol')
+  assertStructuredCloneable(options)
 }
 
-/** 创建声明式 JSON 协议适配器。同步/异步 API 失败会转为稳定 SocketFuse 错误码。 */
+/** 创建同步声明式 JSON 适配器，失败统一使用安全阶段错误。 */
 export function createJsonProtocolAdapter(options: JsonProtocolOptions): ProtocolAdapter<JsonValue, JsonValue> {
   validateJsonOptions(options)
-  const ignore = options.ignore ?? []
-  const heartbeat = options.heartbeat
+  const snapshot = structuredClone(options)
+  const ignore = snapshot.ignore ?? []
+  const heartbeat = snapshot.heartbeat
   const serverPong = heartbeat?.serverPong
-  const descriptorConfig = Object.freeze(JSON.parse(JSON.stringify(options)) as Record<string, unknown>)
+  const descriptorConfig = Object.freeze(structuredClone(snapshot) as unknown as Record<string, unknown>)
 
   return Object.freeze({
     /** 识别 heartbeat、ignore 与业务帧。 */
@@ -206,7 +210,7 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
           },
         }),
     /** 将原始 payload 解码为 JSON 值。 */
-    decode(data: SocketData, context: DecodeContext): MaybePromise<JsonValue> {
+    decode(data: SocketData, context: DecodeContext): JsonValue {
       void context
       return readJson(data)
     },
@@ -218,8 +222,8 @@ export function createJsonProtocolAdapter(options: JsonProtocolOptions): Protoco
           throw new Error('Value is not JSON-compatible')
         return JSON.stringify(data)
       }
-      catch (cause) {
-        throw new SocketFuseError('ENCODE_FAILED', 'Unable to encode JSON message', { cause })
+      catch {
+        throw new SocketFuseError('ENCODE_FAILED')
       }
     },
     id: 'json',
@@ -244,6 +248,7 @@ export function getProtocolDescriptor(protocol: 'raw' | JsonProtocolOptions): {
 /** 校验 custom adapter 的跨 Worker 注册形状。 */
 export function validateProtocolAdapter(value: unknown): asserts value is ProtocolAdapter<unknown, unknown> {
   if (!isPlainRecord(value)
+    || Object.values(Object.getOwnPropertyDescriptors(value)).some(property => !('value' in property))
     || typeof value.id !== 'string'
     || !isValidAdapterId(value.id)
     || typeof value.version !== 'number'
@@ -252,72 +257,60 @@ export function validateProtocolAdapter(value: unknown): asserts value is Protoc
     || typeof value.encode !== 'function'
     || typeof value.decode !== 'function'
     || typeof value.classify !== 'function') {
-    throw invalidOptions('protocol adapter has an invalid shape', 'protocol')
+    throw invalidOptions()
+  }
+  for (const key of ['createPing', 'createPong', 'shouldReconnect'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'function')
+      throw invalidOptions()
   }
 }
 
-/** 调用 adapter 编码业务值并校验返回的原生 WebSocket payload。 */
-export async function encodeWithAdapter<Incoming, Outgoing>(
+/** 调用同步 adapter 编码并校验其原生 wire 返回值；不允许 Promise 队尾。 */
+export function encodeWithAdapter<Incoming, Outgoing>(
   adapter: ProtocolAdapter<Incoming, Outgoing>,
   data: Outgoing,
   context: EncodeContext,
-): Promise<SocketData> {
+): SocketData {
+  const encoded = invokeSynchronous(() => adapter.encode(data, context), 'ENCODE_FAILED')
   try {
-    const encoded = await adapter.encode(data, context)
-    if (typeof encoded !== 'string'
-      && !(typeof Blob !== 'undefined' && encoded instanceof Blob)
-      && !(encoded instanceof ArrayBuffer)
-      && !ArrayBuffer.isView(encoded)) {
-      throw new Error('Adapter returned unsupported WebSocket data')
-    }
+    socketDataByteLength(encoded)
     return encoded
   }
-  catch (cause) {
-    if (cause instanceof SocketFuseError && cause.code === 'ENCODE_FAILED')
-      throw cause
-    throw new SocketFuseError('ENCODE_FAILED', 'Protocol adapter encode failed', { cause })
+  catch {
+    throw new SocketFuseError('ENCODE_FAILED')
   }
 }
 
-/** 顺序解码并分类一条原始 socket payload，保护协议帧到达顺序。 */
-export async function decodeAndClassify<Incoming, Outgoing>(
+/** 同步解码与分类；回调与返回结构分别校验，不保留应用伪造的错误码。 */
+export function decodeAndClassify<Incoming, Outgoing>(
   adapter: ProtocolAdapter<Incoming, Outgoing>,
   data: SocketData,
   context: DecodeContext & ClassifyContext,
-): Promise<ProtocolFrame<Incoming>> {
-  let decoded: Incoming
+): ProtocolFrame<Incoming> {
+  const decoded = invokeSynchronous(() => adapter.decode(data, context), 'DECODE_FAILED')
+  const frame = invokeSynchronous(() => adapter.classify(decoded, context), 'PROTOCOL_ERROR')
   try {
-    decoded = await adapter.decode(data, context)
-  }
-  catch (cause) {
-    if (cause instanceof SocketFuseError && cause.code === 'DECODE_FAILED')
-      throw cause
-    throw new SocketFuseError('DECODE_FAILED', 'Protocol adapter decode failed', { cause })
-  }
-  try {
-    const frame = await adapter.classify(decoded, context)
-    if (frame === null || typeof frame !== 'object' || !['data', 'ping', 'pong', 'ignore', 'fatal'].includes(frame.type))
-      throw new Error('Adapter returned an invalid protocol frame')
+    if (!isPlainRecord(frame))
+      throw new Error()
+    const keys = Object.keys(frame)
+    if (frame.type === 'data' || frame.type === 'control' || frame.type === 'ping') {
+      if (keys.length !== 2 || !Object.hasOwn(frame, 'data'))
+        throw new Error()
+    }
+    else if (frame.type === 'pong' || frame.type === 'ignore') {
+      if (keys.length !== 1)
+        throw new Error()
+    }
+    else if (frame.type === 'fatal') {
+      if (keys.some(key => key !== 'type' && key !== 'code') || (frame.code !== undefined && typeof frame.code !== 'string'))
+        throw new Error()
+    }
+    else {
+      throw new Error()
+    }
     return frame
   }
-  catch (cause) {
-    if (cause instanceof SocketFuseError && cause.code === 'PROTOCOL_ERROR')
-      throw cause
-    throw new SocketFuseError('PROTOCOL_ERROR', 'Protocol adapter classify failed', { cause })
-  }
-}
-
-export class OrderedProtocol<Incoming, Outgoing> {
-  /** 上一条 decode/classify 完成 promise，确保异步 adapter 不乱序。 */
-  private tail: Promise<void> = Promise.resolve()
-
-  /** 创建绑定 adapter 的顺序处理器。 */
-  constructor(readonly adapter: ProtocolAdapter<Incoming, Outgoing>) {}
-
-  /** 排队处理一条 payload，并返回其协议帧。 */
-  process(data: SocketData, context: DecodeContext & ClassifyContext): Promise<ProtocolFrame<Incoming>> {
-    const result = this.tail.then(() => decodeAndClassify(this.adapter, data, context))
-    this.tail = result.then(() => undefined, () => undefined)
-    return result
+  catch {
+    throw new SocketFuseError('PROTOCOL_ERROR')
   }
 }

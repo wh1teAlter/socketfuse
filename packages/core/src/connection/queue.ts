@@ -1,8 +1,9 @@
 /** 为出站消息提供按数量和字节双重限制的 FIFO 队列。 */
 import type { SocketData } from '../shared/types'
-import { socketDataByteLength } from '../shared/bytes'
+import { snapshotSocketData, socketDataByteLength } from '../shared/bytes'
 import { SocketFuseError } from '../shared/errors'
 
+/** 库持有的不可变出站快照及其取消归属。 */
 export interface OutboundQueueItem {
   /** 产生该项的页面 client id，用于 detach 时只移除所属消息。 */
   readonly ownerId: string
@@ -16,6 +17,7 @@ export interface OutboundQueueItem {
   readonly sequence: number
 }
 
+/** 不包含消息内容的队列用量。 */
 export interface QueueSnapshot {
   /** 当前队列消息数。 */
   readonly messages: number
@@ -23,6 +25,7 @@ export interface QueueSnapshot {
   readonly bytes: number
 }
 
+/** 以双重容量限制保留按接纳顺序发送的 wire 快照。 */
 export class OutboundQueue {
   /** FIFO 消息容器，保持发送顺序。 */
   private readonly entries: OutboundQueueItem[] = []
@@ -34,7 +37,7 @@ export class OutboundQueue {
   /** 创建具有消息数和字节双重上限的 FIFO 队列。 */
   constructor(readonly maxMessages: number, readonly maxBytes: number) {
     if (!Number.isSafeInteger(maxMessages) || maxMessages <= 0 || !Number.isSafeInteger(maxBytes) || maxBytes <= 0)
-      throw new SocketFuseError('INVALID_OPTIONS', 'Queue limits must be positive safe integers')
+      throw new SocketFuseError('INVALID_OPTIONS')
   }
 
   /** 返回当前消息数量。 */
@@ -60,12 +63,13 @@ export class OutboundQueue {
   ): { item: OutboundQueueItem, position: number } {
     const bytes = socketDataByteLength(data)
     if (bytes > this.maxBytes)
-      throw new SocketFuseError('MESSAGE_TOO_LARGE', 'Message exceeds queue byte limit', { details: { bytes, maxBytes: this.maxBytes } })
+      throw new SocketFuseError('MESSAGE_TOO_LARGE')
     if (this.entries.length >= this.maxMessages)
-      throw new SocketFuseError('QUEUE_FULL', 'Outbound queue message limit reached', { details: { maxMessages: this.maxMessages } })
+      throw new SocketFuseError('QUEUE_FULL')
     if (this.totalBytes + bytes > this.maxBytes)
-      throw new SocketFuseError('QUEUE_BYTES_EXCEEDED', 'Outbound queue byte limit reached', { details: { bytes: this.totalBytes, maxBytes: this.maxBytes } })
-    const item: OutboundQueueItem = { bytes, data, messageId, ownerId, sequence: ++this.sequence }
+      throw new SocketFuseError('QUEUE_BYTES_EXCEEDED')
+    // 先完成容量判定再复制，queued 后调用方不能改写内容或扩大保留内存。
+    const item: OutboundQueueItem = { bytes, data: snapshotSocketData(data), messageId, ownerId, sequence: ++this.sequence }
     this.entries.push(item)
     this.totalBytes += bytes
     return { item, position: this.entries.length }

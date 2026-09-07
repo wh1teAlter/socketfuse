@@ -6,17 +6,17 @@
 一个 SharedWorker 接入同一个物理 WebSocket；每个页面仍拥有独立的 client、事件处理器、生命周期和错误边界。
 它适用于即时通信、行情、协作编辑、通知流等需要多标签页实时连接的场景。
 
-当前仓库正在准备 `socketfuse@0.0.1-beta.1` 首发，npm 使用 `beta` dist-tag；公开包名、入口与 API 已固定为
+已发布基线为 `socketfuse@0.1.0-beta.2`。当前分支包含待发布的破坏性 API 调整；公开入口保持为
 `socketfuse`、`socketfuse/protocol` 和 `socketfuse/worker`。
 
 ## 为什么使用 SocketFuse
 
-- 降低连接数：同一浏览器、同一源、相同 `id` 的页面最多复用一个物理 WebSocket。
-- 保持页面隔离：每个页面获得稳定的 `WebSocketClient` 实例，可动态注册普通或跨标签页独占的 `onMessage` 处理器。
+- 降低连接数：同一个 SharedWorker 实例内，相同 `id` 和共享配置最多拥有一个物理 WebSocket。
+- 保持页面隔离：每个页面获得稳定的 `WebSocketClient` 实例，可动态注册普通或按帧选择接收者的 `onMessage` 处理器。
 - 零配置可用：默认使用内联 SharedWorker；不需要单独部署 Worker 文件。
 - 可控的降级：SharedWorker 构造或初始化失败时，可选择当前页面的 direct WebSocket 或直接报错。
 - 覆盖常见连接能力：重连前 hook、队列与背压、JSON/自定义协议、应用层心跳、诊断、生命周期回放。
-- 明确交付边界：`sendMessage()` 成功表示本地已接纳或入队，不表示服务端已收到；库不提供 RPC 或服务端 Ack。
+- 明确交付边界：`sendMessage()` 成功表示本地已接纳或入队，不表示服务端已收到；库不提供 RPC 或内建服务端 Ack 服务；应用可在 Worker 自定义协议回复。
 
 ## 运行模型
 
@@ -35,7 +35,7 @@ flowchart LR
 
 ## 快速开始
 
-首次发布后可安装公开包：
+安装已发布的公开包：
 
 ```sh
 pnpm add socketfuse
@@ -90,10 +90,12 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 
 - `open()` / `close()` / `dispose()`：参与、离开或永久释放当前页面的逻辑 client。
 - `sendMessage(data)`：提交消息并获得本地接纳回执。
-- `onMessage(handler, { key })`：可选声明跨标签页 execution key；所有页面仍收到消息，只有 holder 调用 keyed handler。
-- `holdsKey()` / `keychange`：观察 Worker 权威下发的 execution key 状态。
+- `onMessage(handler, { dispatchKey })`：可选声明跨标签页 dispatch key；所有页面仍收到消息，只有 holder 调用 keyed handler。
+- `isDispatchOwner()` / `dispatchownerchange`：观察最近确认的分派资格，不作为副作用互斥锁。
 - `onBeforeReconnect(handler)`：由一个健康页面为断线、超时或显式重连计划原子覆盖 URL 与 delay。
 - `diagnostics()`：读取不包含 payload、token、查询参数和内部异常详情的运行指标。
+
+共享预算使用 `reconnect.maxRetries`，所有重连来源统一预留和扣数；`reconnect({ countAsRetry: false })` 只豁免本次。Worker 扩展支持自定义心跳和业务收到标志，参见 [Worker 共享处理](packages/docs/site/guide/worker-extensions.md)。
 
 签名与完整行为以 [API 参考](packages/docs/site/api/index.md)为准。
 
@@ -102,14 +104,15 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 | 范围 | 行为 |
 | --- | --- |
 | Worker 降级 | 仅在 SharedWorker API 不可用、构造、加载或初始化握手失败时按 `fallback` 降级。已选 transport 的网络或恢复失败不会静默切换。 |
+| 统一 runtime | direct 和 shared 共用真实端口协议、克隆、投递和额度；direct 共享范围限当前 realm。 |
 | 生命周期 | `lifecycle.restore` 默认关闭。启用后可在页面隐藏/冻结期间有限缓存消息，并在恢复时以 `replayed: true` 派发。它不是持久化消息恢复。 |
-| 单点执行 | SharedWorker 按 visible 优先、同级 FIFO 仲裁 execution key；freeze、端口离开或 lease 失效会交接。direct 只保证当前页面自身持有。 |
+| 单接收者分派 | SharedWorker 按 visible 优先、同级 FIFO 仲裁 dispatch key；freeze、端口离开或 lease 失效会交接。direct 在当前 realm 的同一连接内使用相同分派规则，不跨标签页共享。 |
 | 动态 endpoint | 初始化只接受固定字符串。业务 getter 在 `onBeforeReconnect` 中运行，并用 `setOptions({ url })` 提交本次计划。 |
 | 协议 | 支持 raw、声明式 JSON 与自定义 adapter。自定义 adapter 需在自定义 Worker 中静态注册，不能通过 `MessagePort` 传递函数。 |
 | 队列与背压 | 默认不离线缓存。显式开启后，消息仍受数量与字节上限限制；溢出会有明确错误或事件，而不会无限占用内存。 |
 | SSR | 三个公开入口可在 Node/SSR 中安全 import；实际创建 client 必须在浏览器页面 realm。 |
 | 安全 | 诊断、logger 与 Worker 控制响应不会暴露认证值、URL 查询参数、业务 payload 或内部异常文本。 |
-| 应用协议 | credential、session、业务 ready、Ack、cursor 和消息幂等由应用维护；库不提供 dedupe 或 exactly-once。 |
+| 应用协议 | Worker 扩展可按物理帧消费、回复和投影业务消息，并请求计数或不计数重连；credential、业务 ready、cursor 和幂等由应用维护，不保证可靠投递。 |
 
 浏览器兼容性与 CSP/自定义 Worker 部署要求见[兼容性与安全](packages/docs/site/reference/compatibility-and-security.md)。
 
@@ -144,7 +147,7 @@ pnpm check          # static + runtime
 不要并行运行 `pnpm check` 与 `pnpm test:e2e`：两者都构建 `packages/socketfuse/dist`，本地同时执行会干扰
 Playground 的开发服务器。
 
-仓库实现边界、中文注释约定和模块依赖方向见 [AGENTS.md](AGENTS.md) 与 [CLAUDE.md](CLAUDE.md)。私有运行时、
+仓库实现边界、中文注释约定和模块依赖方向以 [AGENTS.md](AGENTS.md) 为唯一来源。私有运行时、
 文档与测试工程分别见 [@socketfuse/core](packages/core/README.md)、[文档 workspace](packages/docs/README.md) 和
 [测试 workspace](packages/test/README.md)。
 

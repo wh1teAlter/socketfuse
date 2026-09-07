@@ -85,7 +85,8 @@ function send(): void {
         <label class="playground-field playground-select">
           <span>降级策略</span>
           <select
-            :value="props.fallback"
+            :disabled="props.simulateWorkerFailure"
+            :value="props.simulateWorkerFailure ? 'error' : props.fallback"
             @change="emit('update:fallback', ($event.target as HTMLSelectElement).value as 'direct' | 'error')"
           >
             <option value="direct">direct</option>
@@ -108,7 +109,7 @@ function send(): void {
             type="checkbox"
             @change="emit('update:simulateWorkerFailure', ($event.target as HTMLInputElement).checked)"
           >
-          <span>模拟 Worker 初始化失败</span>
+          <span>模拟自定义 Worker 失败（不降级）</span>
         </label>
       </div>
       <div class="playground-toolbar-actions">

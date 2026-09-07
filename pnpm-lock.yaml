@@ -105,9 +105,6 @@ importers:
       '@socketfuse/core':
         specifier: workspace:*
         version: link:../core
-      publint:
-        specifier: 0.3.24
-        version: 0.3.24
       rolldown:
         specifier: 1.2.2
         version: 1.2.2
@@ -129,6 +126,9 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+      publint:
+        specifier: 0.3.24
+        version: 0.3.24
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

@@ -5,28 +5,32 @@ import { normalizeEndpointUrl } from './endpoint'
 
 describe('normalizeEndpointUrl', () => {
   it('returns the normalized href for absolute ws and wss urls', () => {
-    expect(normalizeEndpointUrl('wss://example.test/socket', 'url')).toBe('wss://example.test/socket')
-    expect(normalizeEndpointUrl('ws://example.test:8080/a?b=1', 'url')).toBe('ws://example.test:8080/a?b=1')
+    expect(normalizeEndpointUrl('wss://example.test/socket')).toBe('wss://example.test/socket')
+    expect(normalizeEndpointUrl('ws://example.test:8080/a?b=1')).toBe('ws://example.test:8080/a?b=1')
   })
 
   it('rejects non-string, relative, and non-ws protocols with INVALID_OPTIONS', () => {
     for (const value of [undefined, null, 42, {}])
-      expect(() => normalizeEndpointUrl(value, 'url')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
-    expect(() => normalizeEndpointUrl('/relative', 'url')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
-    expect(() => normalizeEndpointUrl('https://example.test', 'url')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+      expect(() => normalizeEndpointUrl(value)).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+    expect(() => normalizeEndpointUrl('/relative')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+    expect(() => normalizeEndpointUrl('https://example.test')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
   })
 
   it('rejects urls longer than the endpoint limit before and after normalization', () => {
     const tooLong = `wss://example.test/${'a'.repeat(MAX_ENDPOINT_LENGTH)}`
-    expect(() => normalizeEndpointUrl(tooLong, 'url')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+    expect(() => normalizeEndpointUrl(tooLong)).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
   })
 
-  it('uses the caller label in the message and only reports a field when asked', () => {
-    expect(() => normalizeEndpointUrl('nope', 'Reconnect url')).toThrowError(/^Reconnect url /)
-    const withField = (): string => normalizeEndpointUrl('nope', 'url', 'url')
-    expect(withField).toThrowError(expect.objectContaining({ details: { field: 'url' } }))
+  it('rejects credentials and even an empty fragment without echoing them', () => {
+    for (const url of ['wss://user:secret@example.test/', 'wss://example.test/#', 'wss://example.test/#secret']) {
+      expect(() => normalizeEndpointUrl(url)).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+    }
+  })
+
+  it('uses only stable safe errors for every endpoint boundary', () => {
+    expect(() => normalizeEndpointUrl('nope')).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
     try {
-      normalizeEndpointUrl('nope', 'url')
+      normalizeEndpointUrl('nope')
       expect.unreachable()
     }
     catch (error) {

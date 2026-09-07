@@ -38,7 +38,9 @@ export type ClientVisibility = 'visible' | 'hidden' | 'frozen'
 /** 多标签页共享的重连策略；所有时间字段单位均为毫秒。 */
 export interface ReconnectOptions {
   /** 最大重试次数；`Infinity` 表示不设上限，默认值为 `Infinity`。 */
-  retries: number
+  maxRetries: number
+  /** 是否启用断线等引擎触发的自动恢复；显式恢复始终单独按预算判断。 */
+  automatic: boolean
   /** 指数退避的起始延迟，默认值为 `1000`。 */
   initialDelay: number
   /** 单次重试允许的最大延迟，默认值为 `30000`。 */
@@ -48,7 +50,7 @@ export interface ReconnectOptions {
   /** 取值范围为 `0` 到 `1` 的随机抖动比例，默认值为 `0.2`。 */
   jitter: number
   /** 连接连续保持 open 多久后重置重试计数，默认值为 `30000`。 */
-  stableThreshold: number
+  stableThreshold: number | false
   /** 整个重连计划的总准备时间，默认值为 `10000`。 */
   hookTimeout: number
 }
@@ -105,30 +107,34 @@ export interface ConnectionLimits {
 
 /** 保护一个 SharedWorker 控制平面的静态资源上限。 */
 export interface WorkerResourceLimits {
+  /** 每端口尚未确认的投递数量上限。 */
+  maxDeliveryMessages: number
+  /** 每端口投递总字节与单个业务 envelope 上限。 */
+  maxDeliveryBytes: number
   /** Worker 可接受的 MessagePort 总数上限。 */
   maxPorts: number
   /** 单个 page-to-Worker 控制 envelope 的最大结构化克隆字节数。 */
   maxControlEnvelopeBytes: number
   /** 端口建立后未完成 hello 时的回收时限，单位为毫秒。 */
   unattachedPortTimeoutMs: number
-  /** 一个 Worker 内允许注册的不同 execution key 总数。 */
-  maxExclusiveKeys: number
+  /** 一个 Worker 内允许注册的不同 dispatch key 总数。 */
+  maxDispatchKeys: number
 }
 
 /** 动态消息 handler 的可选执行约束。 */
 export interface MessageHandlerOptions {
   /**
-   * 同一共享连接内至多授权一个页面「启动」handler 的非空业务 key；最长 1024 字符。
+   * 为每帧选择一个页面接收者的非空业务 key；最长 1024 字符。
    *
-   * 库只保证启动资格唯一：已经开始的异步 handler 只能通过 `AbortSignal` 协作取消，
+   * 资格按帧绑定且过期尽力抑制，不保证跨页面副作用互斥；异步 handler 只能通过 `AbortSignal` 协作取消，
    * 浏览器无法强制终止，因此交接窗口内旧 holder 的副作用仍可能与新 holder 重叠。
    */
-  readonly key?: string
+  readonly dispatchKey?: string
 }
 
 /** 每次业务 handler 调用收到的页面本地上下文。 */
 export interface MessageHandlerContext {
-  /** key 撤销或 client dispose 时终止的协作式信号。 */
+  /** 分派资格撤销或当前参与期结束时终止的协作式信号。 */
   readonly signal: AbortSignal
 }
 
@@ -143,10 +149,16 @@ export interface BeforeReconnectOptions {
 
 /** 页面准备一次重连计划时收到的有界上下文。 */
 export interface BeforeReconnectContext {
-  /** 从一开始计数的本次重连序号。 */
+  /** epoch 内下一次物理尝试编号；首次连接为 1，首次重连为 2，与计数预算独立。 */
   readonly attempt: number
   /** 未覆盖时使用的指数退避延迟。 */
   readonly defaultDelay: number
+  /** 触发本计划的安全来源。 */
+  readonly source: ReconnectSource
+  /** 当前计划是否消耗重连预算。 */
+  readonly countAsRetry: boolean
+  /** 接纳本计划时已启动的计数重连数。 */
+  readonly retriesUsed: number
   /** 已移除 reason 文本的安全 close 信息。 */
   readonly close: SafeCloseInfo
   /** 当前准备权成功提交、超时、冻结、转移或计划失效时终止。 */
@@ -225,7 +237,13 @@ export interface ConnectionSnapshot {
   readonly readyState: ReadyState
   /** 当前 socket 所属传输通道。 */
   readonly transport: Transport
-  /** 当前物理连接尝试的单调计数。 */
+  /** 当前连接条目身份；只有相同 epoch 内才可比较 attempt。 */
+  readonly connectionEpoch: string
+  /** 当前快照版本，只在相同 epoch 内递增。 */
+  readonly revision: number
+  /** 当前唯一重连计划；新尝试成功或失败后清空。 */
+  readonly planId: string | null
+  /** 当前 epoch 内包含首次及不计数尝试的单调计数。 */
   readonly attempt: number
   /** 最近一次成功打开的 Unix 时间戳，单位为毫秒；未打开时为 `0`。 */
   readonly connectedAt: number
@@ -269,9 +287,9 @@ export interface SocketFuseStateChangeEvent extends Event {
   readonly reasonCode?: string
 }
 
-/** 当前页面 execution key 持有状态实际变化时的通知。 */
-export interface SocketFuseKeyChangeEvent extends Event {
-  /** 发生变化的 execution key。 */
+/** 当前页面 dispatch key 持有状态实际变化时的通知。 */
+export interface SocketFuseDispatchOwnerChangeEvent extends Event {
+  /** 发生变化的 dispatch key。 */
   readonly key: string
   /** 当前页面是否得到该 key 的 Worker 授权。 */
   readonly held: boolean
@@ -297,8 +315,6 @@ export interface SocketFuseDiagnosticEvent {
   readonly timestamp: number
   /** 可公开的稳定错误或原因码。 */
   readonly code?: string
-  /** 只含原始值白名单的附加信息；不含凭据与 payload。 */
-  readonly details?: Readonly<Record<string, unknown>>
 }
 
 /** 接收已脱敏诊断的回调；不能被当作业务消息监听器。 */
@@ -322,8 +338,18 @@ export interface ConnectionDiagnostics {
   readonly configFingerprint: string
   /** endpoint 的 origin；不含 path、query 或凭据。 */
   readonly endpointOrigin: string
-  /** 当前重连尝试次数。 */
-  readonly retryAttempt: number
+  /** 共享连接条目身份；回收重建后发生变化。 */
+  readonly connectionEpoch: string
+  /** 当前 epoch 内实际调用 socket 工厂的次数。 */
+  readonly attempt: number
+  /** 已启动的计数重连次数。 */
+  readonly retriesUsed: number
+  /** 扣除已用及预留后剩余的计数次数。 */
+  readonly retriesRemaining: number
+  /** 已接纳但未启动的计数预留。 */
+  readonly retryReserved: 0 | 1
+  /** 页面收到本样本的 Unix 毫秒时刻；runtime 内样本为 0。 */
+  readonly observedAt: number
   /** 下次重试延迟，单位为毫秒；没有计划时为 `null`。 */
   readonly nextRetryDelay: number | null
   /** 最近一次可安全公开的 close code；未知时为 `null`。 */
@@ -416,7 +442,7 @@ export interface SafeCloseInfo {
 export type ProtocolFrame<Data>
   = | {
     /** 应派发给业务 handler 的数据帧。 */
-    readonly type: 'data'
+    readonly type: 'data' | 'control'
     /** 解码后的业务值。 */
     readonly data: Data
   }
@@ -441,16 +467,13 @@ export type ProtocolFrame<Data>
     readonly code?: string
   }
 
-/** 允许协议适配器同步或异步完成的结果包装。 */
-export type MaybePromise<Value> = Value | Promise<Value>
-
 /**
  * 定义一个应用协议的编码与控制帧语义。
  *
- * 适配器函数只能在 custom Worker 内执行，不能跨 `MessagePort`。`id`、`version` 与
+ * 适配器函数在连接 runtime 内同步执行，custom 只在自定义 Worker 注册，不能跨 `MessagePort`。`id`、`version` 与
  * `sharedConfig` 共同构成共享连接身份；相同连接 id 的不同协议身份必须被拒绝。
  *
- * @typeParam Incoming 解码后派发给页面监听器的业务 payload。
+ * @typeParam Incoming 解码与分类后的连接协议值；扩展可将它投影为不同的页面业务类型。
  * @typeParam Outgoing `sendMessage` 接受的业务值。
  */
 export interface ProtocolAdapter<Incoming, Outgoing> {
@@ -461,31 +484,52 @@ export interface ProtocolAdapter<Incoming, Outgoing> {
   /** 参与共享身份的可结构化克隆静态配置；不得含页面秘密。 */
   readonly sharedConfig?: Readonly<Record<string, unknown>>
   /** 编码一次 `sendMessage`；失败会以 `ENCODE_FAILED` 拒绝调用。 */
-  encode: (data: Outgoing, context: EncodeContext) => MaybePromise<SocketData>
+  encode: (data: Outgoing, context: EncodeContext) => SocketData
   /** 解码一个原始 socket payload；失败会以 `DECODE_FAILED` 处理。 */
-  decode: (data: SocketData, context: DecodeContext) => MaybePromise<Incoming>
+  decode: (data: SocketData, context: DecodeContext) => Incoming
   /** 将已解码 payload 分类为业务帧或协议控制帧。 */
-  classify: (data: Incoming, context: ClassifyContext) => MaybePromise<ProtocolFrame<Incoming>>
+  classify: (data: Incoming, context: ClassifyContext) => ProtocolFrame<Incoming>
   /** 生成主动心跳帧；缺失时不支持 SocketFuse heartbeat。 */
-  createPing?: (context: HeartbeatContext) => MaybePromise<Outgoing>
+  createPing?: (context: HeartbeatContext) => Outgoing
   /** 对分类出的服务端 ping 生成响应；缺失时不自动回复。 */
-  createPong?: (ping: ProtocolFrame<Incoming>, context: HeartbeatContext) => MaybePromise<Outgoing>
+  createPong?: (ping: ProtocolFrame<Incoming>, context: HeartbeatContext) => Outgoing
   /** 根据已脱敏 close 信息决定是否允许重连；缺失时使用默认策略。 */
   shouldReconnect?: (close: SafeCloseInfo) => boolean
 }
 
 /** raw、声明式 JSON 或已在 custom Worker 注册的协议选择。 */
-export type ProtocolSelector<Incoming, Outgoing>
+export type ProtocolSelector
   = | 'raw'
     | JsonProtocolOptions
-    | ProtocolAdapter<Incoming, Outgoing>
+    | CustomProtocolDescriptor
+
+/** 页面引用 Worker 静态注册协议的纯数据描述；函数与凭据不得放入该配置。 */
+export interface CustomProtocolDescriptor {
+  /** 自定义静态协议类型。 */
+  readonly type: 'custom'
+  /** 与 Worker 注册项一致的协议 id。 */
+  readonly id: string
+  /** 与 Worker 注册项一致的正整数版本。 */
+  readonly version: number
+  /** 参与共享身份的静态非秘密配置。 */
+  readonly sharedConfig?: Readonly<Record<string, unknown>>
+}
+
+/** 页面和 Worker 显式重连的一次计划输入，不改变共享配置或已用预算。 */
+export interface ReconnectRequestOptions {
+  /** 默认 true；false 豁免本次计数但不补充以前的预算。 */
+  readonly countAsRetry?: boolean
+}
+
+/** 引擎、页面、Worker 协议或恢复参与需求的安全触发来源。 */
+export type ReconnectSource = 'automatic' | 'page' | 'worker' | 'demand'
 
 /**
  * 页面 client 及其共享物理连接的创建配置。
  *
  * 只能在浏览器页面 realm 调用 `createWebSocket` 时传入。会改变物理 socket 的字段
  * 必须在同一 `id` 下完全一致；页面本地字段不参与共享 fingerprint。无效配置在创建
- * 阶段同步抛出 `SocketFuseError`，Worker 构造/握手失败按 `fallback` 决定拒绝或降级。
+ * 阶段同步抛出 `SocketFuseError`；只有内联 Worker 初始化失败按 `fallback` 决定拒绝或降级。
  */
 export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = SocketData> {
   /** 同源标签页共享连接的稳定业务 identity；不能为空、最长 1024 字符，且不得包含凭据。 */
@@ -495,18 +539,18 @@ export interface CreateWebSocketOptions<Incoming = SocketData, Outgoing = Socket
   /** 页面本地 custom SharedWorker 工厂；默认使用内置 inline Worker。 */
   worker?: () => SharedWorker
   /** 消息协议；默认 raw 适配器。自定义 adapter 必须同时静态注册在 Worker。 */
-  protocol?: ProtocolSelector<Incoming, Outgoing>
-  /** Worker 构造或初始化失败时的页面本地策略；默认 `direct`。 */
+  protocol?: ProtocolSelector
+  /** 内联 Worker 初始化失败策略，默认 `direct`；custom 仅允许 `error`。 */
   fallback?: 'direct' | 'error'
   /** 创建后是否立即异步打开；页面本地，默认 `true`。 */
   immediate?: boolean
   /** 普通页面卸载时是否自动 detach；页面本地，默认 `true`。 */
   autoClose?: boolean
-  /** 共享重连策略；`true` 或省略使用指数退避默认值。 */
-  autoReconnect?: boolean | Partial<ReconnectOptions>
+  /** 共享重连策略；省略使用指数退避默认值，关闭自动恢复请设 `automatic: false`。 */
+  reconnect?: Partial<ReconnectOptions>
   /** 共享 socket 建连超时，单位毫秒，默认 `10000`。 */
   connectionTimeout?: number
-  /** 共享二进制接收表示，默认 `arraybuffer`。 */
+  /** raw 入站在本页面的二进制表示，默认 `arraybuffer`，不参与共享配置冲突判断。 */
   binaryType?: 'arraybuffer' | 'blob'
   /** 共享应用层心跳策略；默认关闭。 */
   heartbeat?: boolean | Partial<HeartbeatOptions>
@@ -572,47 +616,48 @@ export interface WebSocketClient<Incoming = SocketData, Outgoing = SocketData> e
    */
   close: () => Promise<void>
   /**
-   * 在已创建且未 dispose 阶段提交一条业务消息，或在配置允许时将其有界入队。
+   * 在已经 open 表达参与需求且未 close/dispose 阶段提交业务消息，或按配置有界入队。
    *
    * @param data 由选定 adapter 接受的业务值。
    * @param options 本次发送的队列覆盖。
    * @returns 本地 `accepted` 或 `queued` 回执；不代表服务器已收到。
-   * @throws `SEND_WHILE_DISCONNECTED`、`BACKPRESSURE`、队列/大小限制或编码错误。
+   * @throws `CLIENT_DISCONNECTED`、`SEND_OUTCOME_UNKNOWN`、背压、队列/大小限制或编码错误。
    */
   sendMessage: (data: Outgoing, options?: SendOptions) => Promise<SendReceipt>
   /**
    * 在 client 存活阶段添加一个页面本地业务消息 handler。
    *
    * @param handler 接收业务帧与回放标记的回调；抛出不会阻塞其他 handler 或 Worker。
-   * @param options 可选 execution key；省略时继续在每个收到帧的页面执行。
+   * @param options 可选 dispatch key；省略时继续在每个收到帧的页面执行。
    * @returns 幂等移除函数；dispose 后仍可安全调用。
    */
   onMessage: (handler: (event: SocketFuseMessageEvent<Incoming>, context: Readonly<MessageHandlerContext>) => void | Promise<void>, options?: MessageHandlerOptions) => () => void
   /**
-   * 查询当前页面是否持有指定 execution key。
+   * 查询当前页面是否持有指定 dispatch key。
    *
    * @param key 要查询的业务 key。
-   * @returns 仅反映 Worker 最近一次 grant/revoke 的权威状态。
+   * @returns 最近经本地 lease 检查的分派资格；不是跨页面副作用执行锁，回放不使用该资格。
    */
-  holdsKey: (key: string) => boolean
+  isDispatchOwner: (key: string) => boolean
   /**
-   * 注册当前逻辑 client 唯一的自动重连准备 hook。
+   * 注册当前 client 唯一的重连准备 hook，Worker 扩展准备存在时不参与。
    *
    * @param handler 可异步更新当前计划 URL 与 delay 的页面函数。
    * @returns 幂等注销函数；新注册会替换当前页面旧 hook。
    */
   onBeforeReconnect: (handler: BeforeReconnectHandler) => () => void
   /**
-   * 在 client 已 open 且未 close/dispose 时显式开始新的共享连接尝试。
+   * 在 client 已参与且未 close/dispose 时接纳或加入共享重连计划。
    *
+   * @param options 是否占用共享重试预算，默认计数；不计数不重置已用次数。
    * @returns 重连请求被接纳后的 Promise，不代表 socket 已 open。
-   * @throws `CLIENT_DISCONNECTED`、`CLIENT_DISPOSED` 或 transport 控制错误。
+   * @throws 失去参与、预算耗尽、计数策略冲突、过期计划、终止性协议或 transport 错误。
    */
-  reconnect: () => Promise<void>
+  reconnect: (options?: ReconnectRequestOptions) => Promise<void>
   /**
    * 返回当前已脱敏运行指标；任意 client 状态均可调用。
    *
-   * @returns 不含 URL query、业务 payload 或内部堆栈的快照。
+   * @returns 不含 URL query、业务 payload 或内部堆栈的最近异步样本；observedAt 为本页接收时刻。
    */
   diagnostics: () => Readonly<ConnectionDiagnostics>
   /**

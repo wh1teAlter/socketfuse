@@ -1,21 +1,13 @@
 # 诊断与错误
 
-`ws.diagnostics()` 提供安全的运行数据：transport、逻辑/物理状态、稳定哈希、endpoint origin、
-重试、队列、缓冲量、已连接 client 数和最近一次安全错误/关闭码。
+`diagnostics()` 返回最近接收的安全样本，并触发一次合并后台刷新。`observedAt` 是本页收到样本的时间，`connectionEpoch` 标识条目，`attempt` 是该 epoch 的物理尝试数，`retriesUsed`、`retriesRemaining`、`retryReserved` 独立表示预算。
 
-它刻意不包含认证值、URL 查询字符串、消息 payload 和内部错误堆栈。这样诊断可用于应用指标，
-而不会成为数据外泄通道。
+其他字段包括 transport、逻辑/物理状态、稳定哈希、当前 endpoint origin、队列、缓冲量、参与数和最近安全关闭码/错误码。它不含 endpoint 路径或查询、认证值、业务 payload、内部异常文本或堆栈。
 
-这一边界同样适用于 Worker 错误：其他标签页只会收到稳定的 SocketFuse 错误码、SocketFuse 所有的公开文本及
-明确安全的原始值详情。适配器异常、服务端 payload、endpoint 路径、认证和 cause 都不会跨越
-`MessagePort` 传播。
+`SocketFuseError` 只接受稳定 code 和 fatal/retryable 标记，message 由库映射，不支持 details/cause。应用即使抛出一个自制 SocketFuseError，也会在外部调用边界按阶段重建；不会把任意错误文本或元数据发往其他页面。
 
-## 错误
+常见错误有 `CONNECTION_CONFIG_CONFLICT`、`ADAPTER_NOT_REGISTERED`、`WORKER_DISCONNECTED`、`RESOURCE_LIMIT_EXCEEDED`、`MESSAGE_TOO_LARGE`、`BACKPRESSURE`。`PROTOCOL_CONTRACT_VIOLATION` 表示同步协议返回 thenable，为终止性错误。
 
-错误是带有稳定 `code`、可读消息、可重试性与致命性标记的 `SocketFuseError`。重要的建立错误包括
-`WORKER_UNSUPPORTED`、`WORKER_CONSTRUCTION_FAILED`、`WORKER_INIT_TIMEOUT`、
-`CONNECTION_CONFIG_CONFLICT` 与 `ADAPTER_NOT_REGISTERED`。运行时发送错误包括
-`SEND_WHILE_DISCONNECTED`、`BACKPRESSURE` 和 `RESOURCE_LIMIT_EXCEEDED`。
+重连的 `RETRY_EXHAUSTED` 不等于 fatal；不同计数请求冲突报 `RECONNECT_IN_PROGRESS`，旧计划报 `STALE_RECONNECT_PLAN`，未结算准备来源饱和报 `PREPARATION_BUSY`。发送已 post 后丢失确认可能报 `SEND_OUTCOME_UNKNOWN`，不能据此断言服务器未收到。
 
-请使用 `isSocketFuseError()` 作为类型守卫，并优先使用 `code`，不要匹配可读消息。完整代码联合类型请参阅
-生成的 [SocketFuseErrorCode](../api/generated/index/type-aliases/SocketFuseErrorCode.md)。
+优先匹配 `code`，不要匹配文本。完整联合见 [SocketFuseErrorCode](../api/generated/index/type-aliases/SocketFuseErrorCode.md)。

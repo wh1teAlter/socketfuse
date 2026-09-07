@@ -1,11 +1,11 @@
-/** 验证 execution key 的非抢占选主、可见性偏好与冻结交接。 */
+/** 验证 dispatch key 的非抢占选主、可见性偏好与冻结交接。 */
 import { describe, expect, it } from 'vitest'
-import { ExclusiveKeyRegistry } from './exclusive-keys'
+import { DispatchOwnerRegistry } from './dispatch-owners'
 
 describe('exclusive key registry', () => {
   it('keeps the first holder and selects visible FIFO candidates on transfer', () => {
     const events: string[] = []
-    const registry = new ExclusiveKeyRegistry({
+    const registry = new DispatchOwnerRegistry({
       onGrant: (client, key) => events.push(`grant:${client}:${key}`),
       onRevoke: (client, key) => events.push(`revoke:${client}:${key}`),
     })

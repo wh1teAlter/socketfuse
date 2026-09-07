@@ -1,372 +1,259 @@
-/** 验证稳定页面 client、动态 handler、脱敏和生命周期行为。 */
-import { describe, expect, it } from 'vitest'
-import type { BeforeReconnectContext, SocketData } from '../shared/types'
-import type { WebSocketLike } from '../transport/socket'
-import { normalizeWebSocketOptions } from '../config/normalize'
-import { DirectTransport } from '../transport/direct'
-import { PageWebSocketClient } from './client'
+/** 从真实端口的页面边界验证注册、观察者隔离、参与期取消和准备授权。 */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { BeforeReconnectContext } from '../shared/types'
+import { harness, until } from '../../test/fixtures'
+import { SocketFuseError } from '../shared/errors'
 
-/** 页面 client 测试使用的可控 WebSocket。 */
-class FakeSocket implements WebSocketLike {
-  /** 测试 binaryType。 */
-  binaryType: 'arraybuffer' | 'blob' = 'arraybuffer'
-  /** 测试 bufferedAmount。 */
-  bufferedAmount = 0
-  /** 可手动推进的 readyState。 */
-  readyState = 0
-  /** socket 事件监听器。 */
-  private readonly listeners = new Map<string, ((event: unknown) => void)[]>()
+/** 当前测试资源集合。 */
+const scopes: ReturnType<typeof harness>[] = []
+afterEach(async () => {
+  for (const scope of scopes.splice(0)) await scope.dispose()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
-  /** 注册 socket 事件。 */
-  addEventListener(type: string, listener: (event: unknown) => void): void {
-    const values = this.listeners.get(type) ?? []
-    values.push(listener)
-    this.listeners.set(type, values)
-  }
-
-  /** 移除 socket 事件。 */
-  removeEventListener(type: string, listener: (event: unknown) => void): void {
-    this.listeners.set(type, (this.listeners.get(type) ?? []).filter(value => value !== listener))
-  }
-
-  /** 测试发送接口不执行网络操作。 */
-  send(data: SocketData): void {
-    void data
-  }
-
-  /** 关闭 socket 并派发 close。 */
-  close(code = 1000): void {
-    this.readyState = 3
-    this.emit('close', { code, wasClean: code === 1000 })
-  }
-
-  /** 手动触发 open。 */
-  open(): void {
-    this.readyState = 1
-    this.emit('open', {})
-  }
-
-  /** 手动触发入站 message。 */
-  message(data: SocketData): void {
-    this.emit('message', { data })
-  }
-
-  /** 向监听器派发 socket 事件。 */
-  private emit(type: string, event: unknown): void {
-    for (const listener of this.listeners.get(type) ?? [])
-      listener(event)
+/** 提供可控页面可见性，不用真实浏览器的调度替代恢复时序断言。 */
+function lifecycle() {
+  const document = Object.assign(new EventTarget(), { visibilityState: 'visible' })
+  vi.stubGlobal('document', document)
+  vi.stubGlobal('window', new EventTarget())
+  return (state: 'visible' | 'hidden'): void => {
+    document.visibilityState = state
+    document.dispatchEvent(new Event('visibilitychange'))
   }
 }
 
-describe('pageWebSocketClient', () => {
-  it('keeps a stable client object and isolates dynamic handlers', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-test' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-test' }, 'client')
-    const received: unknown[] = []
-    const removeFirst = client.onMessage(event => received.push(event.data))
-    client.onMessage(event => received.push(`second:${event.data}`))
-    const opening = client.open()
-    socket.open()
-    await opening
-    socket.message('one')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    removeFirst()
-    socket.message('two')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(client.data).toBe('two')
-    expect(received).toEqual(['one', 'second:one', 'second:two'])
-    await client.close()
-    expect(client.status).toBe('CLOSED')
-    await client.dispose()
-    expect(() => client.onMessage(() => undefined)).toThrowError(/disposed/i)
+/** 创建并打开一个直连接入的同构 client。 */
+async function opened(restore = false) {
+  const scope = harness('direct')
+  scopes.push(scope)
+  const client = scope.client({ lifecycle: { restore } })
+  const opening = client.open()
+  await until(() => scope.sockets.length === 1)
+  scope.sockets[0]!.open()
+  await opening
+  return { scope, client }
+}
+
+describe('stable page client', () => {
+  it('does not re-suspend a fresh participation when restoring after port loss', async () => {
+    const visibility = lifecycle()
+    const { scope, client } = await opened(true)
+    visibility('hidden')
+    scope.transports[0]!.fail(new SocketFuseError('WORKER_DISCONNECTED'))
+    visibility('visible')
+    await until(() => scope.transports.length === 2)
+    await until(() => client.state === 'open' || scope.sockets.length === 2)
+    scope.sockets[1]?.open()
+    await until(() => client.state === 'open')
+    scope.sockets.at(-1)!.message('after recovery')
+    await until(() => client.data === 'after recovery')
   })
 
-  it('treats repeated registration of the same handler as independent', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-duplicate-handler' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-duplicate-handler' }, 'client')
-    const received: unknown[] = []
-    const handler = (event: { readonly data: unknown }): void => {
-      received.push(event.data)
-    }
-    const removeFirst = client.onMessage(handler)
-    client.onMessage(handler)
-    const opening = client.open()
-    socket.open()
-    await opening
-    socket.message('one')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    removeFirst()
-    socket.message('two')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(received).toEqual(['one', 'one', 'two'])
-    await client.dispose()
-  })
-
-  it('updates data and runs onMessage handlers before EventTarget listeners', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-message-order' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-message-order' }, 'client')
-    const calls: string[] = []
-    client.onMessage(() => calls.push(`handler:${client.data}`))
-    client.onMessage(() => {
-      calls.push('throwing-handler')
-      throw new Error('handler secret')
-    })
-    client.addEventListener('message', () => calls.push(`event:${client.data}`))
-    const opening = client.open()
-    socket.open()
-    await opening
-    socket.message('ordered')
-    await new Promise(resolve => setTimeout(resolve, 0))
-
-    expect(calls).toEqual(['handler:ordered', 'throwing-handler', 'event:ordered'])
-    await client.dispose()
-  })
-
-  it('runs every same-key handler in direct mode and aborts their grant on close', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-exclusive-handler' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-exclusive-handler' }, 'client')
-    const calls: string[] = []
-    let signal: AbortSignal | undefined
-    client.onMessage((event, context) => {
-      signal = context.signal
-      calls.push(`first:${event.data}`)
-    }, { key: 'confirm' })
-    client.onMessage(event => calls.push(`second:${event.data}`), { key: 'confirm' })
-    client.onMessage(event => calls.push(`view:${event.data}`))
-
-    const opening = client.open()
-    socket.open()
-    await opening
-    expect(client.holdsKey('confirm')).toBe(true)
-    socket.message('one')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(calls).toEqual(['first:one', 'second:one', 'view:one'])
-
-    await client.close()
-    expect(client.holdsKey('confirm')).toBe(false)
-    expect(signal?.aborted).toBe(true)
-    await client.dispose()
-  })
-
-  it('requires a fresh grant and signal after an execution key is frozen', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-freeze-key' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-freeze-key' }, 'client')
-    const keyed: string[] = []
-    const views: string[] = []
-    const signals: AbortSignal[] = []
-    client.onMessage((event, context) => {
-      keyed.push(String(event.data))
-      signals.push(context.signal)
-    }, { key: 'write' })
-    client.onMessage(event => views.push(String(event.data)))
-    const opening = client.open()
-    socket.open()
-    await opening
-
-    socket.message('before')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    transport.setVisibility('frozen')
-    expect(client.holdsKey('write')).toBe(false)
-    expect(signals[0]?.aborted).toBe(true)
-    socket.message('queued-while-frozen')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(keyed).toEqual(['before'])
-    expect(views).toEqual(['before', 'queued-while-frozen'])
-
-    transport.setVisibility('visible')
-    socket.message('after')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(keyed).toEqual(['before', 'after'])
-    expect(signals[1]).not.toBe(signals[0])
-    await client.dispose()
-  })
-
-  it('runs the page getter inside onBeforeReconnect and commits one direct plan', async () => {
-    const sockets: FakeSocket[] = []
-    const urls: string[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/old', { id: 'page-client-reconnect-hook' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: (url) => {
-      urls.push(url)
-      const socket = new FakeSocket()
-      sockets.push(socket)
-      return socket
-    } })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-reconnect-hook' }, 'client')
-    const contexts: string[] = []
-    let completedContext: BeforeReconnectContext | undefined
-    client.onBeforeReconnect((context) => {
-      completedContext = context
-      contexts.push(`${context.reason}:${context.attempt}`)
-      context.setOptions({ url: 'wss://example.test/new?cursor=fresh' })
-      context.setDelay(0)
-    })
-    const opening = client.open()
-    sockets[0]?.open()
-    await opening
-    sockets[0]?.close(1006)
-    for (let index = 0; index < 20 && sockets.length < 2; index++)
-      await new Promise(resolve => setTimeout(resolve, 0))
-
-    expect(contexts).toEqual(['socket-close:1'])
-    expect(urls).toEqual(['wss://example.test/old', 'wss://example.test/new?cursor=fresh'])
-    expect(completedContext?.signal.aborted).toBe(true)
-    expect(() => completedContext?.setDelay(1)).toThrowError(expect.objectContaining({ code: 'STALE_RECONNECT_PLAN' }))
-    await client.dispose()
-  })
-
-  it('runs the same hook for explicit reconnect even when automatic retries are disabled', async () => {
-    const sockets: FakeSocket[] = []
-    const reasons: string[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { autoReconnect: false, id: 'page-client-explicit-hook' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => {
-      const socket = new FakeSocket()
-      sockets.push(socket)
-      return socket
-    } })
-    const client = new PageWebSocketClient(config, transport, { autoReconnect: false, id: 'page-client-explicit-hook' }, 'client')
-    client.onBeforeReconnect((context) => {
-      reasons.push(context.reason)
-      context.setDelay(0)
-    })
-    const opening = client.open()
-    sockets[0]?.open()
-    await opening
-    expect(reasons).toEqual([])
-
-    await client.reconnect()
-    for (let attempt = 0; attempt < 20 && sockets.length < 2; attempt++)
-      await new Promise(resolve => setTimeout(resolve, 0))
-    expect(reasons).toEqual(['explicit'])
-    expect(sockets).toHaveLength(2)
-    await client.dispose()
-  })
-
-  it('rejects reconnect before open and after logical close instead of creating an ownerless plan', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-reconnect-stage' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-reconnect-stage' }, 'client')
-
-    await expect(client.reconnect()).rejects.toMatchObject({ code: 'CLIENT_DISCONNECTED' })
-    const opening = client.open()
-    socket.open()
-    await opening
-    await client.close()
-    await expect(client.reconnect()).rejects.toMatchObject({ code: 'CLIENT_DISCONNECTED' })
-    await client.dispose()
-  })
-
-  it('aborts a replaced reconnect hook without assigning the old plan to the replacement', async () => {
-    const sockets: FakeSocket[] = []
-    const diagnostics: unknown[] = []
-    const errors: Error[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-reconnect-replace' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => {
-      const socket = new FakeSocket()
-      sockets.push(socket)
-      return socket
-    } })
-    const client = new PageWebSocketClient(config, transport, {
-      id: 'page-client-reconnect-replace',
-      logger: diagnostic => diagnostics.push(diagnostic),
-      onError: (_client, error) => errors.push(error),
-    }, 'client')
-    let oldSignal: AbortSignal | undefined
-    let releaseOld: (() => void) | undefined
-    client.onBeforeReconnect(context => new Promise<void>((resolve) => {
-      oldSignal = context.signal
-      releaseOld = resolve
+  it('does not let an older successful probe undo a newer suspension', async () => {
+    const visibility = lifecycle()
+    const { scope } = await opened(true)
+    const port = scope.transports[0]!
+    let settle: (() => void) | undefined
+    vi.spyOn(port, 'probe').mockImplementation(() => new Promise((resolve) => {
+      settle = resolve
     }))
-    const opening = client.open()
-    sockets[0]?.open()
-    await opening
-    sockets[0]?.close(1006)
-    for (let index = 0; index < 20 && oldSignal === undefined; index++)
-      await new Promise(resolve => setTimeout(resolve, 0))
-
-    client.onBeforeReconnect(() => {
-      throw new Error('business-hook-secret')
+    const notify = vi.spyOn(port, 'notify')
+    visibility('hidden')
+    visibility('visible')
+    visibility('hidden')
+    settle!()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(notify.mock.calls.some(([message]) => message.type === 'restore')).toBe(false)
+    visibility('visible')
+    settle!()
+    await until(() => notify.mock.calls.some(([message]) => message.type === 'restore'))
+  })
+  it('isolates both synchronous handler throws and rejected EventTarget callbacks', async () => {
+    const { scope, client } = await opened()
+    const received: unknown[] = []
+    client.onMessage(() => {
+      throw new Error('private')
     })
-    expect(oldSignal?.aborted).toBe(true)
-    releaseOld?.()
-
-    // 新 handler 只服务后续 plan；替换不会让它接管旧 plan。
-    expect(errors).toEqual([])
-    expect(JSON.stringify(diagnostics)).not.toContain('business-hook-secret')
-    await client.dispose()
+    client.onMessage((event) => {
+      received.push(event.data)
+    })
+    client.addEventListener('message', (() => Promise.reject(new Error('private'))) as EventListener)
+    const errors = vi.fn()
+    client.addEventListener('error', errors)
+    scope.sockets[0]!.message('one')
+    await until(() => errors.mock.calls.length === 2)
+    scope.sockets[0]!.message('two')
+    await until(() => received.length === 2)
+    expect(received).toEqual(['one', 'two'])
+    expect(client.state).toBe('open')
   })
 
-  it('reports hook failures with a stable safe error and continues the default plan', async () => {
-    const sockets: FakeSocket[] = []
-    const diagnostics: unknown[] = []
-    const errors: Error[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'page-client-reconnect-error' })
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => {
-      const socket = new FakeSocket()
-      sockets.push(socket)
-      return socket
-    } })
-    const client = new PageWebSocketClient(config, transport, {
-      id: 'page-client-reconnect-error',
-      logger: diagnostic => diagnostics.push(diagnostic),
-      onError: (_client, error) => errors.push(error),
-    }, 'client')
-    client.onBeforeReconnect(() => {
-      throw new Error('business-hook-secret')
+  it('updates data before handlers and dispatches EventTarget after all dynamic handlers', async () => {
+    const { scope, client } = await opened()
+    const order: string[] = []
+    client.onMessage((event) => {
+      expect(client.data).toBe(event.data)
+      order.push('handler')
     })
-    const opening = client.open()
-    sockets[0]?.open()
-    await opening
-    sockets[0]?.close(1006)
-    for (let index = 0; index < 20 && errors.length === 0; index++)
-      await new Promise(resolve => setTimeout(resolve, 0))
-
-    expect(errors).toEqual([expect.objectContaining({
-      cause: undefined,
-      code: 'INTERNAL_STATE_ERROR',
-      message: 'Internal connection state error',
-    })])
-    expect(JSON.stringify(errors)).not.toContain('business-hook-secret')
-    expect(JSON.stringify(diagnostics)).not.toContain('business-hook-secret')
-    await client.dispose()
+    client.addEventListener('message', () => order.push('event'))
+    scope.sockets[0]!.message('x')
+    await until(() => order.length === 2)
+    expect(order).toEqual(['handler', 'event'])
   })
 
-  it('sanitizes rejected direct-path promises before they reach callers', async () => {
-    const config = normalizeWebSocketOptions('wss://example.test/socket', {
-      id: 'page-client-safe-promise',
-      protocol: {
-        classify: data => ({ data, type: 'data' }),
-        decode: data => data,
-        encode: () => {
-          throw new Error('adapter-secret')
-        },
-        id: 'secret-encoder',
-        version: 1,
-      },
-      worker: () => null as unknown as SharedWorker,
-    })
-    const socket = new FakeSocket()
-    const transport = new DirectTransport({ clientId: 'client', config, socketFactory: () => socket })
-    const client = new PageWebSocketClient(config, transport, { id: 'page-client-safe-promise', protocol: config.adapter }, 'client')
-    const opening = client.open()
-    socket.open()
-    await opening
+  it('treats repeated dynamic registrations independently and obeys native once and signal', async () => {
+    const { scope, client } = await opened()
+    const callback = vi.fn()
+    const event = vi.fn()
+    const abort = new AbortController()
+    const remove = client.onMessage(callback)
+    client.onMessage(callback)
+    client.addEventListener('message', event, { once: true })
+    client.addEventListener('message', event, { once: true })
+    const canceled = vi.fn()
+    client.addEventListener('message', canceled, { signal: abort.signal })
+    abort.abort()
+    scope.sockets[0]!.message('one')
+    await until(() => callback.mock.calls.length === 2)
+    remove()
+    scope.sockets[0]!.message('two')
+    await until(() => callback.mock.calls.length === 3)
+    expect(event).toHaveBeenCalledTimes(1)
+    expect(canceled).not.toHaveBeenCalled()
+  })
 
-    await expect(client.sendMessage('message')).rejects.toMatchObject({
-      cause: undefined,
-      code: 'ENCODE_FAILED',
-      message: 'Protocol message encoding failed',
+  it('allows every same-key local handler on the selected page and aborts its grant on close', async () => {
+    const { scope, client } = await opened()
+    const signals: AbortSignal[] = []
+    client.onMessage((_event, context) => {
+      signals.push(context.signal)
+    }, { dispatchKey: 'effect' })
+    client.onMessage((_event, context) => {
+      signals.push(context.signal)
+    }, { dispatchKey: 'effect' })
+    await until(() => client.isDispatchOwner('effect'))
+    scope.sockets[0]!.message('x')
+    await until(() => signals.length === 2)
+    expect(signals[0]).toBe(signals[1])
+    await client.close()
+    expect(signals[0]!.aborted).toBe(true)
+    expect(client.isDispatchOwner('effect')).toBe(false)
+  })
+
+  it('notifies onConnected for each participant even when its socket is already open', async () => {
+    const { scope } = await opened()
+    const callback = vi.fn()
+    const client = scope.client({ onConnected: callback })
+    await client.open()
+    expect(callback).toHaveBeenCalledTimes(1)
+    await client.open()
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not leave an unresolved waiter when a connecting state listener synchronously closes', async () => {
+    const scope = harness()
+    scopes.push(scope)
+    const client = scope.client()
+    client.addEventListener('statechange', () => {
+      if (client.state === 'connecting') void client.close()
     })
-    await client.dispose()
+    await expect(client.open()).rejects.toMatchObject({ code: 'CLIENT_DISCONNECTED' })
+    expect(scope.transports).toHaveLength(0)
+  })
+
+  it('keeps a newly opened participation when an old abort listener reenters open', async () => {
+    const { scope, client } = await opened()
+    let reopening: ReturnType<typeof client.open> | undefined
+    client.onMessage((_event, context) => context.signal.addEventListener('abort', () => {
+      reopening = client.open()
+    }))
+    scope.sockets[0]!.message('x')
+    await until(() => client.data === 'x')
+    await client.close()
+    await until(() => scope.transports.length === 2)
+    // idle timer 与新 attach 的先后都合法；无需求宽限内可以重用健康 socket。
+    await until(() => scope.sockets.length === 2 || client.state === 'open')
+    scope.sockets[1]?.open()
+    await reopening
+    expect(client.state).toBe('open')
+    expect(scope.transports).toHaveLength(2)
+  })
+
+  it('rejects reconnect before participation and after close without manufacturing demand', async () => {
+    const scope = harness()
+    scopes.push(scope)
+    const client = scope.client()
+    await expect(client.reconnect()).rejects.toMatchObject({ code: 'CLIENT_DISCONNECTED' })
+    expect(scope.sockets).toHaveLength(0)
+    const opening = client.open()
+    await until(() => scope.sockets.length === 1)
+    scope.sockets[0]!.open()
+    await opening
+    await client.close()
+    await expect(client.reconnect()).rejects.toMatchObject({ code: 'CLIENT_DISCONNECTED' })
+  })
+
+  it('runs page preparation for explicit retries even with automatic recovery disabled', async () => {
+    const scope = harness('direct')
+    scopes.push(scope)
+    const client = scope.client({ reconnect: { automatic: false, initialDelay: 1000 } })
+    let context: BeforeReconnectContext | undefined
+    client.onBeforeReconnect((value) => {
+      context = value
+      value.setOptions({ url: 'wss://updated.test/path' })
+      value.setDelay(0)
+    })
+    const opening = client.open()
+    await until(() => scope.sockets.length === 1)
+    scope.sockets[0]!.open()
+    await opening
+    await client.reconnect()
+    await until(() => scope.sockets.length === 2)
+    expect(context).toMatchObject({ source: 'page', countAsRetry: true, attempt: 2 })
+    expect(scope.urls[1]).toBe('wss://updated.test/path')
+    expect(context!.signal.aborted).toBe(true)
+  })
+
+  it('aborts a replaced hook and does not assign that plan to the replacement', async () => {
+    const scope = harness()
+    scopes.push(scope)
+    const client = scope.client({ reconnect: { initialDelay: 0, hookTimeout: 100 } })
+    let context: BeforeReconnectContext | undefined
+    client.onBeforeReconnect((value) => {
+      context = value
+      return new Promise(() => {})
+    })
+    const opening = client.open()
+    await until(() => scope.sockets.length === 1)
+    scope.sockets[0]!.open()
+    await opening
+    await client.reconnect()
+    await until(() => context !== undefined)
+    const replacement = vi.fn()
+    client.onBeforeReconnect(replacement)
+    expect(context!.signal.aborted).toBe(true)
+    await until(() => scope.sockets.length === 2)
+    expect(replacement).not.toHaveBeenCalled()
+    expect(() => context!.setDelay(0)).toThrowError(expect.objectContaining({ code: 'STALE_RECONNECT_PLAN' }))
+  })
+
+  it('keeps opening even if initial dispatch registrations exceed the worker quota', async () => {
+    const scope = harness('shared-worker', { workerLimits: { maxDispatchKeys: 1 } })
+    scopes.push(scope)
+    const client = scope.client()
+    client.onMessage(() => {}, { dispatchKey: 'first' })
+    client.onMessage(() => {}, { dispatchKey: 'second' })
+    const errors = vi.fn()
+    client.addEventListener('error', errors)
+    const opening = client.open()
+    await until(() => scope.sockets.length === 1)
+    scope.sockets[0]!.open()
+    await opening
+    await until(() => errors.mock.calls.length > 0)
+    expect(client.state).toBe('open')
+    await until(() => client.isDispatchOwner('first'))
+    expect(client.isDispatchOwner('second')).toBe(false)
   })
 })

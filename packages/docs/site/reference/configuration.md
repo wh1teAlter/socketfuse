@@ -1,26 +1,13 @@
 # 配置
 
-`CreateWebSocketOptions` 有意分为共享设置与页面本地设置，以避免相同共享 `id` 静默合并
-不兼容的 socket 行为。
+共享配置由 `protocols`、`protocol`、`reconnect`、`connectionTimeout`、`heartbeat`、`queue`、`backpressure`、`lease`、`limits`、`idleGraceMs` 组成。相同 id 的完整 canonical 不一致会显式报 `CONNECTION_CONFIG_CONFLICT`，不以 hash 相等代替完整比较。
 
-## 共享设置
+初始 URL 是绝对 ws/wss 字符串，不允许 userinfo 或 fragment，不参与共享指纹。后来页面的 URL 不覆盖存量连接；重连准备可原子更新当前 endpoint。getter 在应用中求值，再传给库。
 
-`protocols`、`protocol`、`autoReconnect`、`connectionTimeout`、`binaryType`、`heartbeat`、`queue`、
-`backpressure`、`lease`、`limits` 与 `idleGraceMs` 描述共享物理连接。复用 `id` 时若不一致，会产生
-`CONNECTION_CONFIG_CONFLICT`。初始固定字符串 URL 是连接尝试输入，不参与 fingerprint；页面函数或
-getter 不能作为初始化 URL，业务应先在库外求值，并在重连 hook 中为当前 plan 提交新 URL。
+页面本地配置包括 `binaryType`、`immediate`、`autoClose`、`fallback`、`worker`、`lifecycle`、logger 和回调。raw 二进制在 runtime 中固定 ArrayBuffer，`binaryType: 'blob'` 只转换本页的展示值，不造成配置冲突；JSON/custom 不接受该覆盖。
 
-## 页面本地设置
+`reconnect` 使用 `automatic`、`maxRetries`、`initialDelay`、`maxDelay`、`factor`、`jitter`、`stableThreshold`、`hookTimeout`。旧 `autoReconnect` 被拒绝。所有毫秒配置必须是平台范围内的整数；容量必须是安全整数。具体默认值与计数规则见 [可靠性](../guide/reliability)。
 
-`immediate`、`autoClose`、`fallback`、`worker`、`lifecycle`、`logger`、`onConnected`、
-`onDisconnected`、`onError` 与初始 `onMessage` 仅属于创建它的标签页；运行时注册的
-`onMessage()` / `onBeforeReconnect()` 也只在本页执行。因此某个标签页可选择加入恢复回放，
-而不影响其他标签页。
+`limits` 为连接共享限制：`maxClientsPerConnection` 和 `maxEncodedMessageBytes`。自定义 Worker 的静态 `workerLimits` 有 `maxPorts`、`maxControlEnvelopeBytes`、`maxDispatchKeys`、`unattachedPortTimeoutMs`、`maxDeliveryMessages`、`maxDeliveryBytes`，不从页面消息接收。握手告知页面实际静态限制，未完成 attach 不保留共享 id。
 
-`limits` 仅包含连接限制：`maxClientsPerConnection` 与 `maxEncodedMessageBytes`，二者都会参与
-共享指纹。自定义 Worker 作者需通过 `createSharedWebSocketRuntime({ workerLimits })` 一次性配置
-Worker 级控制平面限制：`maxPorts`、`maxControlEnvelopeBytes`、`maxExclusiveKeys` 与 `unattachedPortTimeoutMs`。
-这些静态 Worker 限制绝不从页面接收，也不会导致连接冲突。
-
-默认值和所有精确选项字段请参阅生成的
-[CreateWebSocketOptions](../api/generated/index/interfaces/CreateWebSocketOptions.md)。
+运行时注册的 onMessage/onBeforeReconnect 只属于本页。完整字段和默认值见 [CreateWebSocketOptions](../api/generated/index/interfaces/CreateWebSocketOptions.md)。

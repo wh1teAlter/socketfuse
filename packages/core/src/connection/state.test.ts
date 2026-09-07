@@ -1,24 +1,8 @@
-/** 验证连接状态迁移图与 WebSocket 兼容状态映射。 */
+/** 验证公开状态的 WebSocket 兼容映射。 */
 import { describe, expect, it } from 'vitest'
-import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
-import { SocketFuseError } from '../shared/errors'
+import { readyStateFor, statusFor } from './state'
 
-describe('connection state machine', () => {
-  it('accepts the physical connection lifecycle', () => {
-    const machine = new ConnectionStateMachine()
-    machine.transition('connecting')
-    machine.transition('open')
-    machine.transition('reconnecting')
-    machine.transition('connecting')
-    expect(machine.state).toBe('connecting')
-  })
-
-  it('rejects illegal transitions with INTERNAL_STATE_ERROR', () => {
-    const machine = new ConnectionStateMachine()
-    expect(() => machine.transition('open')).toThrowError(SocketFuseError)
-    expect(() => machine.transition('open')).toThrowError(/Invalid connection transition/)
-  })
-
+describe('connection status mapping', () => {
   it('maps browser-compatible state values', () => {
     expect(readyStateFor('connecting')).toBe(0)
     expect(readyStateFor('open')).toBe(1)

@@ -4,16 +4,18 @@
  * 该模块只提供 Worker runtime 装配能力；页面连接仍通过 `socketfuse` 的
  * `createWebSocket` 创建。
  */
-export { createSharedWebSocketRuntime, exposeSharedWebSocketWorker } from '@socketfuse/core'
+export { createSharedWebSocketRuntime, defineWorkerProtocol, exposeSharedWebSocketWorker } from '@socketfuse/core'
 export type {
   AttemptPreparationContext,
   ConnectionExtension,
   ConnectionExtensionContext,
   ConnectionExtensionFactory,
-  InboundDecision,
+  ConnectionFrame,
+  FrameResult,
   MessagePortLike,
   SharedWebSocketRuntime,
   SharedWebSocketRuntimeOptions,
   SharedWorkerGlobalLike,
+  WorkerProtocolRegistration,
   WorkerResourceLimits,
 } from '@socketfuse/core'

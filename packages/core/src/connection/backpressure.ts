@@ -1,6 +1,7 @@
 /** 根据原生 bufferedAmount 的高低水位跟踪出站背压。 */
 import type { BackpressureOptions } from '../shared/types'
 
+/** 在高低水位之间保持迟滞，避免反复切换发送模式。 */
 export class BackpressureTracker {
   /** 当前是否已经跨过高水位；只有降至低水位才解除，形成迟滞。 */
   private highWater = false
@@ -22,6 +23,7 @@ export class BackpressureTracker {
     return this.highWater
   }
 
+  /** 最近观测是否要求暂停原生发送。 */
   get isHighWater(): boolean {
     return this.highWater
   }

@@ -184,10 +184,11 @@ export function usePlaygroundConnection() {
       /** 只供跨浏览器验收缩短应用层 heartbeat 周期。 */
       const useHeartbeat = parameters.has('e2eHeartbeat')
       /** 演示连接作用域扩展：Worker 内一次去重，全部标签页同时生效。 */
-      const useDedupeWorker = parameters.has('e2eDedupe')
+      const useDedupeWorker = parameters.has('e2eDedupe') || parameters.has('e2eBudget')
       const current = createWebSocket<unknown, string | Blob | ArrayBuffer | Uint8Array>(url.value, {
-        fallback: fallback.value,
+        fallback: useRestartableWorker || useDedupeWorker || simulateWorkerFailure.value ? 'error' : fallback.value,
         ...(useHeartbeat ? { heartbeat: { interval: 100, pongTimeout: 1_000 } } : {}),
+        ...(parameters.has('e2eBudget') ? { reconnect: { maxRetries: 3, stableThreshold: false as const, initialDelay: 0, maxDelay: 0, jitter: 0 } } : {}),
         id: connectionId.value,
         immediate: false,
         onError: (_client, value) => handleClientError(value),
@@ -213,14 +214,14 @@ export function usePlaygroundConnection() {
       current.onMessage(event => appendMessage(event.data, event.replayed))
       current.onMessage(() => {
         exclusiveMessageCount.value++
-      }, { key: 'playground:single-execution' })
+      }, { dispatchKey: 'playground:single-execution' })
       current.onBeforeReconnect((context) => {
         context.setOptions({ url: url.value })
         context.setDelay(0)
         reconnectHookCount.value++
       })
-      current.addEventListener('keychange', () => {
-        exclusiveKeyHeld.value = current.holdsKey('playground:single-execution')
+      current.addEventListener('dispatchownerchange', () => {
+        exclusiveKeyHeld.value = current.isDispatchOwner('playground:single-execution')
       })
       current.addEventListener('close', () => refreshMetrics(current))
       current.addEventListener('open', () => refreshMetrics(current))

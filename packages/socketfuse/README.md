@@ -1,6 +1,6 @@
 # SocketFuse
 
-`socketfuse` 是发布到 npm 的浏览器 WebSocket 共享库：同源页面通过 SharedWorker 复用物理连接，Worker 不可用时可按策略使用当前页面的 direct WebSocket。当前首发版本为 `0.0.1-beta.1`，发布到 npm 的 `beta` dist-tag。
+`socketfuse` 是发布到 npm 的浏览器 WebSocket 共享库：同源页面通过 SharedWorker 复用物理连接，Worker 不可用时可按策略使用当前页面的 direct WebSocket。已发布基线为 `0.1.0-beta.2`；当前分支正在准备下一个包含破坏性变更的版本。
 
 ## 公开入口
 
@@ -18,7 +18,7 @@ ws.onMessage(event => console.log(event.data))
 await ws.open()
 ```
 
-只有 `id` 是必填配置，URL 必须是已经求值的固定字符串。`sendMessage` 的成功代表本地 accepted/queued，不是服务器 Ack；`onMessage(handler, { key })` 可选择跨标签页单点执行，`onBeforeReconnect` 可为当前重连计划更新 URL 与延迟。credential、session、游标和消息幂等均由应用协议维护。详细配置和限制见文档站。
+只有 `id` 是必填配置，URL 必须是已经求值的固定字符串。`sendMessage` 的成功代表本地 accepted/queued，不是服务器 Ack；`onMessage(handler, { dispatchKey })` 可选择单接收者分派，`onBeforeReconnect` 可为当前重连计划更新 URL 与延迟。credential、session、游标和消息幂等均由应用协议维护。详细配置和限制见文档站。
 
 ## 依赖与边界
 
@@ -26,6 +26,6 @@ await ws.open()
 
 ## 构建与发布
 
-`pnpm --filter socketfuse build` 生成三个公开入口，`pnpm --filter socketfuse lint:package` 检查发布元数据与实际产物，
+`pnpm --filter socketfuse build` 生成三个公开入口，根目录 `pnpm release:verify` 检查实际打包产物，
 根目录 `pnpm release:verify` 还会验证真实 tarball、消费者类型、Vite 构建与 SSR import。发布由 main 上的
 Version Packages PR 触发，不能从本地直接执行；仓库只发布 `socketfuse`，不会递归发布私有 workspace。

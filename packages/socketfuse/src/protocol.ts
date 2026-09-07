@@ -13,7 +13,6 @@ export type {
   JsonMatcher,
   JsonProtocolOptions,
   JsonValue,
-  MaybePromise,
   ProtocolAdapter,
   ProtocolContext,
   ProtocolFrame,

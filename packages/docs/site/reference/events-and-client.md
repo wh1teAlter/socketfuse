@@ -1,45 +1,30 @@
-# 事件与客户端
+# 事件与 client
 
-`createWebSocket()` 返回的是 `WebSocketClient`，而不是 Promise 或全局单例。它的属性是本地页面
-代理的快照；共享连接的观测数据请使用 `diagnostics()` 获取。
+`createWebSocket` 返回稳定实例。`open()` 建立一次端口参与期，`close()` 立即停止本地派发并有界等待 detach；再次 open 创建新 session。`dispose()` 永久释放注册、监听和参与需求。Promise 方法通过 rejection 报错；同步配置和注册 API 可同步抛错。
 
-## 动态消息
+并发 open 有各自的 AbortSignal waiter，取消一个不关闭共享 socket，也不取消其他等待者。open 只等待本次尝试结果，不能把它当作无限自动重试直到成功的 Promise。后加入已 open 连接的页面也会收到 open 通知。
 
-`onMessage(handler, options?)` 可在创建后或打开后调用。它返回取消订阅函数，并支持多个相互独立的处理器。
-抛出异常的处理器会被隔离，并通过错误路径报告。
+## 业务回调与单接收者分派
 
 ```ts
-const off = ws.onMessage(event => render(event.data))
-off()
+ws.onMessage(event => render(event.data))
+const remove = ws.onMessage((event, { signal }) => {
+  if (!signal.aborted)
+    showNotification(event.data)
+}, { dispatchKey: 'notification' })
+ws.addEventListener('dispatchownerchange', () => updateBadge(ws.isDispatchOwner('notification')))
 ```
 
-传入 `{ key }` 时，同一共享连接只有 holder 页面调用该 key 的所有本地 handler；业务消息本身、
-普通 handler 和 EventTarget `message` 仍广播到全部页面。handler 的第二个参数提供 signal，revoke
-会 abort 旧 grant 的 signal：
+同一连接按 visible 优先、同级 FIFO 选择每个 key 的接收者，后注册不抢占。每物理帧固定 session/epoch/grant 代际，页面校验本地 lease 后才调用对应 handler；同页同 key 的所有注册独立执行。普通 handler 仍各页执行，`data` 只在实际派发业务值时更新。
 
-```ts
-const off = ws.onMessage(async (event, { signal }) => {
-  await applySingleWriterEffect(event.data, { signal })
-}, { key: 'single-writer' })
+这只约束分派资格。冻结页面可能恢复运行已开始的任务；signal 只能协作取消，`isDispatchOwner()` 只是最近确认的本地资格，不能作为跨页面副作用互斥锁。需要收到标志等一次连接协议效果，使用 [Worker 扩展](../guide/worker-extensions)。
 
-ws.addEventListener('keychange', () => updateBadge(ws.holdsKey('single-writer')))
-```
+keyed handler 不接收 replay，普通 handler 可以接收并自行判断 `event.replayed`。撤销资格、结束参与或 dispose 会取消相应 signal。handler 抛错、返回 rejected Promise、logger/事件观察者失败都被隔离；库不等待业务完成。重复注册同一函数是独立注册，移除函数幂等；EventTarget 保持 once/capture/signal 语义。
 
-库无法强制停止已经开始的 Promise；异步 handler 应在副作用边界检查 signal。direct fallback
-中每个页面 client 都持有自己的 key，不提供跨标签页独占。
+## 其他事件和操作
 
-## 重连 hook
+事件有 `message`、`dispatchownerchange`、`statechange`、`open`、`close`、`error`、`overflow`、`diagnostic`。动态 onMessage 先于 EventTarget message 监听器执行。
 
-`onBeforeReconnect(handler)` 每个逻辑 client 至多保留一个当前 handler，并返回取消函数。context
-只允许 `setOptions({ url })`、`setDelay(ms)`，以及读取 `attempt`、`defaultDelay`、`reason`、安全
-`close` 与 `signal`。hook 成功返回后才原子提交；断线、连接/心跳超时与显式 `reconnect()` 都会调用，
-首次 `open()` 和正常关闭不会调用。`hookTimeout` 是整个 plan 的总期限，不会按候选重新开始。
+`onBeforeReconnect` 替换本页唯一准备 hook，新注册会取消旧事务；Worker 扩展提供准备时本页不参与。`reconnect({ countAsRetry })` 在请求接纳或合并后完成，不等待新 socket open。预算与冲突见 [可靠性](../guide/reliability)。
 
-实例也会派发 `message`、`keychange`、`statechange`、`open`、`close`、`error`、`overflow` 与 `diagnostic`
-事件，供 `addEventListener` 用户使用。
-
-## 有意保留的 v1 边界
-
-由于动态 `onMessage()` 是唯一的消息监听器抽象，因此没有 `subscribe()` 方法。也没有
-`request()` 辅助方法、关联表、服务端 Ack、入站 dedupe、exactly-once 或投递保证。需要请求/响应、
-幂等或可靠投递时，请在应用协议中建模。
+`diagnostics()` 同步返回最近收到的安全样本并合并后台刷新；两种 transport 都如此，`observedAt` 表示样本接收时间。

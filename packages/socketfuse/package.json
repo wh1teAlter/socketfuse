@@ -48,13 +48,11 @@
   },
   "scripts": {
     "build": "node ./scripts/generate-inline-worker.mjs && tsdown",
-    "lint:package": "publint --strict",
     "prepack": "pnpm build",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@socketfuse/core": "workspace:*",
-    "publint": "0.3.24",
     "rolldown": "1.2.2",
     "tsdown": "catalog:",
     "typescript": "catalog:"

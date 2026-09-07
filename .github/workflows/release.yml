@@ -177,6 +177,14 @@ jobs:
       - name: Install Trusted Publishing compatible npm
         run: npm install --global npm@11.5.1
       - run: test "$(npm --version)" = '11.5.1'
-      # 版本 PR 已通过 tarball 验收且文件白名单排除运行时代码；npm prepack 仍会构建最终 tarball。
-      # 发布命令只存在于已验证 Version PR 身份、受保护 environment 与 OIDC 权限的 job。
-      - run: npm publish ./packages/socketfuse --access public --tag beta
+      # 完整验收刚打包的同一 tarball，发布不能重新运行 prepack 产生另一个 artifact。
+      - name: Verify exact release artifact
+        run: |
+          artifact_dir=$(mktemp -d "$RUNNER_TEMP/socketfuse-release.XXXXXX")
+          artifact_file="$artifact_dir/socketfuse.tgz"
+          SOCKETFUSE_VERIFIED_TARBALL="$artifact_file" pnpm release:verify
+          echo "SOCKETFUSE_RELEASE_ARTIFACT=$artifact_file" >> "$GITHUB_ENV"
+      # 此命令只存在于已验证 Version PR 身份、受保护 environment 与 OIDC 的 job。
+      - run: |
+          sha256sum --check "$SOCKETFUSE_RELEASE_ARTIFACT.sha256"
+          npm publish "$SOCKETFUSE_RELEASE_ARTIFACT" --access public --tag beta

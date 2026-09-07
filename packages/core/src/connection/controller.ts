@@ -1,991 +1,870 @@
 /**
- * 拥有一条物理 WebSocket 的连接状态机。
- *
- * 该模块只处理连接尝试、重连、心跳、队列和背压，不知道页面或
- * Worker 的实现；所有外部观察通过 `ConnectionSink` 派发且不等待业务 handler。
+ * 拥有单一物理 WebSocket、尝试代际、出站 FIFO、心跳与共享重连预算。
+ * 页面参与、连接池和协议业务扩展由上层 runtime 拥有；本模块只通知一个内部观察者。
  */
-import type {
-  BeforeReconnectReason,
-  ConnectionDiagnostics,
-  ConnectionSnapshot,
-  ConnectionState,
-  ProtocolFrame,
-  ReadyState,
-  SafeCloseInfo,
-  SendOptions,
-  SendReceipt,
-  SocketData,
-  TimerHandle,
-  Transport,
-  WebSocketStatus,
-} from '../shared/types'
+import type { BeforeReconnectReason, ConnectionDiagnostics, ConnectionSnapshot, ConnectionState, HeartbeatContext, ProtocolAdapter, ProtocolFrame, ReconnectSource, SafeCloseInfo, SendOptions, SendReceipt, SocketData, TimerHandle, Transport } from '../shared/types'
 import type { NormalizedWebSocketConfig } from '../config/normalize'
-import { addSocketListener, browserWebSocketFactory, SOCKET_CONNECTING, SOCKET_OPEN, type WebSocketFactory, type WebSocketLike } from '../transport/socket'
+import { addSocketListener, browserWebSocketFactory, SOCKET_CLOSED, SOCKET_OPEN, type WebSocketFactory, type WebSocketLike } from './socket'
 import { normalizeEndpointUrl, safeEndpointOrigin } from '../shared/endpoint'
-import { ConnectionStateMachine, readyStateFor, statusFor } from './state'
-import { encodeWithAdapter, OrderedProtocol } from '../protocol/adapter'
-import { SocketFuseError, toSocketFuseError } from '../shared/errors'
+import { decodeAndClassify, encodeWithAdapter } from '../protocol/adapter'
+import { calculateReconnectDelay, ReconnectPolicy } from './reconnect'
 import { CONTROL_PROTOCOL_MAJOR } from '../shared/constants'
 import { assertEncodedMessageSize } from '../shared/bytes'
+import { invokeSynchronous } from '../shared/callbacks'
 import { BackpressureTracker } from './backpressure'
-import { HeartbeatController } from './heartbeat'
+import { SocketFuseError } from '../shared/errors'
+import { readyStateFor, statusFor } from './state'
 import { stableHash } from '../shared/structured'
-import { ReconnectPolicy } from './reconnect'
+import { HeartbeatController } from './heartbeat'
 import { OutboundQueue } from './queue'
 
-export interface ConnectionSink<Incoming> {
-  /** 页面逻辑 client id。 */
-  readonly id: string
-  /** 详细状态变化通知。 */
-  readonly onState?: (snapshot: ConnectionSnapshot, reasonCode?: string) => void
-  /** 原生 socket open 通知。 */
-  readonly onOpen?: (snapshot: ConnectionSnapshot) => void
-  /** 解码后的业务消息通知；controller 不等待 handler。 */
-  readonly onMessage?: (data: Incoming, receivedAt: number, replayed?: boolean) => void
-  /** 有界入站或回放缓冲的溢出通知。 */
-  readonly onOverflow?: (event: { readonly direction: 'inbound' | 'replay', readonly strategy: 'drop-newest' | 'drop-oldest', readonly droppedMessages: number, readonly droppedBytes: number }) => void
-  /** 安全 close 信息通知。 */
-  readonly onClose?: (event: SafeCloseInfo & { readonly willReconnect: boolean }) => void
-  /** 本地连接错误通知；跨 Worker 前仍需脱敏。 */
-  readonly onError?: (error: SocketFuseError) => void
-}
-
-export interface ConnectionControllerOptions<Incoming, Outgoing> {
-  /** 物理连接与 adapter 的规范化配置。 */
-  readonly config: NormalizedWebSocketConfig<Incoming, Outgoing>
-  /** 可选测试 socket 工厂。 */
-  readonly socketFactory?: WebSocketFactory
-  /** 当前时间源，单位为 Unix 毫秒。 */
-  readonly now?: () => number
-  /** 重连抖动随机源。 */
-  readonly random?: () => number
-  /** 可注入 timer 工厂。 */
-  readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
-  /** 与注入 timer 配对的清理函数。 */
-  readonly clearTimeout?: (handle: TimerHandle) => void
-  /** 无 owner controller 完成主动 idle close 后调用一次。 */
-  readonly onIdle?: (controller: ConnectionController<Incoming, Outgoing>) => void
-  /**
-   * 原生 socket 打开后、向 sink 派发 open 之前调用。
-   *
-   * connection 不认识「扩展」概念，只承诺这一时机；上层用它让共享业务逻辑先于
-   * 页面重置连接期状态。回调异常由上层隔离，不影响状态机。
-   */
-  readonly onSocketOpen?: (attempt: number) => void
-  /**
-   * 判定一条已解码业务帧是否继续派发；返回 false 表示整条丢弃。
-   *
-   * 在 fan-out 之前调用，因此被丢弃的帧不进入任何 sink，也不消耗上层的投递额度。
-   * connection 不认识「扩展」概念；上层负责隔离异常并按放行降级。
-   */
-  readonly shouldDeliverInbound?: (data: Incoming) => boolean
-  /** 自动重连 plan 创建后交给上层协调器；返回 true 表示异步接管提交。 */
-  readonly onReconnectPlan?: (plan: Readonly<ReconnectPlan>) => boolean
-  /** 显式 close/reconnect 使等待中的 plan 失效时通知协调器。 */
-  readonly onReconnectPlanCancel?: (planId: string) => void
-}
-
-/** connection 层创建且不包含 endpoint 秘密的重连计划。 */
+/** 一次只交给一个准备来源的不可变重连计划；不含 endpoint 或业务 payload。 */
 export interface ReconnectPlan {
-  /** 仅用于同一 controller 内提交校验的不透明代际 id。 */
+  /** 同一连接内唯一计划身份。 */
   readonly id: string
-  /** 从一开始计数的自动重连序号。 */
+  /** 创建该计划的连接条目身份。 */
+  readonly connectionEpoch: string
+  /** 被替代的物理尝试。 */
+  readonly originAttempt: number
+  /** 下一次实际物理尝试编号。 */
   readonly attempt: number
-  /** 未覆盖时使用的退避延迟。 */
+  /** 安全触发来源。 */
+  readonly source: ReconnectSource
+  /** 是否在启动时消耗预算。 */
+  readonly countAsRetry: boolean
+  /** 接纳时已启动的计数重连次数。 */
+  readonly retriesUsed: number
+  /** 未覆盖时的退避毫秒。 */
   readonly defaultDelay: number
-  /** 当前断开的安全分类。 */
+  /** 整个计划准备的绝对截止时间。 */
+  readonly deadline: number
+  /** 安全原因枚举。 */
   readonly reason: BeforeReconnectReason
-  /** 不含服务端 reason 文本的 close 信息。 */
+  /** 不包含服务端 reason 的关闭信息。 */
   readonly close: SafeCloseInfo
 }
 
-/** 上层协调器对当前重连计划的一次原子覆盖。 */
+/** 当前准备来源可一次性覆盖的尝试输入。 */
 export interface ReconnectPlanOverride {
-  /** 下一次尝试使用的固定 URL。 */
+  /** 下一尝试的绝对 ws/wss URL；不得进入日志或响应。 */
   readonly url?: string
-  /** 从提交到尝试的等待时间。 */
+  /** 从提交时刻开始等待的整数毫秒。 */
   readonly delay?: number
 }
 
-interface OpenWaiter {
-  /** 原生 socket open 后返回连接快照。 */
-  readonly resolve: (snapshot: ConnectionSnapshot) => void
-  /** 终态、关闭或 abort 时拒绝。 */
-  readonly reject: (error: SocketFuseError) => void
-  /** waiter 完成时移除外部 AbortSignal 监听。 */
-  cleanup?: () => void
+/** 显式重连必须关联调用方实际观察过的尝试或计划。 */
+export interface ReconnectObservation {
+  /** 观察到的连接条目身份。 */
+  readonly connectionEpoch: string
+  /** 观察到的物理尝试。 */
+  readonly attempt: number
+  /** 观察时尚在进行的计划；未观察到计划时为 null。 */
+  readonly planId: string | null
 }
 
-/**
- * 将原生 close 事件裁剪为不含 reason 的安全信息。
- *
- * 只有 1000 视为终态：它表示对端明确完成了这次会话，默认不再重连。服务端优雅重启若希望
- * 客户端继续重连，应使用 1001/1012 等非 1000 码，或由适配器 `shouldReconnect` 覆盖判定。
- */
-function safeCloseInfo(event: { readonly code?: number, readonly wasClean?: boolean }): SafeCloseInfo {
-  const code = event.code ?? 1006
-  return { code, terminal: code === 1000, wasClean: event.wasClean ?? code === 1000 }
+/** 连接唯一内部观察者；不会持有或等待页面业务回调。 */
+export interface ConnectionObserver<Decoded> {
+  /** 当前安全状态发生改变。 */
+  readonly onState?: (snapshot: ConnectionSnapshot, reasonCode?: string) => void
+  /** 原生打开后同步初始化连接协议，成功返回前不发布可用状态。 */
+  readonly onInitializeOpen?: (attempt: number) => void
+  /** 协议初始化成功后的可用连接通知。 */
+  readonly onOpen?: (snapshot: ConnectionSnapshot) => void
+  /** 解码后的 data/control 帧，供 runtime 在 fan-out 前处理。 */
+  readonly onFrame?: (frame: ProtocolFrame<Decoded>, receivedAt: number, attempt: number) => void
+  /** 一次物理尝试结束的唯一通知，包括未成功打开的尝试。 */
+  readonly onClose?: (close: SafeCloseInfo & { readonly willReconnect: boolean }, attempt: number) => void
+  /** 库生成的安全错误。 */
+  readonly onError?: (error: SocketFuseError) => void
+  /** 接管准备；返回 false 时使用默认 URL/delay。 */
+  readonly onPrepare?: (plan: Readonly<ReconnectPlan>) => boolean
+  /** 准备已提交或计划已取消；先使本地准备事务失效。 */
+  readonly onPreparationEnd?: (planId: string) => void
+  /** 原生 socket 已确认关闭，可由 runtime 判定空闲回收。 */
+  readonly onStopped?: () => void
 }
 
-/** 按字节比较两个二进制视图。 */
-function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength)
-    return false
-  for (let index = 0; index < left.byteLength; index++) {
-    if (left[index] !== right[index])
-      return false
-  }
-  return true
+/** 当前连接所选的唯一心跳生成来源；调度仍只有 connection 一套。 */
+export interface HeartbeatGenerators<Decoded, Outgoing> {
+  /** 同步生成主动 ping。 */
+  readonly createPing?: (context: HeartbeatContext) => Outgoing
+  /** 同步生成服务端 ping 的回复。 */
+  readonly createPong?: (frame: ProtocolFrame<Decoded>, context: HeartbeatContext) => Outgoing
 }
 
-/** 生成本地发送和重连计划使用的操作 id。 */
-function createOperationId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
-    return crypto.randomUUID()
-  return `socketfuse-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+/** 构造物理控制器所需的协议、配置、内部观察者与可控平台边界。 */
+export interface ConnectionControllerOptions<Decoded, Outgoing> {
+  /** 配置与初始 endpoint；连接控制器不读取页面本地选项。 */
+  readonly config: NormalizedWebSocketConfig
+  /** 当前连接静态注册的同步协议实现。 */
+  readonly adapter: ProtocolAdapter<Decoded, Outgoing>
+  /** 连接唯一内部观察者。 */
+  readonly observer?: ConnectionObserver<Decoded>
+  /** runtime 为条目分配的 epoch。 */
+  readonly connectionEpoch: string
+  /** 可注入测试或 Worker 的原生 socket 工厂。 */
+  readonly socketFactory?: WebSocketFactory
+  /** 单位为毫秒的时钟。 */
+  readonly now?: () => number
+  /** 重连抖动源。 */
+  readonly random?: () => number
+  /** 可注入 timer 工厂。 */
+  readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
+  /** 对应的 timer 释放函数。 */
+  readonly clearTimeout?: (handle: TimerHandle) => void
 }
 
-/** 将原生二进制 payload 转为字节视图；文本与其他值返回 undefined。 */
-async function socketBytes(value: unknown): Promise<Uint8Array | undefined> {
-  if (value instanceof ArrayBuffer)
-    return new Uint8Array(value)
-  if (ArrayBuffer.isView(value))
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
-  if (typeof Blob !== 'undefined' && value instanceof Blob)
-    return new Uint8Array(await value.arrayBuffer())
-  return undefined
+/** 在原生 close 确认前始终保留的 socket 所有权记录。 */
+interface Attempt {
+  /** epoch 内单调身份。 */
+  readonly number: number
+  /** 当前 socket；仅工厂调用中或构造失败时为空。 */
+  socket: WebSocketLike | undefined
+  /** 已结束的尝试不再接收 data/open/error；仍等待 close 回收。 */
+  ended: boolean
+  /** 防止反复调用 native close。 */
+  closeRequested: boolean
+  /** 原生监听解绑函数。 */
+  cleanups: (() => void)[]
 }
 
-/** 比较心跳原生 payload；文本不与二进制互转，二进制按线上的字节比较。 */
-async function socketDataEquals(left: unknown, right: SocketData): Promise<boolean> {
+/** 计划身份覆盖准备、等待与 connecting；一次提交不会提前删除身份。 */
+interface ActivePlan {
+  /** 对外只读计划描述。 */
+  readonly info: Readonly<ReconnectPlan>
+  /** 当前计划处理阶段。 */
+  phase: 'preparing' | 'waiting' | 'connecting'
+  /** 提交后可以启动的最早时刻。 */
+  startAt: number
+}
+
+/** 比较 raw 心跳 wire 字节；原生入站固定 ArrayBuffer，不存在 Blob await。 */
+function sameWire(left: SocketData, right: SocketData): boolean {
   if (typeof left === 'string' || typeof right === 'string')
     return left === right
-  const [leftBytes, rightBytes] = await Promise.all([socketBytes(left), socketBytes(right)])
-  return leftBytes !== undefined && rightBytes !== undefined && bytesEqual(leftBytes, rightBytes)
+  if (left instanceof Blob || right instanceof Blob)
+    return false
+  // 仅比较左侧 wire 的可见字节。
+  const a = left instanceof ArrayBuffer ? new Uint8Array(left) : new Uint8Array(left.buffer, left.byteOffset, left.byteLength)
+  // 右侧视图同样不包含 backing buffer 的其他区域。
+  const b = right instanceof ArrayBuffer ? new Uint8Array(right) : new Uint8Array(right.buffer, right.byteOffset, right.byteLength)
+  return a.length === b.length && a.every((byte, index) => byte === b[index])
 }
 
-/** 独占一条物理 WebSocket 及其全部连接状态。 */
-export class ConnectionController<Incoming, Outgoing> {
-  /** 物理连接状态机。 */
-  private readonly machine = new ConnectionStateMachine()
-  /** 所有页面 owner 共享的有界出站队列。 */
-  private readonly queue: OutboundQueue
-  /** 原生 bufferedAmount 高低水位跟踪器。 */
-  private readonly backpressure: BackpressureTracker
-  /** 物理连接重试预算与退避策略。 */
-  private readonly retry: ReconnectPolicy
-  /** 保证异步协议解码顺序的处理器。 */
-  private readonly orderedProtocol: OrderedProtocol<Incoming, Outgoing>
-  /** 当前物理连接使用的固定 endpoint；仅 plan 提交可以更新。 */
-  private endpoint: string
-  /** client id 到事件 sink 的所有权映射。 */
-  private readonly sinks = new Map<string, ConnectionSink<Incoming>>()
-  /** 等待当前物理连接 open 的调用。 */
-  private readonly waiters: OpenWaiter[] = []
-  /** 当前时间源。 */
-  private readonly now: () => number
-  /** 当前 timer 工厂。 */
-  private readonly setTimer: (callback: () => void, delay: number) => TimerHandle
-  /** 当前 timer 清理函数。 */
-  private readonly clearTimer: (handle: TimerHandle) => void
-  /** 原生 WebSocket 工厂。 */
-  private readonly socketFactory: WebSocketFactory
-  /** 当前物理 socket；一次只能拥有一个。 */
-  private socket: WebSocketLike | null = null
-  /** 当前 socket 的事件解绑函数。 */
-  private socketCleanups: (() => void)[] = []
-  /** 当前应用层心跳 controller。 */
-  private heartbeat: HeartbeatController | undefined
-  /** 当前建连超时 timer。 */
-  private connectTimer: TimerHandle | undefined
-  /** 当前重连退避 timer。 */
-  private retryTimer: TimerHandle | undefined
-  /** owner 归零后的宽限关闭 timer。 */
-  private idleTimer: TimerHandle | undefined
-  /** 背压队列冲刷 timer。 */
-  private flushTimer: TimerHandle | undefined
-  /** 最近一次原生 socket open 时间，单位为 Unix 毫秒。 */
-  private connectedAt = 0
-  /** 已计划的下次重试延迟，单位为毫秒。 */
-  private nextRetryDelay: number | null = null
-  /** 等待 Worker/direct coordinator 提交的当前重连计划。 */
-  private reconnectPlan: Readonly<ReconnectPlan> | undefined
-  /** 生成 plan id 的单调代际。 */
-  private reconnectPlanGeneration = 0
-  /** 最近安全 close code。 */
-  private lastSafeCloseCode: number | null = null
-  /** 最近本地 SocketFuse 错误；跨边界前必须脱敏。 */
-  private lastError: SocketFuseError | null = null
-  /** close 是否由当前控制器主动发起。 */
-  private intentionalClose = false
-  /** 当前 socket close 后是否必须进入显式重连计划。 */
-  private explicitReconnectPending = false
-  /** 区分过期 socket 回调的单调尝试 id。 */
-  private activeAttempt = 0
-  /** onIdle 是否已经为当前空闲周期通知。 */
-  private idleNotified = false
-  /** 当前关闭是否由 owner 归零触发。 */
-  private idleCloseRequested = false
-  /** controller 是否已永久释放。 */
-  private disposed = false
-  /** 串行化异步 encode，保持 sendMessage 调用顺序。 */
-  private outgoingTail: Promise<void> = Promise.resolve()
+/** 生成不含配置或 payload 的本地操作身份。 */
+function operationId(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : 'socketfuse-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
+}
 
-  /** 创建拥有单一物理 WebSocket 的连接控制器。 */
-  constructor(readonly options: ConnectionControllerOptions<Incoming, Outgoing>) {
-    this.queue = new OutboundQueue(options.config.shared.queue.maxMessages, options.config.shared.queue.maxBytes)
-    this.backpressure = new BackpressureTracker(options.config.shared.backpressure)
-    this.retry = new ReconnectPolicy(options.config.shared.reconnect === false
-      ? { factor: 2, hookTimeout: 10_000, initialDelay: 0, jitter: 0, maxDelay: 0, retries: 0, stableThreshold: 0 }
-      : options.config.shared.reconnect, options.random)
-    this.orderedProtocol = new OrderedProtocol(options.config.adapter)
+/** 单 socket 状态机；连接需求来自 runtime，不保存页面对象或逐 client sink。 */
+export class ConnectionController<Decoded, Outgoing> {
+  /** 安全物理状态。 */
+  private stateValue: ConnectionState = 'idle'
+  /** 当前 endpoint，只有计划提交可修改。 */
+  private endpoint: string
+  /** 当前原生尝试；关闭确认前禁止创建替代 socket。 */
+  private current: Attempt | undefined
+  /** 已调用 socket 工厂次数。 */
+  private attemptNumber = 0
+  /** 安全快照的变化版本。 */
+  private revision = 0
+  /** runtime 是否还有参与需求。 */
+  private demand = false
+  /** 永久释放标记。 */
+  private disposed = false
+  /** 不允许显式请求复活的协议终态。 */
+  private fatal = false
+  /** 当前唯一计划。 */
+  private plan: ActivePlan | undefined
+  /** 计划准备或退避的唯一 timer。 */
+  private planTimer: TimerHandle | undefined
+  /** 当前原生建连 timer。 */
+  private connectTimer: TimerHandle | undefined
+  /** 当前连续稳定窗口 timer。 */
+  private stableTimer: TimerHandle | undefined
+  /** 当前队列唯一唤醒 timer。 */
+  private flushTimer: TimerHandle | undefined
+  /** 当前尝试的心跳调度者。 */
+  private heartbeat: HeartbeatController | undefined
+  /** runtime 安装的连接状态型生成来源。 */
+  private generators: HeartbeatGenerators<Decoded, Outgoing> | undefined
+  /** 上次打开时间，仅用于安全快照。 */
+  private connectedAt = 0
+  /** 最近安全错误。 */
+  private lastError: SocketFuseError | undefined
+  /** 最近安全 close code。 */
+  private lastCloseCode: number | null = null
+  /** 编码后的有界业务 FIFO。 */
+  private readonly queue: OutboundQueue
+  /** 跨尝试保留已用计数的预算。 */
+  private readonly retry: ReconnectPolicy
+  /** 原生高低水位迟滞。 */
+  private readonly backpressure: BackpressureTracker
+  /** 工厂调用栈内的后继启动必须交给 timer，避免零退避构造失败无限递归。 */
+  private starting = false
+  /** 当前时钟。 */
+  private readonly now: () => number
+  /** timer 工厂。 */
+  private readonly setTimer: (callback: () => void, delay: number) => TimerHandle
+  /** timer 释放函数。 */
+  private readonly clearTimer: (handle: TimerHandle) => void
+
+  /** 创建尚未启动、没有参与需求的物理控制器。 */
+  constructor(readonly options: ConnectionControllerOptions<Decoded, Outgoing>) {
     this.endpoint = options.config.url
+    this.queue = new OutboundQueue(options.config.shared.queue.maxMessages, options.config.shared.queue.maxBytes)
+    this.retry = new ReconnectPolicy(options.config.shared.reconnect)
+    this.backpressure = new BackpressureTracker(options.config.shared.backpressure)
     this.now = options.now ?? Date.now
     this.setTimer = options.setTimeout ?? ((callback, delay) => globalThis.setTimeout(callback, delay))
     this.clearTimer = options.clearTimeout ?? (handle => globalThis.clearTimeout(handle))
-    this.socketFactory = options.socketFactory ?? browserWebSocketFactory
   }
 
-  /** 返回当前详细物理连接状态。 */
+  /** 返回安全详细状态。 */
   get state(): ConnectionState {
-    return this.machine.state
+    return this.stateValue
   }
 
-  /** 返回 VueUse 风格紧凑状态。 */
-  get status(): WebSocketStatus {
-    return statusFor(this.state)
+  /** 返回是否已经没有需要等待 close 的原生 socket。 */
+  get stopped(): boolean {
+    return this.current === undefined
   }
 
-  /** 返回原生 WebSocket 兼容 readyState。 */
-  get readyState(): ReadyState {
-    return readyStateFor(this.state)
-  }
-
-  /** 当前物理连接是否已经 open。 */
-  get connected(): boolean {
-    return this.state === 'open'
-  }
-
-  /** 当前附着的逻辑 client 数。 */
-  get attachedClientCount(): number {
-    return this.sinks.size
-  }
-
-  /** 当前 endpoint 完整 URL；不得进入跨端口 diagnostics。 */
+  /** 返回当前完整 endpoint，仅供连接内部准备提交，不得投递给页面。 */
   get endpointUrl(): string {
     return this.endpoint
   }
 
-  /** 出站队列消息数。 */
-  get queueMessages(): number {
-    return this.queue.size
+  /** 安装一次连接级心跳来源；必须在首次需求前完成。 */
+  setHeartbeatGenerators(value: HeartbeatGenerators<Decoded, Outgoing> | undefined): void {
+    if (this.attemptNumber !== 0)
+      throw new SocketFuseError('INTERNAL_STATE_ERROR')
+    this.generators = value
+    // 当前共享心跳配置，不读取页面本地表示。
+    const heartbeat = this.options.config.shared.heartbeat
+    if (heartbeat !== false && (value !== undefined || this.options.config.shared.protocol.kind !== 'raw')
+      && (value ?? this.options.adapter).createPing === undefined)
+      throw new SocketFuseError('INVALID_OPTIONS')
   }
 
-  /** 出站队列编码字节数。 */
-  get queueBytes(): number {
-    return this.queue.bytes
-  }
-
-  /** 当前 socket bufferedAmount。 */
-  get bufferedAmount(): number {
-    return this.socket?.bufferedAmount ?? 0
-  }
-
-  /** 当前是否处于出站高水位。 */
-  get outboundHighWater(): boolean {
-    return this.backpressure.isHighWater
-  }
-
-  /** 当前连续重试次数。 */
-  get retryAttempt(): number {
-    return this.retry.attempt
-  }
-
-  /** 已计划的下次重试延迟。 */
-  get retryDelay(): number | null {
-    return this.nextRetryDelay
-  }
-
-  /** 最近安全错误码。 */
-  get lastErrorCode(): string | null {
-    return this.lastError?.code ?? null
-  }
-
-  /** 构造不暴露 endpoint path/query、凭据或 payload 的诊断快照。 */
-  diagnostics(transport: Exclude<Transport, 'pending'>, workerInstanceHash: string | null = null): Readonly<ConnectionDiagnostics> {
-    return Object.freeze({
-      attachedClientCount: this.attachedClientCount,
-      bufferedAmount: this.bufferedAmount,
-      configFingerprint: this.options.config.configFingerprint,
-      controlProtocolMajor: CONTROL_PROTOCOL_MAJOR,
-      endpointOrigin: safeEndpointOrigin(this.endpoint),
-      idHash: stableHash(this.options.config.id),
-      lastErrorCode: this.lastErrorCode,
-      lastSafeCloseCode: this.lastSafeCloseCode,
-      logicalState: this.state,
-      nextRetryDelay: this.retryDelay,
-      outboundHighWater: this.outboundHighWater,
-      physicalState: this.state,
-      queueBytes: this.queueBytes,
-      queueMessages: this.queueMessages,
-      retryAttempt: this.retryAttempt,
-      transport,
-      workerInstanceHash,
-    })
-  }
-
-  /** 附着一个逻辑 client；超出资源上限时同步抛出。 */
-  attach(sink: ConnectionSink<Incoming>): void {
-    this.assertUsable()
-    if (!this.sinks.has(sink.id) && this.sinks.size >= this.options.config.shared.limits.maxClientsPerConnection)
-      throw new SocketFuseError('RESOURCE_LIMIT_EXCEEDED', 'Maximum clients for this connection has been reached')
-    this.sinks.set(sink.id, sink)
-    this.idleNotified = false
-    this.idleCloseRequested = false
-    if (this.idleTimer !== undefined) {
-      this.clearTimer(this.idleTimer)
-      this.idleTimer = undefined
-    }
-  }
-
-  /** 脱离 client 并在最后一个 owner 离开后安排 idle close。 */
-  detach(clientId: string): void {
-    this.sinks.delete(clientId)
-    this.queue.removeOwner(clientId)
-    if (this.sinks.size === 0)
-      this.scheduleIdleClose()
-  }
-
-  /** 打开或等待物理连接 open；abort、终态和关闭会 reject。 */
-  open(signal?: AbortSignal): Promise<ConnectionSnapshot> {
-    this.assertUsable()
-    if (signal?.aborted)
-      return Promise.reject(new SocketFuseError('ABORTED', 'Open wait was aborted'))
-    if (this.state === 'open')
-      return Promise.resolve(this.snapshot())
-    if (this.state === 'failed' || this.state === 'closed')
-      this.machine.transition('connecting')
-    else if (this.state === 'idle')
-      this.machine.transition('connecting')
-    this.emitState()
-    const promise = new Promise<ConnectionSnapshot>((resolve, reject) => {
-      const waiter: OpenWaiter = { reject, resolve }
-      this.waiters.push(waiter)
-      if (signal !== undefined) {
-        const onAbort = (): void => {
-          const index = this.waiters.indexOf(waiter)
-          if (index >= 0)
-            this.waiters.splice(index, 1)
-          waiter.cleanup?.()
-          reject(new SocketFuseError('ABORTED', 'Open wait was aborted'))
-        }
-        waiter.cleanup = () => signal.removeEventListener('abort', onAbort)
-        signal.addEventListener('abort', onAbort, { once: true })
-      }
-    })
-    if (this.socket === null && this.retryTimer === undefined && this.reconnectPlan === undefined)
-      this.startSocket()
-    return promise
-  }
-
-  /** 主动关闭物理连接并清空出站队列。 */
-  close(): void {
+  /** 建立或撤销连接需求；同 epoch 的后续恢复始终经过计数计划。 */
+  setDemand(needed: boolean): ConnectionSnapshot {
     if (this.disposed)
-      return
-    this.intentionalClose = true
-    this.explicitReconnectPending = false
-    this.cancelReconnectPlan()
-    this.clearRetryTimer()
-    this.clearConnectTimer()
-    this.heartbeat?.stop()
-    if (this.socket !== null && (this.socket.readyState === SOCKET_OPEN || this.socket.readyState === SOCKET_CONNECTING)) {
-      this.transition('closing', 'CLIENT_DISCONNECTED')
-      this.socket.close(1000)
+      throw new SocketFuseError('CLIENT_DISPOSED')
+    this.demand = needed
+    if (!needed) {
+      // 开始过的计划仍保留身份，后续 open 不能重复启动它。
+      const connectingPlan = this.plan?.phase === 'connecting'
+      this.cancelPlan()
+      if (connectingPlan)
+        this.close()
+      return this.snapshot()
     }
-    else if (this.state !== 'idle' && this.state !== 'closed') {
-      this.transition('closed', 'CLIENT_DISCONNECTED')
+    if (this.fatal)
+      throw this.lastError ?? new SocketFuseError('PROTOCOL_ERROR', { fatal: true })
+    if (this.current?.ended === false || this.plan !== undefined)
+      return this.snapshot()
+    if (this.attemptNumber === 0)
+      this.startSocket()
+    else
+      this.requestReconnect('demand', true)
+    return this.snapshot()
+  }
+
+  /** 当前尝试能否继续执行同步协议效果。 */
+  isCurrentAttempt(number: number): boolean {
+    return !this.disposed && this.current?.number === number && !this.current.ended
+  }
+
+  /** 返回与当前 epoch/attempt 绑定的安全状态，不暴露 endpoint。 */
+  snapshot(): ConnectionSnapshot {
+    return Object.freeze({ state: this.state, status: statusFor(this.state), readyState: readyStateFor(this.state),
+      transport: 'pending', connectionEpoch: this.options.connectionEpoch, attempt: this.attemptNumber,
+      connectedAt: this.connectedAt, revision: this.revision, planId: this.plan?.info.id ?? null })
+  }
+
+  /** 返回安全诊断；参与者计数和页面观测时间由上层填写。 */
+  diagnostics(transport: Transport = 'pending', workerInstanceHash: string | null = null): ConnectionDiagnostics {
+    return { transport, workerInstanceHash, logicalState: this.state, physicalState: this.state,
+      connectionEpoch: this.options.connectionEpoch, attempt: this.attemptNumber, observedAt: 0,
+      controlProtocolMajor: CONTROL_PROTOCOL_MAJOR, idHash: stableHash(this.options.config.id),
+      configFingerprint: this.options.config.configFingerprint, endpointOrigin: safeEndpointOrigin(this.endpoint),
+      retriesUsed: this.retry.used, retriesRemaining: this.retry.remaining, retryReserved: this.retry.reserved,
+      nextRetryDelay: this.plan === undefined ? null : Math.max(0, this.plan.startAt - this.now()),
+      lastSafeCloseCode: this.lastCloseCode, attachedClientCount: 0,
+      queueMessages: this.queue.size, queueBytes: this.queue.bytes, bufferedAmount: this.current?.socket?.bufferedAmount ?? 0,
+      outboundHighWater: this.backpressure.isHighWater, lastErrorCode: this.lastError?.code ?? null }
+  }
+
+  /** 接纳或加入唯一计划；先检查预算，成功后才替代健康连接。 */
+  requestReconnect(source: ReconnectSource, countAsRetry = true, observed?: ReconnectObservation, reason: BeforeReconnectReason = 'explicit', close: SafeCloseInfo = { code: 1000, terminal: false, wasClean: true }): Readonly<ReconnectPlan> {
+    if (this.disposed || !this.demand)
+      throw new SocketFuseError(this.disposed ? 'CLIENT_DISPOSED' : 'CLIENT_DISCONNECTED')
+    if (this.fatal)
+      throw this.lastError ?? new SocketFuseError('PROTOCOL_ERROR', { fatal: true })
+    if (observed !== undefined) {
+      // 接纳请求前观察当前计划，合并操作不重新计费。
+      const currentPlan = this.plan?.info
+      if (observed.connectionEpoch !== this.options.connectionEpoch
+        || (observed.planId !== null && observed.planId !== currentPlan?.id)
+        || (observed.attempt !== this.attemptNumber && observed.attempt !== currentPlan?.originAttempt))
+        throw new SocketFuseError('STALE_RECONNECT_PLAN')
     }
-    this.rejectWaiters(new SocketFuseError('CLIENT_DISCONNECTED', 'Connection was closed'))
+    if (this.plan !== undefined) {
+      if (this.plan.info.countAsRetry !== countAsRetry)
+        throw new SocketFuseError('RECONNECT_IN_PROGRESS')
+      return this.plan.info
+    }
+    this.retry.settleStable(this.now())
+    // 按下一次计数重试计算默认等待，单位毫秒。
+    const defaultDelay = countAsRetry ? calculateReconnectDelay(this.options.config.shared.reconnect, this.retry.used + 1, this.options.random) : 0
+    this.retry.reserve(countAsRetry)
+    // 接纳时固定的计划元数据，不随后续请求改变计数方式。
+    const info: Readonly<ReconnectPlan> = Object.freeze({ id: operationId(), connectionEpoch: this.options.connectionEpoch,
+      originAttempt: this.attemptNumber, attempt: this.attemptNumber + 1, source, countAsRetry, retriesUsed: this.retry.used,
+      defaultDelay,
+      deadline: this.now() + this.options.config.shared.reconnect.hookTimeout, reason, close })
+    // 当前计划引用，用于提交前后的身份守卫。
+    const plan: ActivePlan = { info, phase: 'preparing', startAt: this.now() + info.defaultDelay }
+    this.plan = plan
+    this.setState('reconnecting')
+    // 状态通知可以回收最后参与者；未提交的替代不能废掉仍健康的空闲 socket。
+    if (this.plan !== plan) {
+      if (this.current?.ended === false && this.current.socket?.readyState === SOCKET_OPEN)
+        this.setState('open')
+      return info
+    }
+    this.retry.endOpen(this.now())
+    this.clearHandle('stableTimer')
+    // 被新计划替代的物理尝试，关闭确认前继续拥有 socket。
+    const previous = this.current
+    if (previous !== undefined && !previous.ended)
+      this.endAttempt(previous, close, true)
+    if (this.plan !== plan) {
+      if (previous !== undefined)
+        this.requestSocketClose(previous)
+      return info
+    }
+    this.planTimer = this.setTimer(() => {
+      this.planTimer = undefined
+      if (this.plan === plan && plan.phase === 'preparing')
+        this.commitPlan(plan, {})
+    }, Math.max(0, info.deadline - this.now()))
+    if (this.options.observer?.onPrepare?.(info) !== true && this.plan === plan && plan.phase === 'preparing')
+      this.commitPlan(plan, {})
+    if (previous !== undefined)
+      this.requestSocketClose(previous)
+    return info
+  }
+
+  /** 当前准备来源的原子提交；绝对期限不依赖 timer 是否已被调度。 */
+  commitReconnectPlan(planId: string, override: Readonly<ReconnectPlanOverride> = {}): void {
+    // 当前计划引用，用于提交前后的身份守卫。
+    const plan = this.plan
+    if (plan?.info.id !== planId || plan.phase !== 'preparing' || this.now() >= plan.info.deadline)
+      throw new SocketFuseError('STALE_RECONNECT_PLAN')
+    this.commitPlan(plan, override)
+  }
+
+  /** 准备失败/忙时采用默认值；仍只影响当前未提交计划。 */
+  useDefaultPlan(planId: string): void {
+    // 当前计划引用，用于提交前后的身份守卫。
+    const plan = this.plan
+    if (plan?.info.id === planId && plan.phase === 'preparing')
+      this.commitPlan(plan, {})
+  }
+
+  /** 同步接纳页面业务值；成功只说明 native accepted 或本地 queued。 */
+  send(ownerId: string, data: Outgoing, options?: SendOptions, stillOwned: () => boolean = () => true): SendReceipt {
+    if (this.disposed || !this.demand || !stillOwned())
+      throw new SocketFuseError('CLIENT_DISCONNECTED')
+    if (this.fatal)
+      throw this.lastError ?? new SocketFuseError('PROTOCOL_ERROR', { fatal: true })
+    // 只用于本地接纳跟踪的不透明消息身份。
+    const messageId = operationId()
+    // 本次同步编码结果，不能延迟绑定到下一尝试。
+    let encoded: SocketData
+    try {
+      encoded = encodeWithAdapter(this.options.adapter, data, { messageId, now: this.now() })
+    }
+    catch (error) {
+      this.protocolFailure(error)
+      throw error
+    }
+    assertEncodedMessageSize(encoded, this.options.config.shared.limits.maxEncodedMessageBytes)
+    if (this.disposed || !this.demand || !stillOwned())
+      throw new SocketFuseError('CLIENT_DISCONNECTED')
+    // 捕获本次操作的物理尝试，外部调用后仍须检查身份。
+    const current = this.current
+    // 原生已打开且未结束的尝试才能直接发送。
+    const open = current !== undefined && !current.ended && current.socket?.readyState === SOCKET_OPEN
+    // 当前原生缓冲区是否要求暂停业务发送。
+    const backpressured = open && this.backpressure.update(current.socket?.bufferedAmount ?? 0)
+    if (this.queue.size === 0 && open && !backpressured) {
+      this.nativeSend(current, encoded)
+      return { status: 'accepted', messageId, bufferedAmount: current.socket?.bufferedAmount ?? 0 }
+    }
+    // 本次发送的队列选择优先于共享默认策略。
+    const allowed = options?.queue ?? (open ? this.options.config.shared.queue.whenBackpressured : this.options.config.shared.queue.whenDisconnected)
+    if (!allowed)
+      throw new SocketFuseError(open ? 'BACKPRESSURE' : 'SEND_WHILE_DISCONNECTED')
+    // 容量检查与快照完成后才公开本地排队接纳。
+    const queued = this.queue.enqueue(ownerId, encoded, messageId)
+    this.flushQueue()
+    return { status: 'queued', messageId, position: queued.position }
+  }
+
+  /** 协议回复只在当前 open 尝试立即发送；不进入任何队列或后续 socket。 */
+  sendControl(attempt: number, data: Outgoing): void {
+    if (!this.isCurrentAttempt(attempt) || this.current?.socket?.readyState !== SOCKET_OPEN)
+      throw new SocketFuseError('CLIENT_DISCONNECTED')
+    // 捕获本次操作的物理尝试，外部调用后仍须检查身份。
+    const current = this.current
+    // 本次同步编码结果，不能延迟绑定到下一尝试。
+    let encoded: SocketData
+    try {
+      encoded = encodeWithAdapter(this.options.adapter, data, { messageId: operationId(), now: this.now() })
+    }
+    catch (error) {
+      this.protocolFailure(error)
+      throw error
+    }
+    assertEncodedMessageSize(encoded, this.options.config.shared.limits.maxEncodedMessageBytes)
+    if (!this.isCurrentAttempt(attempt))
+      throw new SocketFuseError('CLIENT_DISCONNECTED')
+    if (this.backpressure.update(current.socket?.bufferedAmount ?? 0))
+      throw new SocketFuseError('BACKPRESSURE')
+    this.nativeSend(current, encoded)
+  }
+
+  /** 删除离开者尚未发送的数据；移除队首后再次唤醒同一 drain。 */
+  removeOwner(ownerId: string): void {
+    this.queue.removeOwner(ownerId)
+    this.flushQueue()
+  }
+
+  /** 报告安全协议失败；同步契约违例属于不可重试条目终态。 */
+  protocolFailure(error: unknown): void {
+    // 仅沿库生成的稳定错误码传播失败。
+    const safe = error instanceof SocketFuseError ? error : new SocketFuseError('PROTOCOL_ERROR')
+    // 先固定安全失败，随后 close 观察者和 waiter 才能看到真正的终止原因。
+    this.reportError(safe)
+    if (safe.fatal) {
+      this.fatal = true
+      this.cancelPlan()
+      // 捕获本次操作的物理尝试，外部调用后仍须检查身份。
+      const current = this.current
+      this.setState('failed', safe.code)
+      if (current !== undefined) {
+        this.endAttempt(current, { code: 4002, wasClean: false, terminal: true }, false)
+        this.requestSocketClose(current)
+      }
+    }
+  }
+
+  /** 空闲期限到达时停止连接；保留 socket 所有权直至原生 close。 */
+  close(): void {
+    this.cancelPlan()
     this.queue.clear()
-  }
-
-  /** 串行编码并本地发送或排队，不承诺服务端 Ack。 */
-  async send(ownerId: string, data: Outgoing, options: SendOptions = {}): Promise<SendReceipt> {
-    this.assertUsable()
-    this.assertOwnerAttached(ownerId)
-    const messageId = createOperationId()
-    const queueSetting = options.queue
-    const queueAllowed = queueSetting === true
-      || (queueSetting !== false && (this.options.config.shared.queue.whenDisconnected || this.options.config.shared.queue.whenBackpressured))
-    const operation = this.outgoingTail.then(async () => {
-      this.assertUsable()
-      this.assertOwnerAttached(ownerId)
-      const encoded = await encodeWithAdapter(this.options.config.adapter, data, { messageId, now: this.now() })
-      this.assertUsable()
-      this.assertOwnerAttached(ownerId)
-      assertEncodedMessageSize(encoded, this.options.config.shared.limits.maxEncodedMessageBytes)
-      if (this.socket === null || this.state !== 'open') {
-        if (!queueAllowed || (!this.options.config.shared.queue.whenDisconnected && queueSetting !== true))
-          throw new SocketFuseError('SEND_WHILE_DISCONNECTED', 'Cannot send while the connection is not open', { retryable: true })
-        return this.enqueue(ownerId, encoded, messageId)
-      }
-      const highWater = this.backpressure.update(this.socket.bufferedAmount)
-      if (highWater) {
-        if (!queueAllowed || (!this.options.config.shared.queue.whenBackpressured && queueSetting !== true))
-          throw new SocketFuseError('BACKPRESSURE', 'Socket bufferedAmount is above the high-water mark', { retryable: true })
-        return this.enqueue(ownerId, encoded, messageId)
-      }
-      this.socket.send(encoded)
-      return { bufferedAmount: this.socket.bufferedAmount, messageId, status: 'accepted' as const }
-    })
-    this.outgoingTail = operation.then(() => undefined, () => undefined)
-    return operation
-  }
-
-  /** 清空退避并请求一次显式物理重连计划。 */
-  async reconnect(): Promise<void> {
-    this.assertUsable()
-    this.retry.reset()
-    this.intentionalClose = false
-    this.lastError = null
-    this.explicitReconnectPending = true
-    this.cancelReconnectPlan()
-    this.clearRetryTimer()
-    if (this.socket !== null) {
-      this.transition('closing', 'RECONNECT_REQUESTED')
-      this.socket.close(1000)
+    // 捕获本次操作的物理尝试，外部调用后仍须检查身份。
+    const current = this.current
+    if (current === undefined) {
+      this.setState(this.fatal ? 'failed' : 'closed')
+      this.options.observer?.onStopped?.()
       return
     }
-    this.explicitReconnectPending = false
-    const plan = this.createReconnectPlan(1, 0, 'explicit', { code: 1000, terminal: false, wasClean: true }, 'RECONNECT_REQUESTED')
-    this.dispatchReconnectPlan(plan)
+    this.setState(this.fatal ? 'failed' : 'closing')
+    this.endAttempt(current, { code: 1000, wasClean: true, terminal: this.fatal }, false)
+    this.requestSocketClose(current)
   }
 
-  /** 释放 controller、所有 owner、socket 与 timers。 */
+  /** 永久停止控制器；原生关闭确认仍负责解除最后监听。 */
   dispose(): void {
     if (this.disposed)
       return
-    this.close()
     this.disposed = true
-    for (const id of [...this.sinks.keys()])
-      this.detach(id)
-    this.clearAllTimers()
+    this.demand = false
+    this.close()
   }
 
-  /** 返回当前物理连接快照；transport 会由上层覆盖。 */
-  snapshot(): ConnectionSnapshot {
-    return {
-      attempt: this.retry.attempt,
-      connectedAt: this.connectedAt,
-      readyState: this.readyState,
-      state: this.state,
-      status: this.status,
-      transport: 'direct',
+  /** 更新快照版本后通知唯一观察者，调用方负责在外部返回后检查代际。 */
+  private setState(state: ConnectionState, reasonCode?: string): void {
+    this.stateValue = state
+    this.revision++
+    this.options.observer?.onState?.(this.snapshot(), reasonCode)
+  }
+
+  /** 清理一个控制器拥有的 timer，先解除引用再调用平台清理。 */
+  private clearHandle(field: 'planTimer' | 'connectTimer' | 'stableTimer' | 'flushTimer'): void {
+    // 先解除字段引用，再清理原 timer。
+    const handle = this[field]
+    this[field] = undefined
+    if (handle !== undefined)
+      this.clearTimer(handle)
+  }
+
+  /** 提交全部有效覆盖后结束准备；计划自身仍保留至建连成功/失败。 */
+  private commitPlan(plan: ActivePlan, override: Readonly<ReconnectPlanOverride>): void {
+    // 准备提交前完整校验的新 endpoint，不进入快照。
+    const url = override.url === undefined ? this.endpoint : normalizeEndpointUrl(override.url)
+    // 下一尝试的等待毫秒数，必须在提交时仍属于当前计划。
+    const delay = override.delay ?? plan.info.defaultDelay
+    if (!Number.isSafeInteger(delay) || delay < 0 || delay > 2_147_483_647)
+      throw new SocketFuseError('INVALID_OPTIONS')
+    if (this.plan !== plan || plan.phase !== 'preparing' || !this.demand || this.disposed)
+      throw new SocketFuseError('STALE_RECONNECT_PLAN')
+    this.endpoint = url
+    plan.phase = 'waiting'
+    plan.startAt = this.now() + delay
+    this.clearHandle('planTimer')
+    this.options.observer?.onPreparationEnd?.(plan.info.id)
+    if (this.plan === plan)
+      this.advancePlan()
+  }
+
+  /** 有需求、退避到期且旧 socket 已关闭才启动一次预留尝试。 */
+  private advancePlan(): void {
+    // 当前计划引用，用于提交前后的身份守卫。
+    const plan = this.plan
+    if (plan === undefined || plan.phase !== 'waiting' || this.current !== undefined || !this.demand || this.disposed)
+      return
+    this.clearHandle('planTimer')
+    // 下一尝试的等待毫秒数，必须在提交时仍属于当前计划。
+    const delay = plan.startAt - this.now()
+    if (delay > 0 || this.starting) {
+      this.planTimer = this.setTimer(() => {
+        this.planTimer = undefined
+        this.advancePlan()
+      }, Math.max(0, delay))
+      return
     }
+    plan.phase = 'connecting'
+    this.retry.start(plan.info.countAsRetry)
+    this.startSocket()
   }
 
-  /** 原子提交当前重连计划；旧代际或非法覆盖不会改变 endpoint/timer。 */
-  commitReconnectPlan(id: string, override: Readonly<ReconnectPlanOverride> = {}): void {
-    this.assertUsable()
-    const plan = this.reconnectPlan
-    if (plan === undefined || plan.id !== id)
-      throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer active')
-    const delay = override.delay ?? plan.defaultDelay
-    if (typeof delay !== 'number' || !Number.isFinite(delay) || delay < 0)
-      throw new SocketFuseError('INVALID_OPTIONS', 'Reconnect delay must be a non-negative finite number')
-    let endpoint = this.endpoint
-    if (override.url !== undefined)
-      endpoint = normalizeEndpointUrl(override.url, 'url')
-    this.reconnectPlan = undefined
-    if (endpoint !== this.endpoint) {
-      this.endpoint = endpoint
-    }
-    this.scheduleReconnect(delay)
+  /** 取消计划先移除内部引用，防止 abort 回调同步创建的新计划被旧 cleanup 清掉。 */
+  private cancelPlan(): void {
+    // 当前计划引用，用于提交前后的身份守卫。
+    const plan = this.plan
+    this.plan = undefined
+    this.clearHandle('planTimer')
+    this.retry.cancel()
+    if (plan !== undefined)
+      this.options.observer?.onPreparationEnd?.(plan.info.id)
   }
 
-  /** 将一条已编码消息放入有界 FIFO 队列。 */
-  private enqueue(ownerId: string, data: SocketData, messageId: string): SendReceipt {
-    const result = this.queue.enqueue(ownerId, data, messageId)
-    return { messageId, position: result.position, status: 'queued' }
-  }
-
-  /** 创建物理 socket、绑定本尝试监听器并设置连接 deadline。 */
+  /** 唯一 socket 工厂调用点；任何替代均须先经过 current 为空的守卫。 */
   private startSocket(): void {
-    if (this.disposed || this.socket !== null || this.sinks.size === 0)
+    if (this.current !== undefined || !this.demand || this.disposed || this.fatal)
       return
-    this.intentionalClose = false
-    this.lastError = null
-    const attempt = ++this.activeAttempt
-    this.retry.recordAttempt()
-    let socket: WebSocketLike
+    // 捕获本次操作的物理尝试，外部调用后仍须检查身份。
+    const current: Attempt = { number: ++this.attemptNumber, socket: undefined, ended: false, closeRequested: false, cleanups: [] }
+    this.current = current
+    this.backpressure.reset()
+    this.stateValue = 'connecting'
+    this.starting = true
     try {
-      socket = this.socketFactory(this.endpoint, this.options.config.shared.protocols, this.options.config.shared.binaryType)
-    }
-    catch (cause) {
-      this.handleSocketConstructionFailure(new SocketFuseError('SOCKET_ERROR', 'Unable to construct WebSocket', { cause, retryable: true }))
-      return
-    }
-    this.socket = socket
-    socket.binaryType = this.options.config.shared.binaryType
-    this.socketCleanups = [
-      addSocketListener(socket, 'open', () => this.handleOpen(socket, attempt)),
-      addSocketListener(socket, 'message', (event: { readonly data: SocketData }) => this.handleMessage(socket, attempt, event.data)),
-      addSocketListener(socket, 'error', () => this.handleError(new SocketFuseError('SOCKET_ERROR', 'WebSocket reported an error', { retryable: true }), socket, attempt)),
-      addSocketListener(socket, 'close', (event: { readonly code: number, readonly wasClean: boolean }) => this.handleClose(socket, attempt, event)),
-    ]
-    this.connectTimer = this.setTimer(() => {
-      if (this.isCurrentAttempt(socket, attempt) && this.state !== 'open') {
-        this.lastError = new SocketFuseError('CONNECTION_TIMEOUT', 'WebSocket connection timed out', { retryable: true })
-        socket.close(1000)
+      current.socket = (this.options.socketFactory ?? browserWebSocketFactory)(this.endpoint, this.options.config.shared.protocols, 'arraybuffer')
+      current.socket.binaryType = 'arraybuffer'
+      current.cleanups = [
+        addSocketListener(current.socket, 'open', () => this.opened(current)),
+        addSocketListener<{ data: SocketData }>(current.socket, 'message', event => this.receive(current, event.data)),
+        addSocketListener(current.socket, 'error', () => this.socketFailure(current, new SocketFuseError('SOCKET_ERROR', { retryable: true }), 'socket-error')),
+        addSocketListener<{ code?: number, wasClean?: boolean }>(current.socket, 'close', event => this.closed(current, event)),
+      ]
+      this.setState('connecting')
+      if (current.ended || this.disposed) {
+        this.requestSocketClose(current)
+        return
       }
-    }, this.options.config.shared.connectionTimeout)
+      this.connectTimer = this.setTimer(() => {
+        this.connectTimer = undefined
+        this.socketFailure(current, new SocketFuseError('CONNECTION_TIMEOUT', { retryable: true }), 'connection-timeout')
+      }, this.options.config.shared.connectionTimeout)
+      if (current.socket.readyState === SOCKET_OPEN)
+        this.opened(current)
+      else if (current.socket.readyState === SOCKET_CLOSED)
+        this.closed(current, {})
+    }
+    catch {
+      this.socketFailure(current, new SocketFuseError('SOCKET_ERROR', { retryable: true }), 'socket-error')
+      if (current.socket === undefined)
+        this.releaseSocket(current)
+    }
+    finally {
+      this.starting = false
+    }
   }
 
-  /** 处理原生 socket open，并立即进入 SocketFuse open 状态。 */
-  private handleOpen(socket: WebSocketLike, attempt: number): void {
-    if (!this.isCurrentAttempt(socket, attempt))
+  /** 先完成协议初始化，再提交可用状态；失败的初始化不能结算页面 open。 */
+  private opened(current: Attempt): void {
+    if (!this.isCurrentAttempt(current.number) || this.state === 'open')
+      return
+    this.clearHandle('connectTimer')
+    this.cancelPlan()
+    if (!this.isCurrentAttempt(current.number))
+      return
+    this.options.observer?.onInitializeOpen?.(current.number)
+    if (!this.isCurrentAttempt(current.number))
       return
     this.connectedAt = this.now()
     this.retry.recordOpen(this.connectedAt)
-    this.becomeOpen(socket, attempt)
-  }
-
-  /** 将当前尝试标记为 open，启动心跳、冲刷队列并通知所有 sink。 */
-  private becomeOpen(socket: WebSocketLike = this.socket as WebSocketLike, attempt: number = this.activeAttempt): void {
-    if (!this.isCurrentAttempt(socket, attempt))
+    // 连续健康 open 的预算重置窗口；false 永不自动补充。
+    const threshold = this.options.config.shared.reconnect.stableThreshold
+    if (threshold !== false) {
+      this.stableTimer = this.setTimer(() => {
+        this.stableTimer = undefined
+        if (this.isCurrentAttempt(current.number) && this.state === 'open' && this.retry.settleStable(this.now()))
+          this.setState('open')
+      }, threshold)
+    }
+    this.setState('open')
+    if (!this.isCurrentAttempt(current.number))
       return
-    this.clearConnectTimer()
-    if (this.state !== 'open')
-      this.transition('open', 'READY')
-    this.emitState('READY')
-    this.resolveWaiters()
-    this.heartbeat = this.createHeartbeat()
-    this.heartbeat?.start()
+    this.options.observer?.onOpen?.(this.snapshot())
+    if (!this.isCurrentAttempt(current.number))
+      return
+    this.startHeartbeat(current)
     this.flushQueue()
-    // 共享业务逻辑先于页面观察到 open，才能在页面发出第一条消息前重置连接期状态。
-    this.options.onSocketOpen?.(this.retry.attempt)
-    for (const sink of this.sinks.values())
-      sink.onOpen?.(this.snapshot())
   }
 
-  /** 顺序处理一条原始入站 payload。 */
-  private async handleMessage(socket: WebSocketLike, attempt: number, data: SocketData): Promise<void> {
-    if (!this.isCurrentAttempt(socket, attempt))
+  /** 解码和分类同步完成；每个原生帧最多通知 runtime 一次。 */
+  private receive(current: Attempt, data: SocketData): void {
+    if (!this.isCurrentAttempt(current.number))
       return
     try {
-      const frame = await this.orderedProtocol.process(data, { now: this.now(), receivedAt: this.now() })
-      await this.handleFrame(socket, attempt, frame)
-    }
-    catch (cause) {
-      this.handleError(toSocketFuseError(cause, 'PROTOCOL_ERROR', 'Protocol frame processing failed', { retryable: false }))
-    }
-  }
-
-  /** 根据协议帧执行握手、心跳、控制帧或业务 fan-out。 */
-  private async handleFrame(socket: WebSocketLike, attempt: number, frame: ProtocolFrame<Incoming>): Promise<void> {
-    if (!this.isCurrentAttempt(socket, attempt))
-      return
-    this.heartbeat?.acknowledge('activity')
-    if (frame.type === 'pong') {
-      this.heartbeat?.acknowledge('pong')
-      return
-    }
-    if (frame.type === 'ping') {
-      const createPong = this.options.config.adapter.createPong
-      if (createPong !== undefined) {
-        const value = await createPong(frame, { attempt: this.retry.attempt, now: this.now() })
-        const encoded = await encodeWithAdapter(this.options.config.adapter, value, { messageId: createOperationId(), now: this.now() })
-        if (this.isCurrentAttempt(socket, attempt))
-          socket.send(encoded)
-      }
-      return
-    }
-    if (frame.type === 'fatal') {
-      const error = new SocketFuseError('PROTOCOL_ERROR', 'Protocol rejected the connection', { fatal: true })
-      this.handleError(error)
-      this.lastError = error
-      this.rejectWaiters(error)
-      socket.close(4002)
-      return
-    }
-    if (frame.type !== 'data')
-      return
-    if (this.state !== 'open')
-      return
-    const heartbeat = this.options.config.shared.heartbeat
-    if (heartbeat !== false
-      && this.options.config.shared.protocol.kind === 'raw'
-      && await socketDataEquals(frame.data, heartbeat.responseMessage as SocketData)) {
-      this.heartbeat?.acknowledge('pong')
-      return
-    }
-    // 过滤在 fan-out 之前，被丢弃的帧因此不占用任何 sink 的投递额度。
-    if (this.options.shouldDeliverInbound?.(frame.data) === false)
-      return
-    for (const sink of this.sinks.values())
-      sink.onMessage?.(frame.data, this.now())
-  }
-
-  /** 记录错误并通知 sink；不等待页面 handler。 */
-  private handleError(error: SocketFuseError, socket?: WebSocketLike, attempt?: number): void {
-    if (socket !== undefined && attempt !== undefined && !this.isCurrentAttempt(socket, attempt))
-      return
-    this.lastError = error
-    for (const sink of this.sinks.values())
-      sink.onError?.(error)
-  }
-
-  /** 清理当前 socket 并根据 retry/terminal 策略安排后续状态。 */
-  private handleClose(socket: WebSocketLike, attempt: number, event: { readonly code: number, readonly wasClean: boolean }): void {
-    if (!this.isCurrentAttempt(socket, attempt))
-      return
-    this.clearConnectTimer()
-    this.heartbeat?.stop()
-    this.heartbeat = undefined
-    this.cleanupSocket()
-    const info = safeCloseInfo(event)
-    this.lastSafeCloseCode = info.code
-    const protocolAllowsRetry = this.explicitReconnectPending
-      || (!this.lastError?.fatal && (this.lastError?.retryable === true
-        || (this.options.config.adapter.shouldReconnect?.(info) ?? !info.terminal)))
-    const explicitAttempt = this.explicitReconnectPending
-    const shouldRetry = (explicitAttempt || !this.intentionalClose)
-      && this.sinks.size > 0
-      && (explicitAttempt || this.options.config.shared.reconnect !== false)
-      && protocolAllowsRetry
-    let willReconnect = false
-    let planToDispatch: Readonly<ReconnectPlan> | undefined
-    const reconnectInfo = { ...info, terminal: false }
-    if (explicitAttempt && shouldRetry) {
-      willReconnect = true
-      this.explicitReconnectPending = false
-      planToDispatch = this.createReconnectPlan(1, 0, 'explicit', reconnectInfo, 'RECONNECT_REQUESTED')
-    }
-    else if (shouldRetry) {
-      const decision = this.retry.decide(this.now(), true)
-      if (decision.allowed) {
-        willReconnect = true
-        planToDispatch = this.createReconnectPlan(
-          decision.attempt,
-          decision.delay,
-          this.reconnectReason(),
-          reconnectInfo,
-          this.lastError?.code ?? 'SOCKET_CLOSED',
-        )
-      }
-      else {
-        this.transition('failed', 'RETRY_EXHAUSTED')
-        this.emitState('RETRY_EXHAUSTED')
-        this.rejectWaiters(new SocketFuseError('RETRY_EXHAUSTED', 'Reconnect retry budget was exhausted', { fatal: true }))
-      }
-    }
-    else {
-      if (this.lastError?.fatal) {
-        if (this.state !== 'failed')
-          this.transition('failed', this.lastError.code)
-        this.emitState(this.lastError.code)
-        this.rejectWaiters(this.lastError)
-      }
-      else if (this.state !== 'closed' && this.state !== 'idle')
-        this.transition('closed', info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
-      if (!this.lastError?.fatal) {
-        this.emitState(info.terminal ? 'CLOSE_NOT_RETRYABLE' : this.lastError?.code)
-        this.rejectWaiters(new SocketFuseError(info.terminal ? 'CLOSE_NOT_RETRYABLE' : 'CLIENT_DISCONNECTED', 'WebSocket closed'))
-      }
-    }
-    const closeInfo = { ...info, terminal: !willReconnect }
-    for (const sink of this.sinks.values())
-      sink.onClose?.({ ...closeInfo, willReconnect })
-    if (planToDispatch !== undefined)
-      this.dispatchReconnectPlan(planToDispatch)
-    this.intentionalClose = false
-    this.explicitReconnectPending = false
-    if (this.idleCloseRequested && this.sinks.size === 0)
-      this.notifyIdle()
-  }
-
-  /** 在 socket 构造失败且没有 close 事件时进入统一自动重连计划。 */
-  private handleSocketConstructionFailure(error: SocketFuseError): void {
-    this.handleError(error)
-    if (this.socket !== null)
-      this.cleanupSocket()
-    const close = { code: 1006, terminal: false, wasClean: false }
-    this.lastSafeCloseCode = close.code
-    const protocolAllowsRetry = !error.fatal
-      && error.retryable
-      && (this.options.config.adapter.shouldReconnect?.(close) ?? true)
-    if (!this.intentionalClose
-      && this.sinks.size > 0
-      && this.options.config.shared.reconnect !== false
-      && protocolAllowsRetry) {
-      const decision = this.retry.decide(this.now(), true)
-      if (decision.allowed) {
-        const plan = this.createReconnectPlan(decision.attempt, decision.delay, 'socket-error', close, error.code)
-        this.dispatchReconnectPlan(plan)
+      // 当前共享心跳配置，不读取页面本地表示。
+      const heartbeat = this.options.config.shared.heartbeat
+      if (heartbeat !== false && this.options.config.shared.protocol.kind === 'raw' && sameWire(data, heartbeat.responseMessage as SocketData)) {
+        this.heartbeat?.acknowledge('activity')
+        this.heartbeat?.acknowledge('pong')
         return
       }
-      const exhausted = new SocketFuseError('RETRY_EXHAUSTED', 'Reconnect retry budget was exhausted', { fatal: true })
-      if (this.state !== 'failed')
-        this.transition('failed', exhausted.code)
-      this.emitState(exhausted.code)
-      this.rejectWaiters(exhausted)
-      return
+      // 原生接收时刻，回放保留该时间。
+      const receivedAt = this.now()
+      // 同步解码并严格分类后的单个物理帧。
+      const frame = decodeAndClassify(this.options.adapter, data, { now: receivedAt, receivedAt })
+      if (!this.isCurrentAttempt(current.number))
+        return
+      this.heartbeat?.acknowledge('activity')
+      if (frame.type === 'pong')
+        this.heartbeat?.acknowledge('pong')
+      else if (frame.type === 'ping') {
+        // 本连接选定的唯一生成器来源。
+        const generator = (this.generators ?? this.options.adapter).createPong
+        if (generator !== undefined) {
+          // 当前尝试的即时协议回复，不跨尝试排队。
+          const reply = invokeSynchronous(() => generator(frame, { attempt: current.number, now: this.now() }), 'PROTOCOL_ERROR')
+          if (this.isCurrentAttempt(current.number))
+            this.sendControl(current.number, reply)
+        }
+      }
+      else if (frame.type === 'fatal')
+        this.protocolFailure(new SocketFuseError('PROTOCOL_ERROR', { fatal: true }))
+      else if (frame.type !== 'ignore')
+        this.options.observer?.onFrame?.(frame, receivedAt, current.number)
     }
-    if (this.state !== 'failed')
-      this.transition('failed', error.code)
-    this.emitState(error.code)
-    this.rejectWaiters(error)
+    catch (error) {
+      if (this.isCurrentAttempt(current.number))
+        this.protocolFailure(error)
+    }
   }
 
-  /** 在低水位时按 FIFO 冲刷队列；高水位时保持队列并重试。 */
-  private flushQueue(): void {
-    if (this.flushTimer !== undefined)
-      this.clearTimer(this.flushTimer)
-    const flush = (): void => {
-      this.flushTimer = undefined
-      if (this.socket === null || this.state !== 'open')
-        return
-      if (this.backpressure.update(this.socket.bufferedAmount)) {
-        this.flushTimer = this.setTimer(flush, 16)
-        return
-      }
-      this.queue.drain((item) => {
+  /** 启动唯一同步心跳调度者，计时器不能发送到另一尝试。 */
+  private startHeartbeat(current: Attempt): void {
+    // 引擎拥有的心跳时序策略。
+    const options = this.options.config.shared.heartbeat
+    if (options === false)
+      return
+    this.heartbeat = new HeartbeatController(options, {
+      now: this.now, setTimeout: this.setTimer, clearTimeout: this.clearTimer,
+      send: () => {
+        if (!this.isCurrentAttempt(current.number))
+          return
         try {
-          this.socket?.send(item.data)
-          return true
+          // 本连接选定的唯一生成器来源。
+          const generator = (this.generators ?? this.options.adapter).createPing
+          // 本次心跳的出站协议值，由当前 adapter 编码。
+          const data = this.options.config.shared.protocol.kind === 'raw' && this.generators === undefined
+            ? options.message as Outgoing
+            : invokeSynchronous(() => generator?.({ attempt: current.number, now: this.now() }) as Outgoing, 'PROTOCOL_ERROR')
+          if (this.isCurrentAttempt(current.number))
+            this.sendControl(current.number, data)
         }
-        catch (cause) {
-          this.handleError(toSocketFuseError(cause, 'SOCKET_ERROR', 'Queued message send failed', { retryable: true }))
-          return false
+        catch (error) {
+          if (this.isCurrentAttempt(current.number))
+            this.protocolFailure(error)
         }
-      })
-    }
-    flush()
+      },
+      onTimeout: () => this.socketFailure(current, new SocketFuseError('HEARTBEAT_TIMEOUT', { retryable: true }), 'heartbeat-timeout'),
+    })
+    this.heartbeat.start()
   }
 
-  /** 把 plan 交给上层候选协调器；无人接管或异常时立即采用默认值。 */
-  private dispatchReconnectPlan(plan: Readonly<ReconnectPlan>): void {
-    // onClose 会同步进入页面 callback；callback 可能在此处先显式 close/reconnect，
-    // 因而必须再次确认 plan 仍是 controller 权威的当前代际，不能把已取消计划交给协调器。
-    if (this.reconnectPlan?.id !== plan.id)
-      return
-    let accepted = false
+  /** 原生发送失败统一结束当前尝试；绝不返回本地 accepted。 */
+  private nativeSend(current: Attempt, data: SocketData): void {
     try {
-      accepted = this.options.onReconnectPlan?.(plan) === true
+      if (!this.isCurrentAttempt(current.number) || current.socket?.readyState !== SOCKET_OPEN)
+        throw new Error()
+      current.socket.send(data)
+      if (!this.isCurrentAttempt(current.number) || current.socket.readyState !== SOCKET_OPEN)
+        throw new Error()
     }
     catch {
-      accepted = false
+      // 原生异常只转换为固定安全码。
+      const error = new SocketFuseError('SOCKET_ERROR', { retryable: true })
+      this.socketFailure(current, error, 'socket-error')
+      throw error
     }
-    if (!accepted && this.reconnectPlan?.id === plan.id)
-      this.commitReconnectPlan(plan.id)
   }
 
-  /** 建立唯一的当前重连计划，并在提交前保持 endpoint 与 timer 不变。 */
-  private createReconnectPlan(
-    attempt: number,
-    defaultDelay: number,
-    reason: BeforeReconnectReason,
-    close: SafeCloseInfo,
-    reasonCode: string,
-  ): Readonly<ReconnectPlan> {
-    this.nextRetryDelay = defaultDelay
-    this.transition('reconnecting', reasonCode)
-    this.emitState(reasonCode)
-    const plan = Object.freeze({
-      attempt,
-      close,
-      defaultDelay,
-      id: `${++this.reconnectPlanGeneration}:${createOperationId()}`,
-      reason,
-    })
-    this.reconnectPlan = plan
-    return plan
-  }
-
-  /** 使当前 plan 失效，并让 transport abort 页面准备函数。 */
-  private cancelReconnectPlan(): void {
-    const plan = this.reconnectPlan
-    if (plan === undefined)
+  /** 业务 FIFO 的唯一推进函数；高水位入队本身会安装唤醒。 */
+  private flushQueue(): void {
+    this.clearHandle('flushTimer')
+    // 捕获本次操作的物理尝试，外部调用后仍须检查身份。
+    const current = this.current
+    if (current === undefined || !this.isCurrentAttempt(current.number) || current.socket?.readyState !== SOCKET_OPEN)
       return
-    this.reconnectPlan = undefined
-    this.options.onReconnectPlanCancel?.(plan.id)
-  }
-
-  /** 安装已验证计划的单一退避 timer。 */
-  private scheduleReconnect(delay: number): void {
-    this.nextRetryDelay = delay
-    this.retryTimer = this.setTimer(() => {
-      this.retryTimer = undefined
-      this.nextRetryDelay = null
-      this.transition('connecting', 'RETRY')
-      this.emitState('RETRY')
-      this.startSocket()
-    }, delay)
-  }
-
-  /** 将内部错误与 close 收敛为不含服务端文本的公开重连原因。 */
-  private reconnectReason(): BeforeReconnectReason {
-    if (this.lastError?.code === 'HEARTBEAT_TIMEOUT')
-      return 'heartbeat-timeout'
-    if (this.lastError?.code === 'CONNECTION_TIMEOUT')
-      return 'connection-timeout'
-    if (this.lastError?.code === 'SOCKET_ERROR')
-      return 'socket-error'
-    return 'socket-close'
-  }
-
-  /** 按 adapter 能力创建心跳 controller；未配置则返回 undefined。 */
-  private createHeartbeat(): HeartbeatController | undefined {
-    const configured = this.options.config.shared.heartbeat
-    if (configured === false)
-      return undefined
-    const socket = this.socket
-    const attempt = this.activeAttempt
-    if (socket === null)
-      return undefined
-    const adapter = this.options.config.adapter
-    if (this.options.config.shared.protocol.kind === 'raw') {
-      return new HeartbeatController(configured, {
-        clearTimeout: this.clearTimer,
-        onTimeout: () => this.handleHeartbeatTimeout(),
-        send: async () => {
-          if (this.isCurrentAttempt(socket, attempt) && this.state === 'open')
-            socket.send(configured.message as SocketData)
-        },
-        setTimeout: this.setTimer,
-      })
-    }
-    if (adapter.createPing === undefined)
-      return undefined
-    return new HeartbeatController(configured, {
-      clearTimeout: this.clearTimer,
-      onTimeout: () => this.handleHeartbeatTimeout(),
-      send: async () => {
-        const value = await adapter.createPing?.({ attempt: this.retry.attempt, now: this.now() })
-        if (value === undefined)
-          return
-        const encoded = await encodeWithAdapter(adapter, value, { messageId: createOperationId(), now: this.now() })
-        if (this.isCurrentAttempt(socket, attempt) && this.state === 'open')
-          socket.send(encoded)
-      },
-      setTimeout: this.setTimer,
-    })
-  }
-
-  /** 最后一个 owner 离开后按宽限期关闭，避免短暂页面切换抖动。 */
-  private scheduleIdleClose(): void {
-    if (this.idleTimer !== undefined)
-      return
-    this.idleTimer = this.setTimer(() => {
-      this.idleTimer = undefined
-      if (this.sinks.size === 0) {
-        this.idleCloseRequested = true
-        this.close()
-        if (this.socket === null)
-          this.notifyIdle()
+    while (this.queue.size > 0 && this.isCurrentAttempt(current.number) && !this.backpressure.update(current.socket.bufferedAmount)) {
+      // 未成功发送前保留的 FIFO 队首。
+      const item = this.queue.peek()
+      if (item === undefined)
+        break
+      try {
+        this.nativeSend(current, item.data)
       }
-    }, this.options.config.shared.idleGraceMs)
+      catch {
+        break
+      }
+      // 同步平台注入可能使 owner 离开，不能把已换成下一项的队首错误移除。
+      if (this.queue.peek() === item)
+        this.queue.shift()
+    }
+    if (this.queue.size > 0 && this.isCurrentAttempt(current.number) && this.flushTimer === undefined)
+      this.flushTimer = this.setTimer(() => {
+        this.flushTimer = undefined
+        this.flushQueue()
+      }, 25)
   }
 
-  /** 将心跳超时转换为可重试连接错误并关闭 socket。 */
-  private handleHeartbeatTimeout(): void {
-    const error = new SocketFuseError('HEARTBEAT_TIMEOUT', 'Heartbeat timed out', { retryable: true })
-    this.handleError(error)
-    this.lastError = error
-    this.socket?.close(4000)
-  }
-
-  /** 通过状态机执行迁移并在变化时通知 sink。 */
-  private transition(next: ConnectionState, reasonCode?: string): void {
-    const transition = this.machine.transition(next)
-    if (transition.previous !== transition.state)
-      this.emitState(reasonCode)
-  }
-
-  /** 向所有 sink 派发当前快照。 */
-  private emitState(reasonCode?: string): void {
-    const snapshot = this.snapshot()
-    for (const sink of this.sinks.values())
-      sink.onState?.(snapshot, reasonCode)
-  }
-
-  /** resolve 当前等待原生 socket open 的所有调用。 */
-  private resolveWaiters(): void {
-    const waiters = this.waiters.splice(0)
-    const snapshot = this.snapshot()
-    for (const waiter of waiters) {
-      waiter.cleanup?.()
-      waiter.resolve(snapshot)
+  /** 决定引擎自动恢复许可；应用抛错按默认许可，异步违约终止。 */
+  private allowsAutomatic(close: SafeCloseInfo): boolean {
+    if (!this.demand || this.disposed || this.fatal || !this.options.config.shared.reconnect.automatic)
+      return false
+    // 适配器对安全关闭元数据的同步恢复决策。
+    const decide = this.options.adapter.shouldReconnect
+    if (decide === undefined)
+      return close.code !== 1000
+    try {
+      // 恢复决策必须为真正的 boolean。
+      const result = invokeSynchronous(() => decide(close), 'PROTOCOL_ERROR')
+      if (typeof result !== 'boolean')
+        throw new SocketFuseError('PROTOCOL_ERROR')
+      return result
+    }
+    catch (error) {
+      this.protocolFailure(error)
+      return !this.fatal && close.code !== 1000
     }
   }
 
-  /** reject 当前等待连接的所有 open waiter。 */
-  private rejectWaiters(error: SocketFuseError): void {
-    const waiters = this.waiters.splice(0)
-    for (const waiter of waiters) {
-      waiter.cleanup?.()
-      waiter.reject(error)
-    }
-  }
-
-  /** 解绑当前 socket 监听器并释放 socket 引用。 */
-  private cleanupSocket(): void {
-    for (const cleanup of this.socketCleanups)
-      cleanup()
-    this.socketCleanups = []
-    this.socket = null
-  }
-
-  /** 判断回调是否仍属于当前物理连接尝试。 */
-  private isCurrentAttempt(socket: WebSocketLike, attempt: number): boolean {
-    return this.socket === socket && this.activeAttempt === attempt
-  }
-
-  /** 每个空闲周期仅通知一次 Worker/direct pool 回收回调。 */
-  private notifyIdle(): void {
-    if (this.idleNotified)
+  /** 网络错误和超时都通过同一计数计划恢复，不因随后 close 再建一次计划。 */
+  private socketFailure(current: Attempt, error: SocketFuseError, reason: BeforeReconnectReason): void {
+    if (!this.isCurrentAttempt(current.number))
       return
-    this.idleNotified = true
-    this.options.onIdle?.(this)
+    this.reportError(error)
+    this.finishAttempt(current, { code: 1006, wasClean: false, terminal: false }, reason)
+    this.requestSocketClose(current)
   }
 
-  /** 清理连接 deadline timer。 */
-  private clearConnectTimer(): void {
-    if (this.connectTimer !== undefined)
-      this.clearTimer(this.connectTimer)
-    this.connectTimer = undefined
+  /** 自发 close 或原生关闭确认只结算当前记录；旧回调不得影响新尝试。 */
+  private closed(current: Attempt, event: { code?: number, wasClean?: boolean }): void {
+    if (this.current !== current)
+      return
+    // 忽略服务端 reason，只保留安全关闭信息。
+    const close: SafeCloseInfo = { code: Number.isInteger(event.code) ? event.code as number : 1006, wasClean: event.wasClean === true, terminal: this.fatal }
+    if (!current.ended)
+      this.finishAttempt(current, close, 'socket-close')
+    this.releaseSocket(current)
   }
 
-  /** 清理重连 timer 及其公开延迟。 */
-  private clearRetryTimer(): void {
-    if (this.retryTimer !== undefined)
-      this.clearTimer(this.retryTimer)
-    this.retryTimer = undefined
-    this.nextRetryDelay = null
+  /** 结束失败/断开的尝试，并在通知页面前固定下一计划。 */
+  private finishAttempt(current: Attempt, close: SafeCloseInfo, reason: BeforeReconnectReason): void {
+    if (!this.isCurrentAttempt(current.number))
+      return
+    if (this.plan?.phase === 'connecting')
+      this.cancelPlan()
+    // 当前关闭是否可创建计数自动恢复计划。
+    const automatic = this.allowsAutomatic(close)
+    if (!this.isCurrentAttempt(current.number))
+      return
+    if (automatic) {
+      try {
+        this.requestReconnect('automatic', true, undefined, reason, close)
+        return
+      }
+      catch (error) {
+        this.reportError(error instanceof SocketFuseError ? error : new SocketFuseError('PROTOCOL_ERROR'))
+      }
+    }
+    this.setState(this.fatal ? 'failed' : 'closed', this.lastError?.code ?? 'CLOSE_NOT_RETRYABLE')
+    this.endAttempt(current, { ...close, terminal: this.fatal }, false)
   }
 
-  /** 清理 controller 生命周期拥有的全部 timer。 */
-  private clearAllTimers(): void {
-    this.clearConnectTimer()
-    this.clearRetryTimer()
-    if (this.idleTimer !== undefined)
-      this.clearTimer(this.idleTimer)
-    if (this.flushTimer !== undefined)
-      this.clearTimer(this.flushTimer)
-    this.idleTimer = undefined
-    this.flushTimer = undefined
+  /** 一次性失效尝试和其计时器；原生 close 所有权仍由 current 保留。 */
+  private endAttempt(current: Attempt, close: SafeCloseInfo, willReconnect: boolean): void {
+    if (this.current !== current || current.ended)
+      return
+    current.ended = true
+    this.retry.endOpen(this.now())
+    this.clearHandle('connectTimer')
+    this.clearHandle('stableTimer')
+    this.clearHandle('flushTimer')
     this.heartbeat?.stop()
+    this.heartbeat = undefined
+    this.lastCloseCode = close.code
+    this.options.observer?.onClose?.({ ...close, willReconnect }, current.number)
   }
 
-  /** 拒绝 dispose 后的连接操作。 */
-  private assertUsable(): void {
-    if (this.disposed)
-      throw new SocketFuseError('CLIENT_DISPOSED', 'Connection controller has been disposed')
+  /** 发起原生关闭；不伪造关闭完成或因超时遗弃仍存活的 socket。 */
+  private requestSocketClose(current: Attempt): void {
+    if (this.current !== current || current.closeRequested || current.socket === undefined)
+      return
+    if (current.socket.readyState === SOCKET_CLOSED) {
+      this.releaseSocket(current)
+      return
+    }
+    current.closeRequested = true
+    try {
+      current.socket.close(1000)
+    }
+    catch {
+      // 关闭失败仍保留所有权，等待原生 close；不能创建第二条物理连接。
+      this.reportError(new SocketFuseError('SOCKET_ERROR', { retryable: true }))
+    }
   }
 
-  /** 拒绝已经脱离当前 controller 的页面继续完成异步发送。 */
-  private assertOwnerAttached(ownerId: string): void {
-    if (!this.sinks.has(ownerId))
-      throw new SocketFuseError('CLIENT_DISCONNECTED', 'Message owner is no longer attached')
+  /** 确认关闭后解除监听，再推进等待该 socket 的计划或空闲回收。 */
+  private releaseSocket(current: Attempt): void {
+    if (this.current !== current)
+      return
+    for (const cleanup of current.cleanups)
+      cleanup()
+    current.cleanups = []
+    this.current = undefined
+    if (this.state === 'closing')
+      this.setState(this.fatal ? 'failed' : 'closed')
+    this.advancePlan()
+    if (this.current === undefined)
+      this.options.observer?.onStopped?.()
+  }
+
+  /** 只保存并通知库内安全错误，不保存底层异常文本。 */
+  private reportError(error: SocketFuseError): void {
+    this.lastError = error
+    this.options.observer?.onError?.(error)
   }
 }

@@ -18,11 +18,30 @@ export function socketDataByteLength(data: SocketData): number {
     return new TextEncoder().encode(data).byteLength
   if (typeof Blob !== 'undefined' && data instanceof Blob)
     return data.size
+  if (data instanceof ArrayBuffer) {
+    new Uint8Array(data)
+    return data.byteLength
+  }
+  if (ArrayBuffer.isView(data) && data.buffer instanceof ArrayBuffer) {
+    new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    return data.byteLength
+  }
+  throw invalidOptions()
+}
+
+/**
+ * 为有界发送队列取得编码数据的自有紧凑快照。
+ * @param data 已校验的原生 payload。
+ * @returns 独立二进制副本，或不可变字符串/Blob；不会保留巨大视图 backing buffer。
+ */
+export function snapshotSocketData(data: SocketData): SocketData {
   if (data instanceof ArrayBuffer)
-    return data.byteLength
-  if (ArrayBuffer.isView(data))
-    return data.byteLength
-  throw invalidOptions('Unsupported WebSocket message data')
+    return data.slice(0)
+  if (ArrayBuffer.isView(data) && data.buffer instanceof ArrayBuffer)
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice()
+  if (typeof data === 'string' || (typeof Blob !== 'undefined' && data instanceof Blob))
+    return data
+  throw invalidOptions()
 }
 
 /**
@@ -36,6 +55,6 @@ export function socketDataByteLength(data: SocketData): number {
 export function assertEncodedMessageSize(data: SocketData, maxBytes: number): number {
   const bytes = socketDataByteLength(data)
   if (bytes > maxBytes)
-    throw new SocketFuseError('MESSAGE_TOO_LARGE', 'Encoded message exceeds the configured limit', { details: { maxBytes, bytes } })
+    throw new SocketFuseError('MESSAGE_TOO_LARGE')
   return bytes
 }

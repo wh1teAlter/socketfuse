@@ -2,7 +2,7 @@
 
 ## 浏览器与 SSR 基线
 
-SocketFuse 的目标是具备 SharedWorker 的 Chromium/Edge、Firefox 与 Safari 16+。SharedWorker 缺失时，
+SocketFuse 的目标是具备 SharedWorker 的 Chromium/Edge、Firefox 与 Safari 16+。内联部署的 SharedWorker 缺失时，
 `fallback: 'direct'` 会保持 client API，但物理连接共享仅限单个 JavaScript realm。
 `fallback: 'error'` 会拒绝这一降级。
 
@@ -19,3 +19,5 @@ cookie 策略和认证。
 
 发送到 WebSocket endpoint 的 cookie 仍遵循浏览器凭据与 SameSite 规则。不要将 `id` 用作访问
 控制；应在服务端认证中包含租户/用户身份，并验证每条消息的授权。
+
+同一 Worker 的 id 只是复用标识。同源脚本可能接入同一连接，业务权限必须由应用和服务端隔离；credentials 不能放进共享 descriptor 或诊断字段。URL/发送输入可以进入连接 runtime，只有应用选定的业务投影作为 message 投递；控制响应、diagnostics 和 logger 均不回显 payload 或内部异常。

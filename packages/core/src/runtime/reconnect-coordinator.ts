@@ -1,8 +1,9 @@
 /**
- * 在 transport 层选择一个页面准备 connection 重连计划；不执行页面函数，也不拥有 socket。
+ * 在 runtime 内选择一个页面准备 connection 重连计划；不执行页面函数，也不拥有 socket。
  */
 import type { ReconnectPlan, ReconnectPlanOverride } from '../connection/controller'
 import type { ClientVisibility, TimerHandle } from '../shared/types'
+import { normalizeEndpointUrl } from '../shared/endpoint'
 import { SocketFuseError } from '../shared/errors'
 
 /** reconnect plan 候选协调器的边界回调。 */
@@ -13,12 +14,14 @@ export interface ReconnectCoordinatorCallbacks {
   readonly onAbort: (clientId: string, planId: string) => void
   /** 成功覆盖或全部失败后原子提交到 connection。 */
   readonly onCommit: (planId: string, override: Readonly<ReconnectPlanOverride>) => void
+  /** 准备失败或到期时采用当前计划默认值。 */
+  readonly onDefault: (planId: string) => void
 }
 
 /** reconnect plan 协调器的时钟与准备窗口。 */
 export interface ReconnectCoordinatorOptions extends ReconnectCoordinatorCallbacks {
-  /** 整个重连计划的总准备窗口，单位为毫秒。 */
-  readonly timeout: number
+  /** 与连接计划绝对 deadline 一致的时间源。 */
+  readonly now?: () => number
   /** 可注入的 timer 工厂。 */
   readonly setTimeout?: (callback: () => void, delay: number) => TimerHandle
   /** 与 timer 工厂配对的清理函数。 */
@@ -100,7 +103,7 @@ export class ReconnectCoordinator {
       return false
     this.active = { owner: undefined, plan, timer: undefined, tried: new Set() }
     const active = this.active
-    active.timer = this.setTimer(() => this.expire(active), this.options.timeout)
+    active.timer = this.setTimer(() => this.expire(active), Math.max(0, plan.deadline - (this.options.now ?? Date.now)()))
     this.assignNext()
     return true
   }
@@ -108,9 +111,12 @@ export class ReconnectCoordinator {
   /** 接受当前 owner 的原子覆盖并提交。 */
   accept(clientId: string, planId: string, override: Readonly<ReconnectPlanOverride>): void {
     const active = this.requireOwner(clientId, planId)
-    this.options.onCommit(planId, override)
+    const url = override.url === undefined ? undefined : normalizeEndpointUrl(override.url)
+    if (override.delay !== undefined && (!Number.isSafeInteger(override.delay) || override.delay < 0 || override.delay > 2_147_483_647))
+      throw new SocketFuseError('INVALID_OPTIONS')
     this.clearActiveTimer(active)
     this.active = undefined
+    this.options.onCommit(planId, { ...(url === undefined ? {} : { url }), ...(override.delay === undefined ? {} : { delay: override.delay }) })
   }
 
   /** 当前 owner 主动放弃 plan，并选择下一个候选。 */
@@ -152,7 +158,7 @@ export class ReconnectCoordinator {
       this.clearActiveTimer(active)
       this.active = undefined
       try {
-        this.options.onCommit(active.plan.id, {})
+        this.options.onDefault(active.plan.id)
       }
       catch {
         // controller 可能已被显式 close/dispose；计划已失效时不能让 timer 回调冒泡为未捕获异常。
@@ -195,6 +201,7 @@ export class ReconnectCoordinator {
     if (this.active !== active)
       return
     active.timer = undefined
+    this.active = undefined
     if (active.owner !== undefined) {
       try {
         this.options.onAbort(active.owner, active.plan.id)
@@ -203,9 +210,8 @@ export class ReconnectCoordinator {
         // owner 端口失效不影响 Worker 按默认计划继续。
       }
     }
-    this.active = undefined
     try {
-      this.options.onCommit(active.plan.id, {})
+      this.options.onDefault(active.plan.id)
     }
     catch {
       // controller 可能已关闭或释放；过期计划不得产生未捕获异常。
@@ -215,8 +221,8 @@ export class ReconnectCoordinator {
   /** 校验提交者仍是当前 plan owner。 */
   private requireOwner(clientId: string, planId: string): ActivePlan {
     const active = this.active
-    if (active === undefined || active.plan.id !== planId || active.owner !== clientId)
-      throw new SocketFuseError('STALE_RECONNECT_PLAN', 'Reconnect plan is no longer owned by this client')
+    if (active === undefined || active.plan.id !== planId || active.owner !== clientId || (this.options.now ?? Date.now)() >= active.plan.deadline)
+      throw new SocketFuseError('STALE_RECONNECT_PLAN')
     return active
   }
 
@@ -233,6 +239,7 @@ export class ReconnectCoordinator {
     if (active === undefined)
       return
     this.clearActiveTimer(active)
+    this.active = undefined
     if (active.owner !== undefined) {
       try {
         this.options.onAbort(active.owner, active.plan.id)
@@ -241,6 +248,5 @@ export class ReconnectCoordinator {
         // 端口已经失效时无需再次向上抛出撤销通知异常。
       }
     }
-    this.active = undefined
   }
 }

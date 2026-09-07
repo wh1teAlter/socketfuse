@@ -2,8 +2,8 @@
 
 此模块只拥有一个物理 WebSocket 的状态机、连接尝试、不可变重连计划、心跳、发送队列和背压。
 
-它不依赖 `page` 或 `worker`。调用者通过 `ConnectionSink` 接收状态与业务帧；sink 的慢速处理不能改变 socket 的推进与 Worker 的资源边界。
+它不依赖 `runtime`、`page` 或 `worker`。一个 controller 只通知一个内部 ConnectionObserver；上层 runtime 拥有参与者和 fan-out。连接层只接收是否有需求，以及供取消未发送项的不透明 owner 标记。
 
-上层还可注入两个与层次无关的回调，本模块因此不需要认识「扩展」这类上层概念：`onSocketOpen` 在原生 socket 打开后、派发给 sink 之前调用，使共享逻辑能先于页面重置连接期状态；`shouldDeliverInbound` 在 fan-out 之前判定一条业务帧是否继续派发，返回 false 即整条丢弃，因此不进入任何 sink，也不消耗上层的投递额度。两者的异常隔离与降级方向由注入方负责。
+原生 socket 使用 ArrayBuffer，同步协议转换之后只把 data/control 帧交给 runtime。当前尝试的协议回复与心跳立即发送且有边界；页面业务发送进入一套有界 FIFO，由唯一 drain timer 推进。异步返回是协议契约错误。
 
-自动断开、连接/心跳超时或显式重连时，控制器创建带代际的重连计划，并只接受当前计划的一次原子提交；它不知道哪个页面准备计划，也不执行页面 hook。发送成功只代表本地 accepted 或 queued，不代表服务器确认。过期连接尝试和旧计划不能覆盖新状态。
+自动断开、连接/心跳超时、页面或 Worker 显式重连及同 epoch 恢复需求共用预算。计划接纳先预留，实际调用 socket 工厂才扣数；不计数不补额度。计划身份覆盖准备直至新尝试 open/失败，旧 socket 未确认关闭前不得启动替代连接。准备只一次原子提交 URL/delay；连接不知道准备者是谁。发送成功只代表本地 accepted 或 queued。

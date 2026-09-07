@@ -240,9 +240,12 @@ test('rebuilds a terminated SharedWorker after BFCache restore without direct fa
   })
   await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(0)
   await dispatchPageTransition(page, 'pageshow', true)
+  // 先经过 5 秒失联 probe，再重建和 attach；旧 OPEN 显示不能代替新 socket 的证据。
+  await expect.poll(async () => (await stats(request, testNamespace)).totalConnections, { timeout: 15_000 }).toBe(2)
   await expect(page.locator('#transport')).toHaveText('shared-worker')
   await expect(page.locator('#status')).toHaveText('OPEN')
-  await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(2)
+  await broadcast(request, testNamespace, 'after-worker-restart')
+  await expect(page.locator('#messages')).toContainText('after-worker-restart')
 })
 
 test('releases the physical socket after every client disconnects', async ({ page, request }) => {
@@ -256,10 +259,15 @@ test('releases the physical socket after every client disconnects', async ({ pag
 
 test('uses direct only for a Worker construction failure when fallback allows it', async ({ page, request }) => {
   const testNamespace = namespace('fallback')
+  await page.addInitScript(() => {
+    // 模拟内联部署的构造失败；自定义 Worker 不能降级而丢失其协议逻辑。
+    window.SharedWorker = class {
+      constructor() { throw new Error('simulated platform construction failure') }
+    } as unknown as typeof SharedWorker
+  })
   await page.goto('http://127.0.0.1:4173/playground')
   await page.getByLabel('URL').fill(socketUrl(testNamespace))
   await page.getByLabel('连接 id').fill(`fallback-direct-${testNamespace}`)
-  await page.getByLabel('模拟 Worker 初始化失败').check()
   await page.getByLabel('降级策略').selectOption('direct')
   await page.getByRole('button', { name: '连接', exact: true }).click()
   await expect(page.locator('#transport')).toHaveText('direct')
@@ -298,6 +306,72 @@ test('shares one physical WebSocket across three and twenty tabs', async ({ brow
 
     await pages[0]?.close()
     await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(1)
+  }
+  finally {
+    await context.close()
+  }
+})
+
+test('sends one application receipt from the Worker while both tabs receive the projection', async ({ browser, request }) => {
+  const testNamespace = namespace('worker-receipt')
+  const context = await browser.newContext()
+  try {
+    const first = await context.newPage()
+    const second = await context.newPage()
+    for (const page of [first, second]) {
+      await page.goto('http://127.0.0.1:4173/playground?e2eDedupe=1')
+      await connect(page, socketUrl(testNamespace), 'receipt-' + testNamespace)
+    }
+    await broadcast(request, testNamespace, 'ack-required:42')
+    for (const page of [first, second])
+      await expect(page.locator('#messages li', { hasText: 'ack-required:42' })).toHaveCount(1)
+    await expect.poll(async () => (await stats(request, testNamespace)).totalMessages).toBe(1)
+    await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(1)
+    for (const page of [first, second])
+      await expect(page.locator('#messages li', { hasText: 'ack-received:42' })).toHaveCount(0)
+  }
+  finally {
+    await context.close()
+  }
+})
+
+test('shares one retry budget across Worker commands and socket failures while preserving explicit exemptions', async ({ browser, request }) => {
+  const testNamespace = namespace('worker-budget')
+  const context = await browser.newContext()
+  try {
+    const first = await context.newPage()
+    const second = await context.newPage()
+    for (const page of [first, second]) {
+      await page.goto('http://127.0.0.1:4173/playground?e2eBudget=1')
+      await connect(page, socketUrl(testNamespace), 'budget-' + testNamespace)
+    }
+    await broadcast(request, testNamespace, 'reconnect-counted')
+    await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(2)
+    await closeSockets(request, testNamespace)
+    await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(3)
+    await broadcast(request, testNamespace, 'reconnect-free')
+    await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(4)
+    await broadcast(request, testNamespace, 'reconnect-counted')
+    await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(5)
+    await broadcast(request, testNamespace, 'reconnect-counted')
+    for (const page of [first, second])
+      await expect(page.locator('#error')).toContainText('RETRY_EXHAUSTED')
+    // 预算拒绝必须保留当前健康连接，且控制指令从不成为页面业务消息。
+    await broadcast(request, testNamespace, 'budget-still-open')
+    for (const page of [first, second]) {
+      await expect(page.locator('#messages li')).toHaveCount(1)
+      await expect(page.locator('#messages')).toContainText('budget-still-open')
+      await expect(page.locator('#transport')).toHaveText('shared-worker')
+    }
+    expect((await stats(request, testNamespace)).totalConnections).toBe(5)
+    // 豁免仍可在耗尽后执行，但不能让后续计数请求重新获得预算。
+    await broadcast(request, testNamespace, 'reconnect-free')
+    await expect.poll(async () => (await stats(request, testNamespace)).totalConnections).toBe(6)
+    await closeSockets(request, testNamespace)
+    await expect.poll(async () => (await stats(request, testNamespace)).activeConnections).toBe(0)
+    for (const page of [first, second])
+      await expect(page.locator('#status')).toHaveText('CLOSED')
+    expect((await stats(request, testNamespace)).totalConnections).toBe(6)
   }
   finally {
     await context.close()

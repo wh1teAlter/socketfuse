@@ -7,7 +7,7 @@
 import type { BackpressureOptions, ConnectionLimits, HeartbeatOptions, LeaseOptions, QueueOptions, ReconnectOptions, WorkerResourceLimits } from './types'
 
 /** page-to-Worker 控制协议的当前破坏性版本号。 */
-export const CONTROL_PROTOCOL_MAJOR: number = 2
+export const CONTROL_PROTOCOL_MAJOR: number = 3
 /** 一个 mebibyte 的字节数，统一用于内存与 payload 上限。 */
 export const MIB: number = 1024 * 1024
 /** 初始与重连 endpoint 允许的最大 UTF-16 字符数。 */
@@ -28,7 +28,8 @@ export const DEFAULT_RECONNECT_OPTIONS: Readonly<ReconnectOptions> = Object.free
   initialDelay: 1_000,
   jitter: 0.2,
   maxDelay: 30_000,
-  retries: Number.POSITIVE_INFINITY,
+  maxRetries: Number.POSITIVE_INFINITY,
+  automatic: true,
   stableThreshold: 30_000,
   hookTimeout: 10_000,
 })
@@ -70,7 +71,16 @@ export const DEFAULT_CONNECTION_LIMITS: Readonly<ConnectionLimits> = Object.free
 /** custom 或 inline Worker 的默认控制平面资源上限。 */
 export const DEFAULT_WORKER_RESOURCE_LIMITS: Readonly<WorkerResourceLimits> = Object.freeze({
   maxControlEnvelopeBytes: 2 * MIB,
-  maxExclusiveKeys: 1_024,
+  maxDeliveryMessages: 256,
+  maxDeliveryBytes: 4 * MIB,
+  maxDispatchKeys: 1_024,
   maxPorts: 256,
   unattachedPortTimeoutMs: 5_000,
 })
+
+/** 单参与期待决用户操作的最大数量，open waiter 同样占用。 */
+export const MAX_PENDING_OPERATIONS = 64
+/** 单参与期待决用户操作的最大克隆预算。 */
+export const MAX_PENDING_BYTES: number = 4 * MIB
+/** 短控制请求的响应期限，不是原生连接超时。 */
+export const CONTROL_RESPONSE_TIMEOUT = 5_000

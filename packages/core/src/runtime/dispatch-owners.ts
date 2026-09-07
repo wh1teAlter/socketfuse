@@ -1,17 +1,17 @@
 /**
- * 为一条共享连接仲裁 execution key；只管理候选与授权，不接触业务消息或页面函数。
+ * 为一条共享连接仲裁 dispatch key；只管理候选与授权，不接触业务消息或页面函数。
  */
 import type { ClientVisibility } from '../shared/types'
 
-/** execution key 授权变化的 Worker 回调。 */
-export interface ExclusiveKeyRegistryCallbacks {
+/** dispatch key 授权变化的 Worker 回调。 */
+export interface DispatchOwnerRegistryCallbacks {
   /** 新 holder 确认后发送 grant。 */
-  readonly onGrant: (clientId: string, key: string) => void
+  readonly onGrant: (clientId: string, key: string, generation: number) => void
   /** 旧 holder 清除后发送 revoke。 */
   readonly onRevoke: (clientId: string, key: string) => void
 }
 
-/** 单个页面对 execution key 的候选记录。 */
+/** 单个页面对 dispatch key 的候选记录。 */
 interface Candidate {
   /** 页面逻辑 client id。 */
   readonly clientId: string
@@ -21,23 +21,27 @@ interface Candidate {
   visibility: ClientVisibility
 }
 
-/** 一个 execution key 的全部候选和当前 holder。 */
+/** 一个 dispatch key 的全部候选和当前 holder。 */
 interface KeyEntry {
   /** client id 到候选状态。 */
   readonly candidates: Map<string, Candidate>
   /** 当前唯一 holder；空值表示暂时无人可执行。 */
   holder: string | undefined
+  /** 当前资格代际，所有 key 共用单调分配源。 */
+  generation: number
 }
 
-/** 按非抢占、可见性优先和 FIFO 规则维护一条连接的 execution keys。 */
-export class ExclusiveKeyRegistry {
+/** 按非抢占、可见性优先和 FIFO 规则维护一条连接的 dispatch keys。 */
+export class DispatchOwnerRegistry {
   /** key 到候选集合与 holder。 */
   private readonly entries = new Map<string, KeyEntry>()
   /** 注册顺序的单调序号。 */
   private sequence = 0
+  /** 资格代际不因 key 删除重新创建而复用。 */
+  private generation = 0
 
   /** 创建仅通过回调发布授权变化的 registry。 */
-  constructor(private readonly callbacks: ExclusiveKeyRegistryCallbacks) {}
+  constructor(private readonly callbacks: DispatchOwnerRegistryCallbacks) {}
 
   /** 返回当前不同 key 数。 */
   get size(): number {
@@ -56,12 +60,17 @@ export class ExclusiveKeyRegistry {
       .map(([key]) => key)
   }
 
+  /** 为实时帧固定当前参与者的接收资格，不从页面当前 held set 反推历史。 */
+  grantsForClient(clientId: string): readonly { readonly key: string, readonly generation: number }[] {
+    return [...this.entries.entries()].flatMap(([key, entry]) => entry.holder === clientId ? [{ key, generation: entry.generation }] : [])
+  }
+
   /** 注册候选；返回是否新建了不同 key。 */
   register(clientId: string, key: string, visibility: ClientVisibility): boolean {
     let entry = this.entries.get(key)
     const created = entry === undefined
     if (entry === undefined) {
-      entry = { candidates: new Map(), holder: undefined }
+      entry = { candidates: new Map(), holder: undefined, generation: 0 }
       this.entries.set(key, entry)
     }
     if (entry.candidates.has(clientId))
@@ -84,7 +93,8 @@ export class ExclusiveKeyRegistry {
     }
     if (entry.candidates.size > 0)
       return false
-    this.entries.delete(key)
+    if (this.entries.get(key) === entry)
+      this.entries.delete(key)
     return true
   }
 
@@ -118,6 +128,8 @@ export class ExclusiveKeyRegistry {
 
   /** 按 visible 优先、组内 FIFO 选出下一 holder。 */
   private select(key: string, entry: KeyEntry): void {
+    if (this.entries.get(key) !== entry || entry.holder !== undefined)
+      return
     const candidates = [...entry.candidates.values()]
       .filter(candidate => candidate.visibility !== 'frozen')
       .sort((left, right) => {
@@ -129,6 +141,7 @@ export class ExclusiveKeyRegistry {
     if (selected === undefined)
       return
     entry.holder = selected.clientId
-    this.callbacks.onGrant(selected.clientId, key)
+    entry.generation = ++this.generation
+    this.callbacks.onGrant(selected.clientId, key, entry.generation)
   }
 }

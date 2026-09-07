@@ -27,6 +27,8 @@ const ws = createWebSocket(url, {
 })
 ```
 
+自定义 Worker 只允许 fallback:error（默认）；显式 fallback:direct 在创建时拒绝。这样 Worker 初始化失败不会丢失应用协议。hello/welcome 只检查能力，选择提交后 attach 才建立连接需求；后续失败不能改为 direct。
+
 该 Worker 必须调用 `exposeSharedWebSocketWorker()`。所有需要共享的 SPA 必须使用完全一致的
 Worker URL 和 origin。SocketFuse 不会创建 Blob URL，也不会从 CDN 加载 Worker 源码。
 

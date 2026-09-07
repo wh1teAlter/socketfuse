@@ -1,599 +1,230 @@
-/** 验证物理连接控制器的连接、协议、重连、心跳和连接池行为。 */
-import { describe, expect, it, vi } from 'vitest'
-import type { WebSocketLike } from '../transport/socket'
-import type { SocketData } from '../shared/types'
+/** 从物理引擎边界验证代际、原子准备、预算、心跳与同步发送，避免页面调度掩盖重入。 */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { CreateWebSocketOptions, ProtocolAdapter, SocketData } from '../shared/types'
+import { ConnectionController, type ConnectionControllerOptions, type ReconnectPlan } from './controller'
 import { normalizeWebSocketOptions } from '../config/normalize'
-import { DirectTransport } from '../transport/direct'
-import { ConnectionController } from './controller'
+import { rawProtocol } from '../protocol/adapter'
+import { FakeSocket } from '../../test/fixtures'
 
-/** 可手动触发生命周期的连接控制器测试 socket。 */
-class FakeSocket implements WebSocketLike {
-  /** 测试 binaryType。 */
-  binaryType: 'arraybuffer' | 'blob' = 'arraybuffer'
-  /** 测试 bufferedAmount。 */
-  bufferedAmount = 0
-  /** 可手动推进的 readyState。 */
-  readyState = 0
-  /** 记录发送 payload。 */
-  sent: SocketData[] = []
-  /** socket 事件监听器。 */
-  private readonly listeners = new Map<string, ((event: unknown) => void)[]>()
-
-  /** 注册 socket 事件。 */
-  addEventListener(type: string, listener: (event: unknown) => void): void {
-    const current = this.listeners.get(type) ?? []
-    current.push(listener)
-    this.listeners.set(type, current)
-  }
-
-  /** 移除 socket 事件。 */
-  removeEventListener(type: string, listener: (event: unknown) => void): void {
-    this.listeners.set(type, (this.listeners.get(type) ?? []).filter(item => item !== listener))
-  }
-
-  /** 记录发送 payload。 */
-  send(data: SocketData): void {
-    this.sent.push(data)
-  }
-
-  /** 关闭 socket 并派发 close。 */
-  close(code = 1000): void {
-    this.readyState = 3
-    this.emit('close', { code, wasClean: code === 1000 })
-  }
-
-  /** 手动触发 open。 */
-  open(): void {
-    this.readyState = 1
-    this.emit('open', {})
-  }
-
-  /** 手动触发入站 message。 */
-  message(data: SocketData): void {
-    this.emit('message', { data })
-  }
-
-  /** 向监听器派发 socket 事件。 */
-  private emit(type: string, event: unknown): void {
-    for (const listener of this.listeners.get(type) ?? [])
-      listener(event)
-  }
-}
-
-describe('connectionController', () => {
-  it('opens, sends and broadcasts with a single physical socket', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'room' })
-    const messages: SocketData[] = []
-    const controller = new ConnectionController({ config, socketFactory: () => socket })
-    controller.attach({ id: 'client-a', onMessage: data => messages.push(data) })
-    const opening = controller.open()
-    socket.open()
-    await expect(opening).resolves.toMatchObject({ state: 'open', readyState: 1 })
-    expect(await controller.send('client-a', 'hello')).toMatchObject({ status: 'accepted' })
-    expect(socket.sent).toEqual(['hello'])
-    socket.message('world')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(messages).toEqual(['world'])
-  })
-
-  it('routes a socket constructor failure through the reconnect plan before retrying', async () => {
-    vi.useFakeTimers()
-    try {
-      const socket = new FakeSocket()
-      const urls: string[] = []
-      const plans: { readonly reason: string, readonly terminal: boolean }[] = []
-      const config = normalizeWebSocketOptions('wss://example.test/expired', {
-        autoReconnect: { initialDelay: 1_000, jitter: 0 },
-        id: 'constructor-reconnect-plan',
-      })
-      const controllerHolder: { current?: ConnectionController<SocketData, SocketData> } = {}
-      const controller = new ConnectionController({
-        config,
-        onReconnectPlan: (plan) => {
-          plans.push({ reason: plan.reason, terminal: plan.close.terminal })
-          controllerHolder.current?.commitReconnectPlan(plan.id, { delay: 0, url: 'wss://example.test/fresh' })
-          return true
-        },
-        socketFactory: (url) => {
-          urls.push(url)
-          if (urls.length === 1)
-            throw new Error('constructor failed')
-          return socket
-        },
-      })
-      controllerHolder.current = controller
-      controller.attach({ id: 'client' })
-      const opening = controller.open()
-
-      await vi.advanceTimersByTimeAsync(0)
-      expect(plans).toEqual([{ reason: 'socket-error', terminal: false }])
-      expect(urls).toEqual(['wss://example.test/expired', 'wss://example.test/fresh'])
-      socket.open()
-      await expect(opening).resolves.toMatchObject({ state: 'open' })
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('marks close notifications terminal only when no reconnect plan will run', async () => {
-    const retryingSocket = new FakeSocket()
-    const retryingClose: { readonly terminal: boolean, readonly willReconnect: boolean }[] = []
-    const retryingConfig = normalizeWebSocketOptions('wss://example.test/socket', { id: 'retrying-close-terminal' })
-    const retrying = new ConnectionController({
-      config: retryingConfig,
-      onReconnectPlan: () => true,
-      socketFactory: () => retryingSocket,
-    })
-    retrying.attach({ id: 'client', onClose: event => retryingClose.push(event) })
-    const retryingOpen = retrying.open()
-    retryingSocket.open()
-    await retryingOpen
-    retryingSocket.close(1006)
-    expect(retryingClose).toEqual([expect.objectContaining({ terminal: false, willReconnect: true })])
-    retrying.dispose()
-
-    const terminalSocket = new FakeSocket()
-    const terminalClose: { readonly terminal: boolean, readonly willReconnect: boolean }[] = []
-    const terminalConfig = normalizeWebSocketOptions('wss://example.test/socket', { autoReconnect: false, id: 'non-retrying-close-terminal' })
-    const terminal = new ConnectionController({ config: terminalConfig, socketFactory: () => terminalSocket })
-    terminal.attach({ id: 'client', onClose: event => terminalClose.push(event) })
-    const terminalOpen = terminal.open()
-    terminalSocket.open()
-    await terminalOpen
-    terminalSocket.close(1006)
-    expect(terminalClose).toEqual([expect.objectContaining({ terminal: true, willReconnect: false })])
-    terminal.dispose()
-  })
-
-  it('sends and consumes raw binary heartbeat payloads by wire bytes', async () => {
-    vi.useFakeTimers()
-    try {
-      const socket = new FakeSocket()
-      const messages: SocketData[] = []
-      const config = normalizeWebSocketOptions('wss://example.test/socket', {
-        heartbeat: {
-          interval: 10,
-          message: new Uint8Array([1]),
-          pongTimeout: 20,
-          responseMessage: new Uint8Array([2]),
-        },
-        id: 'raw-heartbeat',
-      })
-      const controller = new ConnectionController({ config, socketFactory: () => socket })
-      controller.attach({ id: 'client', onMessage: data => messages.push(data) })
-      const opening = controller.open()
-      socket.open()
-      await opening
-      await vi.advanceTimersByTimeAsync(10)
-      expect(socket.sent).toHaveLength(1)
-      socket.message(new Uint8Array([2]).buffer)
-      await vi.advanceTimersByTimeAsync(0)
-      expect(messages).toEqual([])
-      expect(socket.readyState).toBe(1)
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('uses raw string ping and pong defaults without dispatching pong as data', async () => {
-    vi.useFakeTimers()
-    try {
-      const socket = new FakeSocket()
-      const messages: SocketData[] = []
-      const config = normalizeWebSocketOptions('wss://example.test/socket', { heartbeat: true, id: 'raw-string-heartbeat' })
-      const controller = new ConnectionController({ config, socketFactory: () => socket })
-      controller.attach({ id: 'client', onMessage: data => messages.push(data) })
-      const opening = controller.open()
-      socket.open()
-      await opening
-      await vi.advanceTimersByTimeAsync(25_000)
-      expect(socket.sent).toEqual(['ping'])
-      socket.message('pong')
-      await vi.advanceTimersByTimeAsync(0)
-      expect(messages).toEqual([])
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('supports custom raw string ping and pong payloads', async () => {
-    vi.useFakeTimers()
-    try {
-      const socket = new FakeSocket()
-      const messages: SocketData[] = []
-      const config = normalizeWebSocketOptions('wss://example.test/socket', {
-        heartbeat: { interval: 10, message: 'custom-ping', pongTimeout: 20, responseMessage: 'custom-pong' },
-        id: 'raw-custom-string-heartbeat',
-      })
-      const controller = new ConnectionController({ config, socketFactory: () => socket })
-      controller.attach({ id: 'client', onMessage: data => messages.push(data) })
-      const opening = controller.open()
-      socket.open()
-      await opening
-      await vi.advanceTimersByTimeAsync(10)
-      expect(socket.sent).toEqual(['custom-ping'])
-      socket.message('custom-pong')
-      await vi.advanceTimersByTimeAsync(0)
-      expect(messages).toEqual([])
-      expect(socket.readyState).toBe(1)
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('lets a custom adapter own ping, pong and server-ping wire frames', async () => {
-    vi.useFakeTimers()
-    try {
-      const socket = new FakeSocket()
-      const messages: { messageType: string }[] = []
-      const config = normalizeWebSocketOptions<{ messageType: string }, { messageType: string }>('wss://example.test/socket', {
-        heartbeat: { interval: 10, pongTimeout: 20 },
-        id: 'custom-heartbeat',
-        protocol: {
-          classify: data => data.messageType === 'pong'
-            ? { type: 'pong' }
-            : data.messageType === 'server-ping' ? { data, type: 'ping' } : { data, type: 'data' },
-          createPing: () => ({ messageType: 'ping' }),
-          createPong: () => ({ messageType: 'server-pong' }),
-          decode: data => JSON.parse(String(data)) as { messageType: string },
-          encode: data => JSON.stringify(data),
-          id: 'custom-heartbeat',
-          version: 1,
-        },
-        worker: () => null as unknown as SharedWorker,
-      })
-      const controller = new ConnectionController({ config, socketFactory: () => socket })
-      controller.attach({ id: 'client', onMessage: data => messages.push(data) })
-      const opening = controller.open()
-      socket.open()
-      await opening
-      await vi.advanceTimersByTimeAsync(10)
-      expect(socket.sent).toEqual(['{"messageType":"ping"}'])
-      socket.message('{"messageType":"pong"}')
-      await vi.advanceTimersByTimeAsync(0)
-      socket.message('{"messageType":"server-ping"}')
-      await vi.advanceTimersByTimeAsync(0)
-      expect(socket.sent).toEqual(['{"messageType":"ping"}', '{"messageType":"server-pong"}'])
-      expect(messages).toEqual([])
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('does not send a heartbeat resolved by an old socket attempt into a new socket', async () => {
-    vi.useFakeTimers()
-    try {
-      const sockets = [new FakeSocket(), new FakeSocket()]
-      let resolvePing: ((value: string) => void) | undefined
-      const pendingPing = new Promise<string>((resolve) => {
-        resolvePing = resolve
-      })
-      const config = normalizeWebSocketOptions<string, string>('wss://example.test/socket', {
-        autoReconnect: { initialDelay: 0, jitter: 0 },
-        heartbeat: { interval: 10 },
-        id: 'stale-heartbeat-attempt',
-        protocol: {
-          classify: data => data === 'pong' ? { type: 'pong' } : { data, type: 'data' },
-          createPing: () => pendingPing,
-          decode: data => String(data),
-          encode: data => data,
-          id: 'stale-heartbeat-attempt',
-          version: 1,
-        },
-        worker: () => null as unknown as SharedWorker,
-      })
-      let socketIndex = 0
-      const controller = new ConnectionController({ config, socketFactory: () => sockets[socketIndex++] as FakeSocket })
-      controller.attach({ id: 'client' })
-      const opening = controller.open()
-      sockets[0]?.open()
-      await opening
-      await vi.advanceTimersByTimeAsync(10)
-
-      sockets[0]?.close(1006)
-      await vi.advanceTimersByTimeAsync(0)
-      sockets[1]?.open()
-      resolvePing?.('late-ping')
-      await vi.advanceTimersByTimeAsync(0)
-
-      expect(sockets[0]?.sent).toEqual([])
-      expect(sockets[1]?.sent).toEqual([])
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('turns an explicit heartbeat timeout into the same reconnect plan path', async () => {
-    vi.useFakeTimers()
-    try {
-      const socket = new FakeSocket()
-      const plans: { readonly reason: string }[] = []
-      const config = normalizeWebSocketOptions('wss://example.test/socket', {
-        autoReconnect: { initialDelay: 0, jitter: 0 },
-        heartbeat: { interval: 10, pongTimeout: 5 },
-        id: 'raw-heartbeat-timeout',
-      })
-      const controller = new ConnectionController({
-        config,
-        onReconnectPlan: (plan) => {
-          plans.push(plan)
-          return true
-        },
-        socketFactory: () => socket,
-      })
-      controller.attach({ id: 'client' })
-      const opening = controller.open()
-      socket.open()
-      await opening
-
-      await vi.advanceTimersByTimeAsync(15)
-
-      expect(plans).toEqual([expect.objectContaining({ reason: 'heartbeat-timeout' })])
-      expect(controller.state).toBe('reconnecting')
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('queues while disconnected only when explicitly enabled', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'room', queue: true })
-    const controller = new ConnectionController({ config, socketFactory: () => socket })
-    controller.attach({ id: 'client-a' })
-    await expect(controller.send('client-a', 'hello')).resolves.toMatchObject({ status: 'queued', position: 1 })
-    const opening = controller.open()
-    socket.open()
-    await opening
-    expect(socket.sent).toEqual(['hello'])
-  })
-
-  it('rejects an asynchronous send whose logical owner detached before encoding completed', async () => {
-    let finishEncoding: ((value: string) => void) | undefined
-    const encoded = new Promise<string>((resolve) => {
-      finishEncoding = resolve
-    })
-    const config = normalizeWebSocketOptions<string, string>('wss://example.test/socket', {
-      id: 'detached-send-owner',
-      protocol: {
-        classify: data => ({ data, type: 'data' }),
-        decode: data => String(data),
-        encode: () => encoded,
-        id: 'detached-send-owner',
-        version: 1,
-      },
-      queue: true,
-      worker: () => null as unknown as SharedWorker,
-    })
-    const controller = new ConnectionController({ config, socketFactory: () => new FakeSocket() })
-    controller.attach({ id: 'client' })
-    const sending = controller.send('client', 'message')
-    await Promise.resolve()
-    controller.detach('client')
-    finishEncoding?.('encoded')
-
-    await expect(sending).rejects.toMatchObject({ code: 'CLIENT_DISCONNECTED' })
-    expect(controller.queueMessages).toBe(0)
-    controller.dispose()
-  })
-
-  it('detaches owners and closes after the idle grace period', async () => {
-    const socket = new FakeSocket()
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'room', idleGraceMs: 10 })
-    const controller = new ConnectionController({ config, socketFactory: () => socket })
-    controller.attach({ id: 'client-a' })
-    const opening = controller.open()
-    socket.open()
-    await opening
-    controller.detach('client-a')
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(socket.readyState).toBe(3)
-  })
-
-  it('reports a safe diagnostic snapshot without exposing endpoint paths', () => {
-    const config = normalizeWebSocketOptions('wss://example.test/private-path', { id: 'diagnostic-room' })
-    const controller = new ConnectionController({ config, socketFactory: () => new FakeSocket() })
-
-    expect(controller.diagnostics('direct')).toMatchObject({
-      attachedClientCount: 0,
-      endpointOrigin: 'wss://example.test',
-      idHash: expect.stringMatching(/^socketfuse1-/),
-      transport: 'direct',
-    })
-  })
-
-  it('waits for an atomic reconnect plan and applies its URL and delay', async () => {
-    vi.useFakeTimers()
-    try {
-      const sockets: FakeSocket[] = []
-      const urls: string[] = []
-      let plan: Parameters<NonNullable<ConstructorParameters<typeof ConnectionController>[0]['onReconnectPlan']>>[0] | undefined
-      const config = normalizeWebSocketOptions('wss://example.test/old', {
-        autoReconnect: { initialDelay: 1_000, jitter: 0 },
-        id: 'reconnect-plan',
-      })
-      const controller = new ConnectionController({
-        config,
-        onReconnectPlan: (value) => {
-          plan = value
-          return true
-        },
-        socketFactory: (url) => {
-          urls.push(url)
-          const socket = new FakeSocket()
-          sockets.push(socket)
-          return socket
-        },
-      })
-      controller.attach({ id: 'client' })
-      const opening = controller.open()
-      sockets[0]?.open()
-      await opening
-      sockets[0]?.close(1006)
-
-      expect(plan).toMatchObject({ attempt: 1, defaultDelay: 1_000, reason: 'socket-close' })
-      expect(sockets).toHaveLength(1)
-      const planId = plan?.id
-      expect(planId).toBeTypeOf('string')
-      controller.commitReconnectPlan(planId as string, { delay: 50, url: 'wss://example.test/new?token=secret' })
-      await vi.advanceTimersByTimeAsync(49)
-      expect(sockets).toHaveLength(1)
-      await vi.advanceTimersByTimeAsync(1)
-      expect(sockets).toHaveLength(2)
-      expect(urls).toEqual(['wss://example.test/old', 'wss://example.test/new?token=secret'])
-      expect(() => controller.commitReconnectPlan(planId as string)).toThrowError(expect.objectContaining({ code: 'STALE_RECONNECT_PLAN' }))
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('routes an explicit reconnect during backoff through the same zero-delay plan', async () => {
-    vi.useFakeTimers()
-    try {
-      const sockets: FakeSocket[] = []
-      const plans: { defaultDelay: number, reason: string }[] = []
-      const config = normalizeWebSocketOptions('wss://example.test/socket', {
-        autoReconnect: { initialDelay: 1_000, jitter: 0, retries: 1 },
-        id: 'explicit-backoff-reconnect',
-      })
-      const controller = new ConnectionController({ config, onReconnectPlan: (plan) => {
-        plans.push(plan)
-        return false
-      }, socketFactory: () => {
-        const socket = new FakeSocket()
-        sockets.push(socket)
-        return socket
-      } })
-      controller.attach({ id: 'client' })
-      const opening = controller.open()
-      sockets[0]?.open()
-      await opening
-      sockets[0]?.close(1006)
-      expect(controller.state).toBe('reconnecting')
-
-      await controller.reconnect()
-      expect(controller.state).toBe('reconnecting')
-      expect(plans.at(-1)).toMatchObject({ defaultDelay: 0, reason: 'explicit' })
-      await vi.advanceTimersByTimeAsync(0)
-      expect(controller.state).toBe('connecting')
-      sockets[1]?.open()
-      await Promise.resolve()
-      expect(controller.state).toBe('open')
-      expect(sockets).toHaveLength(2)
-    }
-    finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('replaces an automatic plan with the explicit plan requested by a close listener', async () => {
-    const sockets: FakeSocket[] = []
-    const plans: { id: string, reason: string }[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/socket', {
-      autoReconnect: { initialDelay: 1_000, jitter: 0 },
-      id: 'close-listener-reconnect',
-    })
-    const controller = new ConnectionController({
-      config,
-      onReconnectPlan: (plan) => {
-        plans.push(plan)
-        return true
-      },
-      socketFactory: () => {
-        const socket = new FakeSocket()
-        sockets.push(socket)
-        return socket
-      },
-    })
-    controller.attach({
-      id: 'client',
-      onClose: () => {
-        void controller.reconnect()
-      },
-    })
-    const opening = controller.open()
-    sockets[0]?.open()
-    await opening
-
-    sockets[0]?.close(1006)
-
-    expect(plans).toEqual([expect.objectContaining({ reason: 'explicit' })])
-    expect(sockets).toHaveLength(1)
-    expect(controller.state).toBe('reconnecting')
-    controller.detach('client')
-    controller.dispose()
-  })
+/** 每个测试拥有的控制器，结束时串行释放。 */
+const controllers: ConnectionController<SocketData, SocketData>[] = []
+afterEach(() => {
+  for (const controller of controllers.splice(0)) controller.dispose()
+  vi.useRealTimers()
 })
 
-describe('direct transport pool', () => {
-  it('shares a controller within one JavaScript realm', async () => {
-    const sockets: FakeSocket[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/socket', { id: 'direct-pool-test' })
-    const socketFactory = (): FakeSocket => {
-      const socket = new FakeSocket()
-      sockets.push(socket)
-      return socket
-    }
-    const first = new DirectTransport({ clientId: 'a', config, socketFactory })
-    const second = new DirectTransport({ clientId: 'b', config, socketFactory })
-    first.attach({ id: 'a' })
-    second.attach({ id: 'b' })
-    const firstOpen = first.open()
-    const secondOpen = second.open()
-    sockets[0]?.open()
-    await Promise.all([firstOpen, secondOpen])
-    expect(sockets).toHaveLength(1)
-    first.dispose()
-    await expect(second.send('still-open')).resolves.toMatchObject({ status: 'accepted' })
-    expect(sockets[0]?.sent).toEqual(['still-open'])
-    second.dispose()
+/** 建立不含端口的同步物理引擎与工厂记录。 */
+function engine(settings: Partial<CreateWebSocketOptions> = {}, overrides: Partial<ConnectionControllerOptions<SocketData, SocketData>> = {}) {
+  const sockets: FakeSocket[] = []
+  const urls: string[] = []
+  const controller = new ConnectionController({ config: normalizeWebSocketOptions('wss://example.test/secret?token=secret', {
+    id: 'room', reconnect: { initialDelay: 0, jitter: 0, stableThreshold: false }, ...settings,
+  }), connectionEpoch: 'epoch', adapter: rawProtocol, socketFactory: (url) => {
+    urls.push(url)
+    const socket = new FakeSocket()
+    sockets.push(socket)
+    return socket
+  }, ...overrides })
+  controllers.push(controller)
+  return { controller, sockets, urls }
+}
+
+describe('physical connection engine', () => {
+  it('rejects async encode as a fatal contract violation without creating an outgoing tail', () => {
+    const adapter = { ...rawProtocol, encode: (() => Promise.resolve('late')) as unknown as ProtocolAdapter<SocketData, SocketData>['encode'] }
+    const { controller, sockets } = engine({}, { adapter })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    expect(() => controller.send('owner', 'x')).toThrowError(expect.objectContaining({ code: 'PROTOCOL_CONTRACT_VIOLATION', fatal: true }))
+    expect(sockets[0]!.sent).toEqual([])
+    expect(controller.state).toBe('failed')
+    expect(() => controller.requestReconnect('page', false)).toThrowError(expect.objectContaining({ fatal: true }))
   })
 
-  it('keeps the active endpoint when a later pooled client supplies a different URL', async () => {
-    const sockets: FakeSocket[] = []
-    const config = normalizeWebSocketOptions('wss://example.test/initial', {
-      autoReconnect: { initialDelay: 0, jitter: 0 },
-      id: 'direct-initial-endpoint',
-    })
-    const first = new DirectTransport({
-      clientId: 'first',
-      config,
-      socketFactory: () => {
-        const socket = new FakeSocket()
-        sockets.push(socket)
-        return socket
-      },
-    })
-    first.attach({
-      id: 'first',
-      onBeforeReconnect: (plan) => {
-        void first.completeReconnectPlan(plan.id, { delay: 0, url: 'wss://example.test/override' })
-      },
-    })
-    await first.setReconnectHook(true)
-    const opening = first.open()
-    sockets[0]?.open()
-    await opening
-    sockets[0]?.close(1006)
-    for (let attempt = 0; attempt < 20 && sockets.length < 2; attempt++)
-      await new Promise(resolve => setTimeout(resolve, 0))
+  it('rejects thenable decode and ignores all old callbacks after a replacement', () => {
+    const onFrame = vi.fn()
+    const scope = engine({}, { observer: { onFrame } })
+    const { controller, sockets } = scope
+    controller.setDemand(true)
+    sockets[0]!.open()
+    const oldMessages = sockets[0]!.callbacks('message')
+    const oldClose = sockets[0]!.callbacks('close')
+    const oldOpen = sockets[0]!.callbacks('open')
+    controller.requestReconnect('page')
+    sockets[1]!.open()
+    for (const callback of oldMessages) callback({ data: 'late' })
+    for (const callback of oldClose) callback({ code: 1006 })
+    for (const callback of oldOpen) callback({})
+    expect(controller.snapshot()).toMatchObject({ state: 'open', attempt: 2 })
+    expect(onFrame).not.toHaveBeenCalled()
     expect(sockets).toHaveLength(2)
+  })
 
-    const laterConfig = normalizeWebSocketOptions('wss://example.test/different', {
-      autoReconnect: { initialDelay: 0, jitter: 0 },
-      id: 'direct-initial-endpoint',
+  it('checks the attempt again after encode invokes an external close', () => {
+    let close = (): void => undefined
+    const adapter = { ...rawProtocol, encode: (value: SocketData) => {
+      close()
+      return value
+    } }
+    const { controller, sockets } = engine({ queue: false }, { adapter })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    close = () => controller.setDemand(false)
+    expect(() => controller.send('owner', 'x')).toThrowError(expect.objectContaining({ code: 'CLIENT_DISCONNECTED' }))
+    expect(sockets[0]!.sent).toEqual([])
+  })
+
+  it('does not return accepted or consume the queue when injected native send invalidates the attempt', () => {
+    const { controller, sockets } = engine({ queue: true, reconnect: { automatic: false } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    sockets[0]!.afterSend = () => sockets[0]!.closed(1000)
+    expect(() => controller.send('owner', 'x')).toThrowError(expect.objectContaining({ code: 'SOCKET_ERROR' }))
+    expect(controller.state).toBe('closed')
+  })
+
+  it('charges a throwing socket factory at the unique attempt-start point', () => {
+    vi.useFakeTimers()
+    const factory = vi.fn(() => {
+      throw new Error('secret')
     })
-    const second = new DirectTransport({ clientId: 'second', config: laterConfig, socketFactory: () => new FakeSocket() })
-    expect(first.controller.endpointUrl).toBe('wss://example.test/override')
-    second.dispose()
-    first.dispose()
+    const { controller } = engine({ reconnect: { maxRetries: 2, initialDelay: 5, jitter: 0, stableThreshold: false } }, { socketFactory: factory })
+    controller.setDemand(true)
+    vi.advanceTimersByTime(100)
+    expect(factory).toHaveBeenCalledTimes(3)
+    expect(controller.diagnostics()).toMatchObject({ attempt: 3, retriesUsed: 2, retriesRemaining: 0, lastErrorCode: 'RETRY_EXHAUSTED' })
+  })
+
+  it('cancels before ending a healthy attempt when state notification removes the final demand', () => {
+    let cancel = (): void => undefined
+    const { controller, sockets } = engine({}, { observer: { onState: (snapshot) => {
+      if (snapshot.state === 'reconnecting') cancel()
+    } } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    cancel = () => {
+      controller.setDemand(false)
+    }
+    controller.requestReconnect('page')
+    expect(sockets[0]!.readyState).toBe(1)
+    expect(controller.isCurrentAttempt(1)).toBe(true)
+    expect(controller.state).toBe('open')
+    expect(controller.diagnostics().retryReserved).toBe(0)
+  })
+
+  it('finishes native close if onClose cancels a newly reserved plan', () => {
+    let cancel = (): void => undefined
+    const { controller, sockets } = engine({}, { observer: { onClose: () => cancel() } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    cancel = () => {
+      controller.setDemand(false)
+    }
+    controller.requestReconnect('page')
+    expect(sockets).toHaveLength(1)
+    expect(sockets[0]!.readyState).toBe(3)
+    expect(controller.diagnostics().retriesUsed).toBe(0)
+  })
+
+  it('holds the previous socket until native CLOSED and rejects stale plan observations', () => {
+    const { controller, sockets } = engine()
+    controller.setDemand(true)
+    sockets[0]!.open()
+    sockets[0]!.deferClose = true
+    controller.requestReconnect('page')
+    expect(sockets).toHaveLength(1)
+    sockets[0]!.closed()
+    sockets[1]!.open()
+    expect(() => controller.requestReconnect('page', true, { connectionEpoch: 'epoch', attempt: 1, planId: null })).toThrowError(expect.objectContaining({ code: 'STALE_RECONNECT_PLAN' }))
+    expect(sockets[1]!.readyState).toBe(1)
+  })
+
+  it('validates an entire URL/delay draft before replacing the endpoint', () => {
+    vi.useFakeTimers()
+    let plan: ReconnectPlan | undefined
+    const { controller, urls, sockets } = engine({}, { observer: { onPrepare: (value) => {
+      plan = value
+      return true
+    } } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    controller.requestReconnect('page')
+    expect(() => controller.commitReconnectPlan(plan!.id, { url: 'wss://next.test/new', delay: -1 })).toThrowError()
+    expect(controller.endpointUrl).toContain('example.test')
+    controller.commitReconnectPlan(plan!.id, { url: 'wss://next.test/new', delay: 20 })
+    vi.advanceTimersByTime(19)
+    expect(urls).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    expect(urls[1]).toBe('wss://next.test/new')
+    expect(controller.diagnostics().endpointOrigin).toBe('wss://next.test')
+    expect(() => controller.commitReconnectPlan(plan!.id, { url: 'wss://stale.test' })).toThrowError(expect.objectContaining({ code: 'STALE_RECONNECT_PLAN' }))
+  })
+
+  it('keeps spent counts on explicit uncounted retries and does not close on exhausted counted requests', () => {
+    const { controller, sockets } = engine({ reconnect: { maxRetries: 1, initialDelay: 0, stableThreshold: false } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    controller.requestReconnect('page')
+    sockets[1]!.open()
+    expect(() => controller.requestReconnect('worker')).toThrowError(expect.objectContaining({ code: 'RETRY_EXHAUSTED' }))
+    expect(sockets[1]!.readyState).toBe(1)
+    controller.requestReconnect('worker', false)
+    sockets[2]!.open()
+    expect(controller.diagnostics()).toMatchObject({ retriesUsed: 1, attempt: 3 })
+  })
+
+  it('does not count disconnected time toward the stable window', () => {
+    vi.useFakeTimers()
+    const { controller, sockets } = engine({ reconnect: { initialDelay: 100, jitter: 0, stableThreshold: 50 } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    vi.advanceTimersByTime(20)
+    sockets[0]!.closed()
+    vi.advanceTimersByTime(100)
+    sockets[1]!.open()
+    expect(controller.diagnostics().retriesUsed).toBe(1)
+    vi.advanceTimersByTime(49)
+    expect(controller.diagnostics().retriesUsed).toBe(1)
+    vi.advanceTimersByTime(1)
+    expect(controller.diagnostics().retriesUsed).toBe(0)
+  })
+
+  it.each([['ping', 'pong'], [new Uint8Array([1]), new Uint8Array([2])]] as const)('uses raw heartbeat wire equality and consumes pong', (message, responseMessage) => {
+    vi.useFakeTimers()
+    const onFrame = vi.fn()
+    const { controller, sockets } = engine({ heartbeat: { interval: 10, pongTimeout: 5, message, responseMessage } }, { observer: { onFrame } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    vi.advanceTimersByTime(10)
+    expect(sockets[0]!.sent).toEqual([message])
+    sockets[0]!.message(responseMessage)
+    vi.advanceTimersByTime(5)
+    expect(sockets).toHaveLength(1)
+    expect(onFrame).not.toHaveBeenCalled()
+  })
+
+  it('routes heartbeat timeouts through the same shared budget', () => {
+    vi.useFakeTimers()
+    const { controller, sockets } = engine({ heartbeat: { interval: 10, pongTimeout: 5 }, reconnect: { maxRetries: 1, initialDelay: 0 } })
+    controller.setDemand(true)
+    sockets[0]!.open()
+    vi.advanceTimersByTime(15)
+    expect(sockets).toHaveLength(2)
+    expect(controller.diagnostics()).toMatchObject({ retriesUsed: 1, lastErrorCode: 'HEARTBEAT_TIMEOUT' })
+  })
+
+  it('rejects a partial extension heartbeat group without createPing even for raw', () => {
+    const { controller } = engine({ heartbeat: true })
+    expect(() => controller.setHeartbeatGenerators({ createPong: () => 'pong' })).toThrowError(expect.objectContaining({ code: 'INVALID_OPTIONS' }))
+  })
+
+  it('never exposes path, query credentials or internal exception text in diagnostics', () => {
+    const { controller } = engine({}, { socketFactory: () => {
+      throw new Error('very-secret')
+    } })
+    controller.setDemand(true)
+    const result = JSON.stringify(controller.diagnostics())
+    expect(result).not.toMatch(/token|secret/)
+    expect(controller.diagnostics().endpointOrigin).toBe('wss://example.test')
   })
 })

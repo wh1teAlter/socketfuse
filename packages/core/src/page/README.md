@@ -1,9 +1,9 @@
 # page
 
-此模块将 transport 包装为稳定的页面 `WebSocketClient`，拥有 EventTarget、动态 `onMessage`、execution key gate、页面重连 hook、页面隐藏/恢复和 listener 清理。
+本模块提供稳定 WebSocketClient，拥有独立 open waiter、参与意图、动态业务 handler、EventTarget 观察者、dispatchKey 本地资格门以及页面生命周期。每次 close/reopen 建立新的端口 session，dispose 永久终结；它不拥有 socket、连接池或 replay。
 
-页面只通过 transport 的 grant 获得执行权；key revoke 或明确 freeze 会保守停止执行并 abort 对应 handler context。页面从 hidden 返回时会先 gate keyed handler 并验证 Worker 端口，防止 lease 已转移后继续使用旧授权；恢复后只接受同一 Worker 的已确认状态或新端口 grant。重连 hook 只修改本地草案，成功返回后由 transport 原子提交。
+分派按每帧 session/epoch/grant 代际和保守 lease 检查，只抑制过期调用，不保证跨页面异步副作用互斥。keyed handler 不接收 replay；普通 handler 的 signal 在参与期结束时 abort。业务回调和日志独立隔离，不等待 Promise 才处理下一帧。
 
-它不直接拥有共享 socket；`close` 仅释放当前逻辑 client，`dispose` 才是不可恢复终态。恢复只提供有界、尽力而为的消息回放，不是可靠投递。
+onBeforeReconnect 获得临时 URL/delay 授权，取消或期限结束立即禁止 setter。恢复先合并探测，失联则在同一选定 transport 建立新参与期。诊断为最近异步样本，data 只由实际业务派发更新。
 
-应用代码通过 `createWebSocket` 获得该行为，不直接实例化页面 client。
+依赖 config、shared、connection 状态映射、runtime 控制类型与 transport，不直接依赖 Worker 全局。公开使用者通过 socketfuse facade 创建实例。

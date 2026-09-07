@@ -5,12 +5,15 @@
  * 类型检查、Vite 构建和 SSR import。临时目录在 finally 中清理，避免 artifact
  * 冲突或失败重试污染仓库。
  */
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { constants, copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve, win32 } from 'node:path'
 import { execFile } from 'node:child_process'
-import { execPath } from 'node:process'
+import { formatMessage } from 'publint/utils'
+import { env, execPath } from 'node:process'
+import { createHash } from 'node:crypto'
 import { promisify } from 'node:util'
 import { gzipSync } from 'node:zlib'
+import { publint } from 'publint'
 import { tmpdir } from 'node:os'
 
 /** 可 await 的子进程执行函数。 */
@@ -125,7 +128,7 @@ async function verifyConsumer(tarball) {
 import { createWebSocket, type BeforeReconnectContext, type JsonValue, type MessageHandlerContext, type WebSocketClient } from 'socketfuse'
 import { rawProtocol, type ProtocolAdapter } from 'socketfuse/protocol'
 import type { SocketData } from 'socketfuse'
-import { exposeSharedWebSocketWorker, type SharedWebSocketRuntime } from 'socketfuse/worker'
+import { defineWorkerProtocol, exposeSharedWebSocketWorker, type SharedWebSocketRuntime } from 'socketfuse/worker'
 // @ts-expect-error removed revision types must not remain at the root entry
 import type { RevisionReceipt } from 'socketfuse'
 // @ts-expect-error removed auth types must not remain at the protocol entry
@@ -142,12 +145,12 @@ const jsonClient = createWebSocket('wss://example.test/json', {
 const jsonMessage: JsonValue = { type: 'json' }
 
 void jsonClient.sendMessage(jsonMessage)
-client.onMessage((_event, context: MessageHandlerContext) => void context.signal, { key: 'tarball-exclusive' })
+client.onMessage((_event, context: MessageHandlerContext) => void context.signal, { dispatchKey: 'tarball-dispatch' })
 client.onBeforeReconnect((context: BeforeReconnectContext) => {
   context.setOptions({ url: 'wss://example.test/socket?fresh=1' })
   context.setDelay(0)
 })
-void client.holdsKey('tarball-exclusive')
+void client.isDispatchOwner('tarball-dispatch')
 // @ts-expect-error removed beta API must not remain on the public client
 void client.updateAuth
 // @ts-expect-error removed beta API must not remain on the public client
@@ -159,6 +162,22 @@ void client.reconnect({ reason: 'secret' })
 // @ts-expect-error send options do not claim idempotency semantics
 void client.sendMessage('message', { idempotencyKey: 'duplicate' })
 
+const registration = defineWorkerProtocol({
+  adapter: { ...rawProtocol, id: 'application' },
+  createExtension: () => ({
+    onFrame: frame => ({ delivery: { type: 'broadcast', data: frame.data }, reply: 'ack', reconnect: { countAsRetry: false } }),
+  }),
+})
+void registration
+void client.reconnect({ countAsRetry: false })
+const asyncProtocol: ProtocolAdapter<SocketData, SocketData> = {
+  ...rawProtocol,
+  // @ts-expect-error asynchronous protocol transformations are no longer supported
+  encode: async () => 'wire',
+}
+void asyncProtocol
+// @ts-expect-error execution locks have been replaced by dispatch selection
+void client.holdsKey
 void client
 void protocol
 void worker
@@ -202,22 +221,42 @@ void exposeSharedWebSocketWorker
 }
 
 try {
+  const expectedPackage = JSON.parse(await readFile(resolve(packageDir, 'package.json'), 'utf8'))
   await run('pnpm', ['pack', '--pack-destination', temporary], { cwd: packageDir })
   const files = (await readdir(temporary)).filter(file => file.endsWith('.tgz'))
   if (files.length !== 1)
     throw new Error(`Expected one package tarball, found ${files.length}`)
   const tarball = resolve(temporary, files[0])
+  const digest = createHash('sha256').update(await readFile(tarball)).digest('hex')
   const { stdout: listing } = await run('tar', ['-tzf', tarball])
   const entries = listing.split('\n').filter(Boolean)
   await verifyArchive(entries, tarball)
-  const packageJson = JSON.parse(await readFile(resolve(packageDir, 'package.json'), 'utf8'))
+  // publint 检查实际解压的发布物；prepack 先构建，独立验收不依赖预存 dist。
+  const lint = await publint({ pkgDir: resolve(archiveDir, 'package'), pack: false, strict: true })
+  for (const message of lint.messages) {
+    if (message.type === 'error')
+      throw new Error(formatMessage(message, lint.pkg, { color: false }))
+  }
+  const packageJson = JSON.parse(await readFile(resolve(archiveDir, 'package/package.json'), 'utf8'))
+  if (packageJson.name !== 'socketfuse' || packageJson.version !== expectedPackage.version)
+    throw new Error('Tarball package identity does not match the release commit')
   if (packageJson.dependencies !== undefined && Object.keys(packageJson.dependencies).length > 0)
     throw new Error('Public package must not ship runtime workspace dependencies')
   await verifyConsumer(tarball)
+  if (createHash('sha256').update(await readFile(tarball)).digest('hex') !== digest)
+    throw new Error('Verified tarball changed during acceptance')
+  // 只有所有验收通过才导出原 tarball，拒绝覆盖已有 artifact；发布不再次打包。
+  if (env.SOCKETFUSE_VERIFIED_TARBALL !== undefined) {
+    const exported = resolve(env.SOCKETFUSE_VERIFIED_TARBALL)
+    await copyFile(tarball, exported, constants.COPYFILE_EXCL)
+    if (createHash('sha256').update(await readFile(exported)).digest('hex') !== digest)
+      throw new Error('Exported release artifact differs from the verified tarball')
+    await writeFile(exported + '.sha256', digest + '  ' + exported + '\n', { flag: 'wx' })
+  }
   const clientGzip = gzipSync(await readFile(resolve(archiveDir, 'package/dist/index.js'))).byteLength
   const workerGzip = gzipSync(await readFile(resolve(archiveDir, 'package/dist/worker.js'))).byteLength
   console.log(`gzip sizes: client=${clientGzip} bytes, worker=${workerGzip} bytes`)
-  console.log(`release verification passed (${files[0]})`)
+  console.log(`release verification passed (${files[0]}, sha256=${digest})`)
 }
 finally {
   await rm(temporary, { force: true, recursive: true })
