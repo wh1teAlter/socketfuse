@@ -21,8 +21,11 @@ SocketFuse 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 
    `GITHUB_TOKEN`，否则 GitHub 不会触发新的 pull request workflow。发布前必须同时校验该 App 身份、标题、
    专用分支与文件白名单，手工版本提交必须拒绝。
 
+第 6–8 条描述常规自动发布流程。beta 阶段仅在维护者明确授权时，允许单独手动消费 Changeset、生成版本与 CHANGELOG，并进行单包发布；该授权不改变现有 workflow 的 Version Packages PR 身份校验，也不允许递归发布或增加长期 npm token。具体操作与限制见 [workflow README](.github/workflows/README.md)。
+
 ## 中文文档与注释
 
+- 根 `README.md` 是默认英文入口，`README.zh-CN.md` 为中文维护基准，两者内容与示例同步；CONTRIBUTING、产品指南、模块文档和源码注释以中文为准。公开 npm README 使用英文并链接仓库中文说明。
 - 每个源码文件在 import 前放中文文件头，说明内容、责任和设计意图；它描述当前状态，不写迁移历史或规范章节编号。Vue SFC 在 `<script setup>` 内、import 前放同等说明。
 - 每个命名函数、方法、类、接口、类型别名和枚举前写中文 TSDoc。公开 API 必须说明参数、返回值、失败方式与允许调用的阶段。
 - 模块常量、模块状态、类字段，以及单位、约束、所有权或生命周期不明显的类型字段，必须在声明前说明用途。具有独立业务语义的局部变量前写中文单行注释；循环变量、catch 变量、简单索引、明确测试的 `actual`/`expected` 与纯语法解构可以省略。

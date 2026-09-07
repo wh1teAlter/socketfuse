@@ -30,7 +30,7 @@ const protocol = defineWorkerProtocol({
       ? { delivery: { type: 'consume' } }
       : {
           delivery: { type: 'broadcast', data: frame.data.body },
-          reply: { kind: 'received', id: frame.data.id },
+          reply: { kind: 'received' as const, id: frame.data.id },
         },
   }),
 })
@@ -43,12 +43,18 @@ exposeSharedWebSocketWorker({ protocols: [protocol] })
 页面只传协议描述符，不传函数：
 
 ```ts
-const ws = createWebSocket<string | undefined, Wire>(url, {
+// page.ts
+import { createWebSocket } from 'socketfuse'
+
+type Wire = { kind: 'message' | 'received', id: string, body?: string }
+
+const ws = createWebSocket<string | undefined, Wire>('wss://api.example.com/events', {
   id: 'feed',
   protocol: { type: 'custom', id: 'receipt-demo', version: 1 },
   worker: () => new SharedWorker(new URL('./worker.ts', import.meta.url), { type: 'module' }),
 })
-ws.onMessage(event => render(event.data))
+ws.onMessage(event => console.log(event.data))
+await ws.open()
 ```
 
 raw/JSON 连接也可用 `createSharedWebSocketRuntime({ createExtension })` 注册通用扩展。自定义协议的扩展在自己的 `defineWorkerProtocol` 注册项中配置，避免和另一 adapter 错配。自定义 Worker 初始化失败会报错，不能降级后丢失其协议逻辑。
@@ -60,7 +66,7 @@ raw/JSON 连接也可用 `createSharedWebSocketRuntime({ createExtension })` 注
 1. 先验证整个结果并取得业务投影快照。
 2. `reply` 在当前 open socket 上发送一次，受编码大小与背压约束，不入队、不跨重连补发。
 3. `broadcast` 将投影分别投递给页面；`consume` 不投递。单页额度不足只影响该页。
-4. 可选 `reconnect: { countAsRetry: false }` 请求一次不计数重连；省略该字段则计数。每一步都重新检查尝试是否仍有效。
+4. 提供 `reconnect: {}` 或 `{ countAsRetry: true }` 请求计数重连，`{ countAsRetry: false }` 请求不计数重连；省略整个 `reconnect` 字段时不请求重连。每一步都重新检查尝试是否仍有效。
 
 未提供 `onFrame` 时，data 默认广播，control 默认消费。普通抛错会报告安全错误并消费当前帧；不回退广播原始协议内容。同步 hook 返回 Promise/thenable 属于终止性 `PROTOCOL_CONTRACT_VIOLATION`，该条目不能恢复。页面业务 Promise 从不返回给 Worker 等待。
 
@@ -70,7 +76,7 @@ raw/JSON 连接也可用 `createSharedWebSocketRuntime({ createExtension })` 注
 
 `createExtension` 每条连接实例化一次；`onSocketOpen` 在页面 open 通知前初始化本次尝试状态，`onSocketClose` 每次尝试结束调用一次，`dispose` 在条目回收时释放应用资源。上下文只包含连接 id、epoch、attempt 与当前 endpoint origin。
 
-扩展可提供 `createPing`/`createPong`，读取闭包内的连接状态。存在扩展心跳生成组时整组替代 adapter 生成组，启用 heartbeat 时该组必须有 `createPing`。引擎仍唯一拥有 interval、pongTimeout、单待决检测与超时重连；不要另启一套定时器。声明式 JSON 模板适合静态 ping，adapter 适合无状态 wire 转换。
+扩展可提供 `createPing`/`createPong`，读取闭包内的连接状态。存在扩展心跳生成组时整组替代 adapter 生成组，启用 heartbeat 时该组必须有 `createPing`。引擎仍唯一拥有 interval、pongTimeout、单待决检测与超时重连；不要另启一套定时器。声明式 JSON 模板适合静态 ping，adapter 适合无状态 wire 转换。有状态的 ping 生成不等于自动校验 pong 与本轮 ping 的关联；当前 pong 识别由 `adapter.classify` 决定，被分类为 pong 的帧会解除等待。
 
 ## 有界重连准备
 

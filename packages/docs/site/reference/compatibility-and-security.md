@@ -2,11 +2,11 @@
 
 ## 浏览器与 SSR 基线
 
-SocketFuse 的目标是具备 SharedWorker 的 Chromium/Edge、Firefox 与 Safari 16+。内联部署的 SharedWorker 缺失时，
+SocketFuse 面向提供 SharedWorker、MessageChannel、structuredClone 和现代 ESM 能力的浏览器页面。CI 使用 Chromium、Firefox 与 WebKit；这不等于每个历史版本、移动平台和 WebView 都具备相同支持。请在目标浏览器验证 Worker、CSP 与后台生命周期。内联部署的 SharedWorker 缺失时，
 `fallback: 'direct'` 会保持 client API，但物理连接共享仅限单个 JavaScript realm。
 `fallback: 'error'` 会拒绝这一降级。
 
-导入 `socketfuse` 对 SSR 是安全的；创建 client 则要求浏览器**页面** realm 同时具备 `window` 和
+导入 `socketfuse`、`socketfuse/protocol` 和 `socketfuse/worker` 对 SSR 是安全的；创建 client 则要求浏览器**页面** realm 同时具备 `window` 和
 `document`。即使 Node runtime 提供全局 `WebSocket` 也不够：`createWebSocket()` 会在那里抛出
 `ENVIRONMENT_UNSUPPORTED`，且绝不会打开 direct 降级 socket。请只在浏览器生命周期代码中创建
 client，绝不能在服务端渲染期间创建。

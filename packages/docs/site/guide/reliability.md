@@ -18,7 +18,7 @@ const ws = createWebSocket(url, {
 })
 ```
 
-首次 socket 免费。断线自动恢复、页面 `reconnect()`、Worker 帧请求及同一 epoch 内的需求恢复共享最多三次预算。接纳计划先预留，真正调用 socket 工厂才扣数，构造失败也扣一次；取消未启动计划只释放预留。
+在上面 `maxRetries: 3` 的配置中，首次物理尝试不计数。断线自动恢复、页面 `reconnect()`、Worker 帧请求及同一 epoch 内的需求恢复共享最多三次预算。接纳计划先预留，真正调用 socket 工厂才扣数，构造失败也扣一次；取消未启动计划只释放预留。
 
 `reconnect({ countAsRetry: false })` 不占本次预算，也不清零已用次数。Worker 可在 `onFrame` 返回同样的策略。不计数尝试失败后的自动恢复仍是新的计数计划。
 
@@ -51,7 +51,7 @@ await opening
 
 ## 投递与回放额度
 
-两种 transport 都通过真实 MessageChannel 使用同一 runtime，拥有相同克隆、错误、单帧和投递限制。direct 的共享范围仅限当前 JavaScript realm；shared 的范围是同一个 SharedWorker 实例。
+两种 transport 都通过原生 MessagePort 使用同一 runtime，拥有相同克隆、错误、单帧和投递限制。direct 的共享范围仅限当前 JavaScript realm；shared 的范围是同一个 SharedWorker 实例。
 
 每参与期默认最多 256 条未确认投递、4 MiB 完整 envelope 字节；计费包含资格元数据和 typed-array 完整 backing buffer。页面在业务 handler 之前归还 receipt，Worker 不等待业务 Promise。这不限制应用自行启动的异步任务数量。
 

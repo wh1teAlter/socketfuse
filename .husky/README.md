@@ -1,7 +1,7 @@
-# Husky Hooks
+# 本地 Git hooks
 
-本目录只承载本地 Git 提交防线。`pre-commit` 在非 CI 环境先运行全仓类型检查，再让 lint-staged 对已暂存
-源码与 JSON 执行 ESLint 修复；单元测试、构建和浏览器 E2E 由显式命令与 GitHub Actions 承担。
+`pnpm install` 通过根 `prepare` 安装 Husky。`pre-commit` 在非 CI 环境先运行全仓 typecheck，再调用 lint-staged 对已暂存的源码和 JSON 执行 ESLint 修复。Markdown 不在 lint-staged 文件模式内，提交消息也没有格式校验。
 
-`pnpm install` 通过根 `prepare` 安装 hook。紧急情况下可以设置 `HUSKY=0` 跳过本地 hook，但 PR 的
-`quality` 与 `e2e` 门禁仍必须通过。`.husky/_/` 是 Husky 生成目录，不应提交。
+hook 不执行单测、构建或浏览器 E2E，不能代替 [贡献指南](../CONTRIBUTING.md) 中的串行验收。`HUSKY=0` 只跳过本地 hook，不改变 PR 的 `verify` 检查或分支保护要求。
+
+`.husky/_/` 是 Husky 生成目录，不应编辑或提交。

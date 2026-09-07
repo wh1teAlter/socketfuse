@@ -1,165 +1,117 @@
 # SocketFuse
 
-> 以 SharedWorker 为首选，在同源浏览器标签页之间复用 WebSocket 物理连接。
+[![npm beta](https://img.shields.io/npm/v/socketfuse/beta?label=npm%20beta)](https://www.npmjs.com/package/socketfuse)
+[![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](packages/socketfuse/LICENSE)
 
-`socketfuse` 是一个框架无关的浏览器端 WebSocket 库。多个同源页面使用相同连接 `id` 和共享配置时，会通过
-一个 SharedWorker 接入同一个物理 WebSocket；每个页面仍拥有独立的 client、事件处理器、生命周期和错误边界。
-它适用于即时通信、行情、协作编辑、通知流等需要多标签页实时连接的场景。
+**English** · [简体中文](README.zh-CN.md)
 
-已发布基线为 `socketfuse@0.1.0-beta.2`。当前分支包含待发布的破坏性 API 调整；公开入口保持为
-`socketfuse`、`socketfuse/protocol` 和 `socketfuse/worker`。
+Share WebSocket connections across same-origin browser tabs, with SharedWorker as the default transport.
 
-## 为什么使用 SocketFuse
+SocketFuse is for applications that receive live data in multiple tabs, such as notifications, market feeds, and collaboration tools. Clients using the same `id` and shared configuration in one SharedWorker reuse one physical connection, while each page keeps its own callbacks and lifecycle. It is framework agnostic, includes TypeScript types, and has no third-party runtime dependencies.
 
-- 降低连接数：同一个 SharedWorker 实例内，相同 `id` 和共享配置最多拥有一个物理 WebSocket。
-- 保持页面隔离：每个页面获得稳定的 `WebSocketClient` 实例，可动态注册普通或按帧选择接收者的 `onMessage` 处理器。
-- 零配置可用：默认使用内联 SharedWorker；不需要单独部署 Worker 文件。
-- 可控的降级：SharedWorker 构造或初始化失败时，可选择当前页面的 direct WebSocket 或直接报错。
-- 覆盖常见连接能力：重连前 hook、队列与背压、JSON/自定义协议、应用层心跳、诊断、生命周期回放。
-- 明确交付边界：`sendMessage()` 成功表示本地已接纳或入队，不表示服务端已收到；库不提供 RPC 或内建服务端 Ack 服务；应用可在 Worker 自定义协议回复。
+**SocketFuse is in beta and upgrades may include breaking changes.** Install the npm `beta` tag and check the [changelog](packages/socketfuse/CHANGELOG.md) before upgrading. Repository documentation follows main. Chinese documentation is the source of truth; this README is maintained alongside it.
 
-## 运行模型
+## Features
 
-```mermaid
-flowchart LR
-  A[同源标签页 A\nWebSocketClient] --> W[SharedWorker\n连接所有权与事件派发]
-  B[同源标签页 B\nWebSocketClient] --> W
-  C[同源标签页 C\nWebSocketClient] --> W
-  W --> S[一个物理 WebSocket]
-  S <--> R[WebSocket 服务端]
-```
+- **Shared connections**: reuse the socket, heartbeat, send queue, and reconnect budget across tabs; reject conflicting configurations.
+- **Inline Worker by default**: no separate Worker deployment required; use a static same-origin Worker for CSP requirements and custom protocols.
+- **Connection-level protocol handling**: define application receipts, control-frame filtering, and business projections in the Worker, once per physical frame.
+- **Bounded resources**: limits for send queues, port delivery, pending operations, and lifecycle replay.
+- **Per-page dispatch**: ordinary handlers run in each page; `dispatchKey` selects one recipient for a frame.
+- **Explicit fallback**: an inline Worker initialization failure can select page-local direct transport; network failures never switch an established transport.
 
-共享身份由 `id` 与共享连接配置共同决定。完整 URL 是一次连接尝试的输入，不参与共享 fingerprint：后来页面以
-相同 `id` 和共享配置加入时，其 URL 不冲突、也不会覆盖存量连接。协议、重连、心跳等共享配置仍必须一致。
-`id` 只用于连接复用，不是授权边界；认证仍应由服务端和应用协议负责。
-
-## 快速开始
-
-安装已发布的公开包：
+## Installation
 
 ```sh
-pnpm add socketfuse
+pnpm add socketfuse@beta
 ```
 
-在浏览器页面中创建并打开连接：
+You can also use `npm install socketfuse@beta` or `yarn add socketfuse@beta`.
+
+## Quick start
+
+Create a client in a browser page. This example uses JSON and explicitly controls the first connection:
 
 ```ts
 import { createWebSocket } from 'socketfuse'
 
-const ws = createWebSocket('wss://api.example.com/realtime', {
-  id: 'realtime:user-42',
-  onMessage: (_client, event) => {
-    console.log('message', event.data, { replayed: event.replayed })
-  },
-})
-
-await ws.open()
-
-const receipt = await ws.sendMessage(JSON.stringify({
-  type: 'presence',
-  online: true,
-}))
-
-console.log(receipt.status) // accepted 或 queued
-```
-
-原始模式只接受原生 WebSocket 数据：`string`、`Blob`、`ArrayBuffer` 或类型化数组视图。发送 JSON 对象时，显式
-选择 JSON 协议：
-
-```ts
 const ws = createWebSocket('wss://api.example.com/events', {
   id: 'events:user-42',
   protocol: { type: 'json' },
+  immediate: false,
+  onError: (_client, error) => console.error(error.code),
+})
+
+const unsubscribe = ws.onMessage((event) => {
+  console.log(event.data, { replayed: event.replayed })
 })
 
 await ws.open()
-await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
+const receipt = await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
+console.log(receipt.status) // accepted or queued
+
+// Release registrations and resources when this page no longer needs the client.
+unsubscribe()
+await ws.dispose()
 ```
 
-完整配置、事件、错误语义和协议示例见[文档站](packages/docs/site/index.md)。
+Replace the example URL with your WebSocket server. Use the same `id`, shared configuration, and Worker deployment in another same-origin tab to join the existing connection. Your server defines the subscription message used in this example.
 
-## API 概览
+Omitting `protocol` selects raw mode, which accepts strings, Blobs, ArrayBuffers, and typed-array views. `immediate` defaults to `true`; set it to `false` to register callbacks and reconnect hooks before calling `open()`. `close()` ends this page's participation and allows another `open()`; `dispose()` permanently releases the client.
 
-| 入口 | 用途 |
+A successful `sendMessage()` means local acceptance or queueing, not server delivery. If the send confirmation is lost, `SEND_OUTCOME_UNKNOWN` does not prove that the message was never sent.
+
+## Sharing and protocol boundaries
+
+```mermaid
+flowchart LR
+  A[Tab A] --> W[SharedWorker]
+  B[Tab B] --> W
+  C[Tab C] --> W
+  W <-->|One physical WebSocket| S[Application server]
+```
+
+Sharing is scoped to one SharedWorker instance, including its origin, Worker URL, name, and browser partition. `id` identifies a shared connection; it is not an authorization credential. Incompatible protocol, reconnect, or resource settings for the same `id` fail with `CONNECTION_CONFIG_CONFLICT`.
+
+The initial URL is not part of the shared identity. A joining page's URL does not replace an existing endpoint; use a reconnect preparation hook to update it. Authentication, application readiness, cursors, and idempotency belong to your application protocol.
+
+| Capability | Contract |
 | --- | --- |
-| `socketfuse` | `createWebSocket`、client、配置、状态、事件和错误类型。 |
-| `socketfuse/protocol` | `rawProtocol` 与自定义 `ProtocolAdapter` 契约。 |
-| `socketfuse/worker` | 自定义 SharedWorker 部署所需的 runtime 创建与暴露函数。 |
+| Reconnection | Page requests, Worker requests, and automatic recovery share `reconnect.maxRetries`; `countAsRetry: false` exempts one attempt without resetting the budget. |
+| Worker extensions | Synchronous `onFrame` can consume, reply, project data, and request reconnection; the Worker never waits for page handlers. |
+| `dispatchKey` | Selects at most one recipient per frame and key; it does not guarantee mutual exclusion of asynchronous side effects or run for replayed messages. |
+| Replay | Opt-in, bounded, per-page storage of in-memory business projections; it cannot recover history after a Worker restart. |
+| Direct transport | Uses the same runtime and resource limits, with sharing restricted to the current page realm. |
+| Custom Worker | Initialization failures are explicit errors; direct fallback cannot discard custom protocol behavior. |
 
-`createWebSocket(url, options)` 返回一个稳定的 `WebSocketClient`。常用成员包括：
+## Browser support and deployment
 
-- `open()` / `close()` / `dispose()`：参与、离开或永久释放当前页面的逻辑 client。
-- `sendMessage(data)`：提交消息并获得本地接纳回执。
-- `onMessage(handler, { dispatchKey })`：可选声明跨标签页 dispatch key；所有页面仍收到消息，只有 holder 调用 keyed handler。
-- `isDispatchOwner()` / `dispatchownerchange`：观察最近确认的分派资格，不作为副作用互斥锁。
-- `onBeforeReconnect(handler)`：由一个健康页面为断线、超时或显式重连计划原子覆盖 URL 与 delay。
-- `diagnostics()`：读取不包含 payload、token、查询参数和内部异常详情的运行指标。
+All three public entry points are safe to import in SSR or Node. Creating a client requires a browser page. SharedWorker availability, page freezing, and storage partitioning vary by browser; CI runs Chromium, Firefox, and WebKit.
 
-共享预算使用 `reconnect.maxRetries`，所有重连来源统一预留和扣数；`reconnect({ countAsRetry: false })` 只豁免本次。Worker 扩展支持自定义心跳和业务收到标志，参见 [Worker 共享处理](packages/docs/site/guide/worker-extensions.md)。
+The default inline Worker uses a `data:` URL. If your CSP disallows it, deploy a static same-origin Worker and check your WebSocket server's Origin and authentication policy. See [fallback and Worker deployment](packages/docs/site/guide/fallback-and-worker.md) and [compatibility and security](packages/docs/site/reference/compatibility-and-security.md) (Chinese).
 
-签名与完整行为以 [API 参考](packages/docs/site/api/index.md)为准。
+## Documentation
 
-## 能力与边界
+Product guides and API comments are maintained in Chinese. Follow the contributing guide to run the documentation site locally.
 
-| 范围 | 行为 |
+| Guide | Contents |
 | --- | --- |
-| Worker 降级 | 仅在 SharedWorker API 不可用、构造、加载或初始化握手失败时按 `fallback` 降级。已选 transport 的网络或恢复失败不会静默切换。 |
-| 统一 runtime | direct 和 shared 共用真实端口协议、克隆、投递和额度；direct 共享范围限当前 realm。 |
-| 生命周期 | `lifecycle.restore` 默认关闭。启用后可在页面隐藏/冻结期间有限缓存消息，并在恢复时以 `replayed: true` 派发。它不是持久化消息恢复。 |
-| 单接收者分派 | SharedWorker 按 visible 优先、同级 FIFO 仲裁 dispatch key；freeze、端口离开或 lease 失效会交接。direct 在当前 realm 的同一连接内使用相同分派规则，不跨标签页共享。 |
-| 动态 endpoint | 初始化只接受固定字符串。业务 getter 在 `onBeforeReconnect` 中运行，并用 `setOptions({ url })` 提交本次计划。 |
-| 协议 | 支持 raw、声明式 JSON 与自定义 adapter。自定义 adapter 需在自定义 Worker 中静态注册，不能通过 `MessagePort` 传递函数。 |
-| 队列与背压 | 默认不离线缓存。显式开启后，消息仍受数量与字节上限限制；溢出会有明确错误或事件，而不会无限占用内存。 |
-| SSR | 三个公开入口可在 Node/SSR 中安全 import；实际创建 client 必须在浏览器页面 realm。 |
-| 安全 | 诊断、logger 与 Worker 控制响应不会暴露认证值、URL 查询参数、业务 payload 或内部异常文本。 |
-| 应用协议 | Worker 扩展可按物理帧消费、回复和投影业务消息，并请求计数或不计数重连；credential、业务 ready、cursor 和幂等由应用维护，不保证可靠投递。 |
+| [Getting started](packages/docs/site/guide/getting-started.md) | Installation, connection, sending, and cleanup |
+| [Connection sharing](packages/docs/site/guide/connection-sharing.md) | Shared identity, conflicts, and page dispatch |
+| [Reliability](packages/docs/site/guide/reliability.md) | Reconnect budgets, queues, backpressure, and heartbeat |
+| [Worker extensions](packages/docs/site/guide/worker-extensions.md) | Application receipts, projections, and connection preparation |
+| [Lifecycle and replay](packages/docs/site/guide/lifecycle-and-replay.md) | Page suspension, recovery, and message boundaries |
+| [Configuration](packages/docs/site/reference/configuration.md) | Scopes, defaults, and resource limits |
+| [API reference](packages/docs/site/api/index.md) | Full types for all three entry points in the generated documentation site |
 
-浏览器兼容性与 CSP/自定义 Worker 部署要求见[兼容性与安全](packages/docs/site/reference/compatibility-and-security.md)。
+The public entry points are `socketfuse`, `socketfuse/protocol`, and `socketfuse/worker`. Applications should not import internal workspaces.
 
-## 文档与仓库导航
+## Contributing
 
-- [使用指南](packages/docs/site/guide/index.md)：连接共享、可靠性、生命周期恢复与 Worker 降级。
-- [协议指南](packages/docs/site/protocols/index.md)：raw、JSON 与自定义 adapter。
-- [配置参考](packages/docs/site/reference/configuration.md)：连接、队列、背压、重连和生命周期选项。
-- [API 参考](packages/docs/site/api/index.md)：从 TypeDoc 生成的公开签名与说明。
-- [演练场](packages/docs/site/playground.md)：在本地测试共享连接、降级、回放和二进制消息。
-- [SocketFuse 更名规格](docs/specs/socketfuse-renaming-spec.md)：包名、入口和外部平台的迁移边界。
+Bug reports with minimal reproductions, documentation improvements, and feature proposals with clear use cases are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) (Chinese) for development setup, checks, and PR guidelines, and [AGENTS.md](AGENTS.md) for implementation conventions.
 
-## 本地开发
+[Report an issue](https://github.com/wh1teAlter/socketfuse/issues) · [Changelog](packages/socketfuse/CHANGELOG.md)
 
-本仓库使用 pnpm workspace 管理。建议使用 Node `^22.18.0 || >=24.11.0` 与锁定的 pnpm `10.34.5`。
-
-```sh
-pnpm install
-pnpm dev                 # 启动文档站与内嵌演练场
-pnpm playground:server   # 启动本地 WebSocket 测试服务
-```
-
-常用验证命令：
-
-```sh
-pnpm check:static   # ESLint 与全仓 typecheck
-pnpm check:runtime  # 单测、构建、文档与发布 tarball 验收
-pnpm test:e2e       # Chromium、Firefox、WebKit
-pnpm check          # static + runtime
-```
-
-不要并行运行 `pnpm check` 与 `pnpm test:e2e`：两者都构建 `packages/socketfuse/dist`，本地同时执行会干扰
-Playground 的开发服务器。
-
-仓库实现边界、中文注释约定和模块依赖方向以 [AGENTS.md](AGENTS.md) 为唯一来源。私有运行时、
-文档与测试工程分别见 [@socketfuse/core](packages/core/README.md)、[文档 workspace](packages/docs/README.md) 和
-[测试 workspace](packages/test/README.md)。
-
-## 贡献与发布
-
-面向使用者的 `socketfuse` 改动需要随业务 PR 提交 Changeset。Changeset 合并后，release workflow 会创建
-`chore(release): version socketfuse` Version Packages PR；该 PR 通过发布包验收并合并后，受保护的 GitHub `npm`
-Environment 才会通过 npm Trusted Publishing/OIDC 发布 `socketfuse`。
-
-仓库不保存长期 npm token，也不支持本地或递归发布。贡献要求、required check、GitHub App、npm Trusted Publisher
-和首次发布配置见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-## 许可证
+## License
 
 [MIT](packages/socketfuse/LICENSE)

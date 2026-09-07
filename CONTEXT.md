@@ -1,6 +1,6 @@
 # SocketFuse 领域词汇
 
-SocketFuse 在同源浏览器页面之间共享物理 WebSocket，同时保留页面本地的处理器与生命周期。以下词汇区分共享身份、连接尝试、页面参与、消息分派与应用协议状态；本次调整采用[运行时重设计方案](docs/specs/runtime-correctness-redesign.md)的目标语言。
+SocketFuse 在同源浏览器页面之间共享物理 WebSocket，同时保留页面本地的处理器与生命周期。以下词汇统一共享身份、连接尝试、页面参与、消息分派与应用协议状态的含义。
 
 ## Language
 

@@ -2,35 +2,48 @@
 
 ## 默认内联 Worker
 
-默认情况下，SocketFuse 会创建一个构建产出的内联 SharedWorker，由它持有 socket。这是零配置方案，
-适用于应用 CSP 允许 `data:` Worker 源码的场景。
+默认情况下，SocketFuse 使用稳定 `data:` URL 创建内联 SharedWorker。相同构建产物无需单独部署 Worker 文件；浏览器和 CSP 必须允许该部署方式。库不创建 Blob URL，也不从 CDN 加载 Worker 源码。
 
-`fallback: 'direct'` 是默认值。仅在 SharedWorker 支持、构造、加载或初始化失败时，它才会
-使用直接的页面本地 WebSocket。网络、认证、心跳或服务端关闭失败不会切换到其他 transport。
-不合法的 Worker 控制响应是错误，而非静默降级的理由。选定 SharedWorker 后，生命周期恢复
-只会重建该共享 transport，绝不会改为 direct。
+内联模式默认 `fallback: 'direct'`。只有 SharedWorker API 不可用、构造、加载或初始化超时时才允许选择页面内 direct。网络故障、心跳超时、服务端关闭和无效控制响应都不会使已选 transport 改为另一种接入。
 
-需要严格的单连接策略时，请设为 `fallback: 'error'`：
+必须依赖跨页面共享时，显式禁用降级：
 
 ```ts
-const ws = createWebSocket(url, { fallback: 'error', id: 'critical-feed' })
-```
+import { createWebSocket } from 'socketfuse'
 
-## 自定义 Worker
-
-CSP 禁止 `data:`、需要自定义协议适配器或部署策略要求静态资源时，请使用稳定的同源 Worker URL。
-
-```ts
-const ws = createWebSocket(url, {
-  id: 'events',
-  worker: () => new SharedWorker('/assets/socketfuse-worker.js'),
+const ws = createWebSocket('wss://api.example.com/events', {
+  id: 'critical-feed',
+  fallback: 'error',
 })
 ```
 
-自定义 Worker 只允许 fallback:error（默认）；显式 fallback:direct 在创建时拒绝。这样 Worker 初始化失败不会丢失应用协议。hello/welcome 只检查能力，选择提交后 attach 才建立连接需求；后续失败不能改为 direct。
+direct 共用相同 runtime 和资源限制，但共享范围仅限当前页面 realm；页面主线程阻塞也会影响其运行。选定 shared 后，生命周期恢复使用新的端口参与期重建 shared，不会转成 direct。
 
-该 Worker 必须调用 `exposeSharedWebSocketWorker()`。所有需要共享的 SPA 必须使用完全一致的
-Worker URL 和 origin。SocketFuse 不会创建 Blob URL，也不会从 CDN 加载 Worker 源码。
+## 自定义 Worker
 
-有关 CSP、cookie、SameSite 和 `Origin: null` 的影响，请参阅
-[兼容性与安全](../reference/compatibility-and-security)。
+CSP 禁止 `data:`、需要自定义协议或部署要求静态资源时，提供稳定的同源 Worker URL。以下示例适用于支持 Worker URL 构建的工具：
+
+```ts
+// worker.ts
+import { exposeSharedWebSocketWorker } from 'socketfuse/worker'
+
+exposeSharedWebSocketWorker()
+```
+
+```ts
+// page.ts
+import { createWebSocket } from 'socketfuse'
+
+const ws = createWebSocket('wss://api.example.com/events', {
+  id: 'events',
+  worker: () => new SharedWorker(new URL('./worker.ts', import.meta.url), { type: 'module' }),
+})
+```
+
+Worker 文件应由应用构建和部署。所有需要共享的页面使用一致的 Worker URL、名称和浏览器分区；部署后应避免同时存活的页面意外引用不同 Worker 资源。
+
+自定义 Worker 的 fallback 默认且只能为 `'error'`。显式 `'direct'` 在创建时拒绝，初始化失败也不会丢弃自定义协议逻辑后继续运行。需要注册协议和收到标志时，参阅 [Worker 共享处理](./worker-extensions)。
+
+## CSP 与服务端
+
+检查 CSP 的 Worker 源和连接目标是否允许实际部署地址。Worker 发出的 WebSocket 握手可能涉及不同的 Origin 表现，cookie 与 SameSite 也由浏览器策略决定。应针对目标环境验证服务端 origin 白名单与认证；不要放宽认证来掩盖部署问题。详见[兼容性与安全](../reference/compatibility-and-security)。

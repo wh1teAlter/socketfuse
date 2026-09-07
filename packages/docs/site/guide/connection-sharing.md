@@ -28,7 +28,7 @@ ws.onBeforeReconnect(async (context) => {
 })
 ```
 
-一次重连计划只接受 Worker 选中页面的原子提交；URL query 与应用 payload 不会通过诊断、logger
+Worker 扩展提供 `prepareAttempt` 时，由扩展独占准备；否则 runtime 选择一个候选页面的 `onBeforeReconnect`。同一计划只接受当前准备者的原子提交。URL query 与应用 payload 不会通过诊断、logger
 或控制响应暴露。应用如需在 open 后认证，应使用普通 `sendMessage()` 并自行维护业务就绪状态。
 
 ## handler dispatch key

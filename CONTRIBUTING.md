@@ -1,65 +1,146 @@
-# 贡献指南
+# 参与贡献
 
-## 环境与常用命令
+欢迎通过问题复现、文档改进、测试和代码贡献帮助完善 SocketFuse。项目文档以中文维护；英文项目介绍见 [README.md](README.md)，中文介绍见 [README.zh-CN.md](README.zh-CN.md)。
 
-使用 Node `^22.18.0 || >=24.11.0` 与仓库声明的 pnpm 10.34.5。
+- [报告问题与提出建议](#报告问题与提出建议)
+- [搭建开发环境](#搭建开发环境)
+- [仓库结构](#仓库结构)
+- [开发与验证](#开发与验证)
+- [文档维护](#文档维护)
+- [Changeset 与版本](#changeset-与版本)
+- [提交 Pull Request](#提交-pull-request)
+
+## 报告问题与提出建议
+
+先搜索[已有 issue](https://github.com/wh1teAlter/socketfuse/issues)，确认是否已有复现或讨论。提交问题时请包含：
+
+- 使用的 SocketFuse 版本、浏览器及版本、构建工具。
+- 最小复现仓库或可独立运行的示例，以及预期行为与实际行为。
+- 标签页数量、`transport`、Worker 部署方式及相关共享配置。
+- 若涉及恢复、背压或回放，给出连接、隐藏、冻结、断开与重开的准确顺序。
+
+请使用测试凭据和脱敏数据，不要把 token、带认证信息的 URL 或生产 payload 放入公开 issue。
+
+小范围修复和文档改进可直接提交 PR。新增公开 API、调整模块职责或改变运行时语义时，请先通过 issue 说明场景、方案和需要保持的不变量。重构应解释现有复用能力为何不足，并与对应修复或功能关联。范围与依赖约定见 [AGENTS.md](AGENTS.md)，术语见 [CONTEXT.md](CONTEXT.md)。
+
+## 搭建开发环境
+
+需要 Git、Node.js `^22.18.0 || >=24.11.0` 和 pnpm `10.34.5`；版本要求以根 [package.json](package.json) 为准。使用 pnpm workspace 安装依赖。
+
+Fork 仓库并克隆自己的副本，然后在仓库根目录执行：
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
+pnpm build
+pnpm --filter @socketfuse/test exec playwright install chromium firefox webkit
+```
+
+首次构建会生成公开包、内联 Worker 和 API 文档。Linux 上若缺少浏览器系统依赖，可使用 Playwright 的 `install --with-deps`。
+
+在两个终端分别启动文档站和本地 WebSocket 服务：
+
+```sh
+# 终端一：http://127.0.0.1:4173
 pnpm dev
+```
+
+```sh
+# 终端二：ws://127.0.0.1:8787/socket
 pnpm playground:server
 ```
 
-`pnpm check` 运行 lint、类型检查、单元测试、构建、文档构建与发布包验收；`pnpm test:e2e` 单独运行
-Chromium、Firefox、WebKit 的浏览器测试。提交 hook 只执行全仓类型检查和暂存文件 ESLint 修复，不能替代 CI。
+访问 `http://127.0.0.1:4173/playground`，在两个同源标签页使用相同连接配置观察共享行为。修改 core 或公开包后，需要重新构建它们再验证演练场；文档开发服务器不会代替库构建。
 
-## Changeset
+## 仓库结构
 
-改动公开 API、运行时行为、兼容性、错误语义或 npm 包内容时，在业务 PR 中运行：
+| 路径 | 职责 |
+| --- | --- |
+| [packages/socketfuse](packages/socketfuse/README.md) | 唯一公开 npm 包、三个入口和内联 Worker 产物 |
+| [packages/core](packages/core/README.md) | 私有连接引擎、runtime、transport 和页面 client |
+| [packages/docs](packages/docs/README.md) | 中文 VitePress 文档、生成 API 和内嵌演练场 |
+| [packages/test](packages/test/README.md) | 三浏览器 E2E、本地 ws 服务和发布包验收 |
+| [.changeset](.changeset/README.md) | 待消费变更说明及 beta 已消费条目 |
+| [.github/workflows](.github/workflows/README.md) | PR 验证、版本 PR 和受保护发布流程 |
+
+应用示例只依赖 `socketfuse`、`socketfuse/protocol`、`socketfuse/worker`。不要把局部开发依赖提升到根；`ws` 及其类型仅放在 `packages/test`。
+
+## 开发与验证
+
+源码使用 TypeScript，测试使用 Vitest 与 Playwright，格式与静态检查使用 ESLint。中文文件头、TSDoc、所有权说明和模块 README 要求以 [AGENTS.md](AGENTS.md) 为准。
+
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm lint` | 只读 ESLint 检查 |
+| `pnpm lint:fix` | 显式自动修复格式与可修复规则 |
+| `pnpm typecheck` | 全 workspace 类型检查 |
+| `pnpm test` / `pnpm test:watch` | 单元测试 / 监听模式 |
+| `pnpm build` | 构建 core、公开包与文档站 |
+| `pnpm docs:check` | 生成 API 并构建文档，检查站内链接 |
+| `pnpm release:verify` | 独立打包后验收实际 tarball |
+| `pnpm test:e2e` | Chromium、Firefox、WebKit 浏览器验证 |
+
+开发中可运行相关用例，例如：
+
+```sh
+pnpm --filter @socketfuse/core test src/connection/reconnect.test.ts
+```
+
+修复运行时缺陷时，优先加入能复现原问题的回归测试；验证公开行为、状态和资源释放。shared/direct 共用的行为应覆盖两种接入，浏览器生命周期行为还应通过 E2E 验证。
+
+涉及公开包、运行时、文档或目录的变更，提交前按以下顺序**串行**执行：
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm docs:check
+pnpm release:verify
+pnpm test:e2e
+git diff --check
+```
+
+`pnpm check` 包含前六项，之后仍需执行 E2E 和 diff 检查。不要同时运行多个构建或验收命令，它们会操作相同的 `dist`。E2E 会启动或复用 4173/8787 服务，运行前确认这些端口上的服务属于当前工作树。
+
+`pnpm install` 会安装 Husky hook。提交时执行全仓 typecheck，并由 lint-staged 对暂存源码和 JSON 执行 ESLint 修复；hook 不运行完整测试，也不验证提交消息格式。详见 [.husky/README.md](.husky/README.md)。
+
+## 文档维护
+
+- 根 `README.md` 为默认英文入口，`README.zh-CN.md` 为中文版本。涉及功能、示例和边界时先校准中文，再同步英文。
+- 产品指南、模块 README、CONTRIBUTING 和源码注释以中文为准。公开 npm 包的英文 README 链接到仓库中文说明。
+- README 介绍价值、安装和最小示例；详细配置进入文档站，贡献步骤放在本文，发布账户配置放在 workflow README。
+- 示例使用当前公开 API。涉及旧版兼容时说明版本边界，不把 main 的新契约描述为所有已发布版本的行为。
+- TypeDoc 的 `site/api/generated/` 由构建生成；修改源码 TSDoc，不手工编辑生成 Markdown。
+- 移动或删除文档时同步检查所有引用，保持语言切换与相对路径有效。
+
+## Changeset 与版本
+
+修改公开行为、API、兼容性、依赖或发布内容时，为唯一公开包 `socketfuse` 添加 Changeset：
 
 ```sh
 pnpm changeset
 pnpm changeset:status
 ```
 
-为 `socketfuse` 选择准确的 major、minor 或 patch，并用面向使用者的中文描述变更。仅文档、测试、CI 和仓库维护
-改动通常不需要 Changeset。不要直接修改 `packages/socketfuse/package.json` 的版本或 `CHANGELOG.md`。`pnpm
-changeset:version` 会修改版本、写入 CHANGELOG 并删除已消费的 Changeset；它只供维护者在隔离 worktree 排查
-版本结果，绝不能在业务工作树运行或提交其结果。
+说明应使用中文，描述用户能观察到的变化；破坏性调整应包含迁移信息。仅文档、测试、CI 和仓库维护变更通常不需要 Changeset。不要在业务 PR 中顺带 bump 版本或修改 CHANGELOG。
 
-## Pull Request 门禁
+当前使用 Changesets 3 的 beta 模式。版本生成后，已消费说明会移到 `.changeset/pre/`；它们用于退出 beta 时生成正式版记录，需要保留并提交。具体文件职责见 [.changeset/README.md](.changeset/README.md)。
 
-普通 PR 的 required check 应配置为 `verify`。它首先执行 ESLint 与全仓 typecheck，然后顺序执行其余质量校验
-和三浏览器 `pnpm test:e2e`，避免同一提交因并行构建争用 `packages/socketfuse/dist`。Changesets 生成的 Version
-Packages PR 也执行 ESLint 与全仓 typecheck，再运行 `pnpm release:verify` 验收最终 tarball，不重复运行浏览器
-测试。本地可用 `HUSKY=0` 跳过 hook，但不能绕过 required check。
+版本管理由维护者负责。常规自动流程创建 Version Packages PR，并在合并后发布已验收 tarball；beta 阶段维护者明确授权的手动版本准备与发布属于单独的发布操作，不改变普通 PR 规则，也不绕过现有 CI 的版本 PR 身份校验。流程与当前限制见 [workflow 文档](.github/workflows/README.md)。
 
-## 版本与发布
+## 提交 Pull Request
 
-Changeset 合并到 main 后，`.github/workflows/release.yml` 使用 Changesets Action 创建或更新
-`chore(release): version socketfuse` PR。维护者需要审核版本级别、`packages/socketfuse/CHANGELOG.md`、发布包元数据以及
-`verify` 结果。版本 PR 合并后，workflow 会校验该 PR 的身份和文件白名单，然后只构建并发布 `packages/socketfuse`；
-不会重复运行已在业务 PR 中通过的浏览器测试。
+以 `main` 为目标分支。PR 标题应简洁描述变化，可采用 `fix:`、`feat:`、`docs:`、`refactor:` 等前缀；这是推荐格式，仓库没有 commitlint。
 
-已发布基线为 `socketfuse@0.1.0-beta.2`，基线时 `beta` 与 `latest` 均指向它。后续 workflow 只移动 `beta`。仓库没有本地
-`release` 脚本；不要手工执行 publish，也不要使用 `pnpm -r publish` 或 `changeset publish`。发布使用 npm CLI 11.5.1 的
-Trusted Publishing 支持与 GitHub OIDC；pnpm 继续负责依赖、workspace 和所有验证命令。仓库 workflow 不保存
-`NPM_TOKEN` 或 `NODE_AUTH_TOKEN`。
+PR 描述请写清具体问题、修改后的行为、验证结果和兼容性影响；有对应 issue 时关联它。尚未完成的工作可以先开 draft PR，准备验收时再转为 ready。
 
-## 发布账户配置
+提交前检查：
 
-以下操作属于 npm/GitHub 账户配置，源码不能自动完成：
+- [ ] 变更聚焦同一目的，未覆盖无关工作树改动。
+- [ ] 缺陷修复或新增行为具有适当的回归证据。
+- [ ] 公开 API、模块 README 与相关中英文说明已同步。
+- [ ] 需要发布说明时已添加 Changeset，版本与 CHANGELOG 未混入业务改动。
+- [ ] 串行检查已完成，PR 如实记录未通过或未运行的项目。
+- [ ] 生成的内联 Worker 与源码一致，未提交 dist、API 生成目录或测试报告。
 
-1. 维护已存在的 npm 包 `socketfuse` 的发布权限，不通过本地命令发布。
-2. 在 npm 包设置中添加 GitHub Actions Trusted Publisher：owner `wh1teAlter`、repository `socketfuse`、workflow
-   `release.yml`、environment `npm`，并允许 `npm publish`。
-3. 创建并安装一个最小权限 GitHub App，授予当前仓库 Contents 与 Pull requests 的读写权限；在仓库 Actions
-   variables 中配置其 App ID 为 `RELEASE_APP_ID`，并在 Actions secrets 中配置私钥为
-   `RELEASE_APP_PRIVATE_KEY`，同时在 Actions variables 中配置该 App slug 为 `RELEASE_APP_SLUG`。Version
-   Packages PR 必须由此 App 创建，才能触发 `verify`；内置 `GITHUB_TOKEN` 创建的 PR 不会触发新的 workflow
-   run。发布 workflow 会校验 PR 标题、专用分支、该 App 身份与文件白名单，拒绝手工版本提交。
-4. 在 GitHub 创建受保护的 `npm` environment，限制 main 并按需要增加人工审核。
-5. 在 main branch protection 中将 `verify` 设置为 required check。
-6. 验证 OIDC 发布成功后，在 npm 启用“要求 2FA 且禁止 token”，撤销不再使用的自动化 token。
-
-`workflow_dispatch` 只运行发布前校验，不会发布，也不能绕过 Version Packages PR。
+当前非 draft PR 的检查 job 为 `verify`。普通 PR 执行完整质量检查和 E2E；符合 App 身份的版本 PR 执行静态与发布包验收。分支保护应要求该检查通过。贡献代码按项目 [MIT 许可证](packages/socketfuse/LICENSE) 发布。
