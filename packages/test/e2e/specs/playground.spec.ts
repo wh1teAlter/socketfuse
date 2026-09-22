@@ -284,6 +284,37 @@ test('uses direct only for a Worker construction failure when fallback allows it
   await expect(page.locator('#transport')).toHaveText('pending')
 })
 
+test('degrades to direct from the playground when the platform lacks SharedWorker', async ({ page, request }) => {
+  const testNamespace = namespace('unsupported')
+  await page.goto('http://127.0.0.1:4173/playground')
+  await page.getByLabel('URL').fill(socketUrl(testNamespace))
+  await page.getByLabel('连接 id').fill(`unsupported-error-${testNamespace}`)
+  await page.getByLabel('模拟平台不支持 SharedWorker（按策略降级）').check()
+
+  // 同一模拟能力先证明 error 策略拒绝降级，再证明 direct 策略接受它。
+  await page.getByLabel('降级策略').selectOption('error')
+  await page.getByRole('button', { name: '连接', exact: true }).click()
+  await expect(page.locator('#error')).toContainText('WORKER_UNSUPPORTED')
+  await expect(page.locator('#transport')).toHaveText('pending')
+  expect((await stats(request, testNamespace)).totalConnections).toBe(0)
+
+  await page.getByLabel('连接 id').fill(`unsupported-direct-${testNamespace}`)
+  await page.getByLabel('降级策略').selectOption('direct')
+  await page.getByRole('button', { name: '连接', exact: true }).click()
+  await expect(page.locator('#transport')).toHaveText('direct')
+  await expect(page.locator('#status')).toHaveText('OPEN')
+  await broadcast(request, testNamespace, 'direct-after-degrade')
+  await expect(page.locator('#messages')).toContainText('direct-after-degrade')
+
+  // 还原平台能力后，未勾选模拟的新连接重新使用 shared，证明降级只由初始化失败触发。
+  await page.getByRole('button', { name: '断开连接', exact: true }).click()
+  await page.getByLabel('模拟平台不支持 SharedWorker（按策略降级）').uncheck()
+  await page.getByLabel('连接 id').fill(`unsupported-restored-${testNamespace}`)
+  await page.getByRole('button', { name: '连接', exact: true }).click()
+  await expect(page.locator('#transport')).toHaveText('shared-worker')
+  await expect(page.locator('#status')).toHaveText('OPEN')
+})
+
 test('shares one physical WebSocket across three and twenty tabs', async ({ browser, request }) => {
   test.slow()
   const testNamespace = namespace('tab-matrix')

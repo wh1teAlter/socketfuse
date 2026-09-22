@@ -65,6 +65,23 @@ function physicalConnectionCount(physicalState: ConnectionState): '0' | '1' {
   return physicalState === 'open' ? '1' : '0'
 }
 
+/**
+ * 暂时移除平台 `SharedWorker`，使内联部署在下一次 open 报告 `WORKER_UNSUPPORTED`。
+ *
+ * 降级只对内联部署生效，而传入 `worker` 工厂会切换为自定义部署并被配置校验拒绝，
+ * 因此演示主动降级只能改变平台能力本身。恢复后已提交 direct 的 client 不再重新选择。
+ *
+ * @returns 还原原始属性描述符的函数；必须在本次 open 结算后调用。
+ */
+function stubSharedWorkerUnsupported(): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'SharedWorker')
+  Reflect.deleteProperty(window, 'SharedWorker')
+  return () => {
+    if (descriptor !== undefined)
+      Object.defineProperty(window, 'SharedWorker', descriptor)
+  }
+}
+
 /** 创建 playground 页面使用的连接状态、操作和测试钩子。 */
 export function usePlaygroundConnection() {
   const client = shallowRef<PlaygroundClient>()
@@ -84,6 +101,8 @@ export function usePlaygroundConnection() {
   const replayWhileHidden = shallowRef(false)
   /** 当前 SharedWorker 物理连接附着的逻辑页面 client 数量。 */
   const sharedClients = shallowRef('-')
+  /** 是否让内联部署在下一次 open 遇到平台不可用，从而按当前策略降级。 */
+  const simulateWorkerUnsupported = shallowRef(false)
   const simulateWorkerFailure = shallowRef(false)
   const status = shallowRef('CLOSED')
   const transport = shallowRef('pending')
@@ -178,7 +197,11 @@ export function usePlaygroundConnection() {
     reconnectHookCount.value = 0
     refreshMetrics()
 
+    /** 只在本次 open 期间生效的平台能力还原函数；内联 Worker 在 open 才被构造。 */
+    let restoreSharedWorker: (() => void) | undefined
     try {
+      if (simulateWorkerUnsupported.value)
+        restoreSharedWorker = stubSharedWorkerUnsupported()
       const parameters = new URLSearchParams(window.location.search)
       const useRestartableWorker = parameters.has('e2eWorkerRestart')
       /** 只供跨浏览器验收缩短应用层 heartbeat 周期。 */
@@ -236,6 +259,9 @@ export function usePlaygroundConnection() {
       error.value = formatError(value)
       isConnected.value = false
       clearMetrics()
+    }
+    finally {
+      restoreSharedWorker?.()
     }
   }
 
@@ -316,6 +342,7 @@ export function usePlaygroundConnection() {
     sendMessage,
     sharedClients,
     simulateWorkerFailure,
+    simulateWorkerUnsupported,
     status,
     terminateWorkerForE2E,
     transport,

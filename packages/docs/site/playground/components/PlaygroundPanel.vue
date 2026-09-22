@@ -29,6 +29,7 @@ const {
   sendMessage,
   sharedClients,
   simulateWorkerFailure,
+  simulateWorkerUnsupported,
   status,
   transport,
   url,
@@ -43,6 +44,7 @@ const {
       :is-connected="isConnected"
       :replay-while-hidden="replayWhileHidden"
       :simulate-worker-failure="simulateWorkerFailure"
+      :simulate-worker-unsupported="simulateWorkerUnsupported"
       :url="url"
       @connect="connect"
       @disconnect="disconnect"
@@ -53,6 +55,7 @@ const {
       @update:fallback="fallback = $event"
       @update:replay-while-hidden="replayWhileHidden = $event"
       @update:simulate-worker-failure="simulateWorkerFailure = $event"
+      @update:simulate-worker-unsupported="simulateWorkerUnsupported = $event"
       @update:url="url = $event"
     />
 

@@ -14,6 +14,7 @@ const props = defineProps<{
   isConnected: boolean
   replayWhileHidden: boolean
   simulateWorkerFailure: boolean
+  simulateWorkerUnsupported: boolean
   url: string
 }>()
 
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   'update:fallback': [value: 'direct' | 'error']
   'update:replayWhileHidden': [value: boolean]
   'update:simulateWorkerFailure': [value: boolean]
+  'update:simulateWorkerUnsupported': [value: boolean]
   'update:url': [value: string]
 }>()
 
@@ -106,10 +108,20 @@ function send(): void {
         <label class="playground-toggle">
           <input
             :checked="props.simulateWorkerFailure"
+            :disabled="props.simulateWorkerUnsupported"
             type="checkbox"
             @change="emit('update:simulateWorkerFailure', ($event.target as HTMLInputElement).checked)"
           >
           <span>模拟自定义 Worker 失败（不降级）</span>
+        </label>
+        <label class="playground-toggle">
+          <input
+            :checked="props.simulateWorkerUnsupported"
+            :disabled="props.simulateWorkerFailure"
+            type="checkbox"
+            @change="emit('update:simulateWorkerUnsupported', ($event.target as HTMLInputElement).checked)"
+          >
+          <span>模拟平台不支持 SharedWorker（按策略降级）</span>
         </label>
       </div>
       <div class="playground-toolbar-actions">

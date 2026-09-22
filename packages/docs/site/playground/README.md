@@ -4,6 +4,8 @@
 
 组件采用 props down / events up；composable 是唯一持有 `WebSocketClient` 的位置。指标中“物理连接数”由当前页面观测到的 `physicalState` 映射为 `0` 或 `1`，“共享页面数”来自 Worker 的 `attachedClientCount`。后者跨 `MessagePort` 异步返回，因此仅在页面参与连接期间由 composable 低频刷新；页面断开后必须停止刷新，避免展示过期的共享快照。
 
+两个降级开关方向相反，因此互斥：“模拟自定义 Worker 失败”提供抛错的 `worker` 工厂，验证自定义部署不因初始化失败丢弃协议逻辑；“模拟平台不支持 SharedWorker”只在本次 open 期间移除平台 `SharedWorker`，让内联部署按当前策略降级或报错。后者必须改变平台能力而不能传入 `worker` 工厂——传入即转为自定义部署，而自定义部署不接受 `fallback: 'direct'`。还原发生在 open 结算之后，已提交 direct 的 client 不会重新选择接入。
+
 页面同时注册普通 handler 与 `playground:single-execution` keyed handler：所有标签页的消息列表都会更新，但界面上的“独占执行数”仅统计该页被选中后的回调次数，含义是单接收者分派，不保证跨页面异步副作用互斥。`onBeforeReconnect` 会重新读取 URL 输入并用零延迟提交当前计划，方便直接观察 endpoint 刷新和 hook 次数。
 
 此页面仅展示公开 API，不能成为独立 package 或生产 Worker 模板。
