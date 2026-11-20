@@ -135,12 +135,13 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - uses: changesets/action@v1
+      # v2 起读取 Changesets 3 的 .changeset/pre/ 归档；v1 会把该目录误当作旧格式条目而失败。
+      - uses: changesets/action@v2.1.2
         with:
-          commit: 'chore(release): version socketfuse'
+          commit-message: 'chore(release): version socketfuse'
           github-token: ${{ steps.release-app-token.outputs.token }}
-          title: 'chore(release): version socketfuse'
-          version: pnpm changeset:version
+          pr-title: 'chore(release): version socketfuse'
+          version-script: pnpm changeset:version
 
   preflight:
     if: github.event_name == 'workflow_dispatch'
