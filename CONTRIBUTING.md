@@ -4,6 +4,7 @@
 
 - [报告问题与提出建议](#报告问题与提出建议)
 - [搭建开发环境](#搭建开发环境)
+- [使用 Context 插件辅助开发](#使用-context-插件辅助开发)
 - [仓库结构](#仓库结构)
 - [开发与验证](#开发与验证)
 - [文档维护](#文档维护)
@@ -25,7 +26,7 @@
 
 ## 搭建开发环境
 
-需要 Git、Node.js `^22.18.0 || >=24.11.0` 和 pnpm `10.34.5`；版本要求以根 [package.json](package.json) 为准。使用 pnpm workspace 安装依赖。
+需要 Git、Node.js `^22.18.0 || >=24.11.0` 和 pnpm `10.34.9`；版本要求以根 [package.json](package.json) 为准。使用 pnpm workspace 安装依赖。
 
 Fork 仓库并克隆自己的副本，然后在仓库根目录执行：
 
@@ -51,6 +52,14 @@ pnpm playground:server
 
 访问 `http://127.0.0.1:4173/playground`，在两个同源标签页使用相同连接配置观察共享行为。修改 core 或公开包后，需要重新构建它们再验证演练场；文档开发服务器不会代替库构建。
 
+## 使用 Context 插件辅助开发
+
+在编码助手中启用 [Plugydown Context](https://github.com/wh1teAlter/plugydown) 插件，从仓库根目录开始任务。插件运行时需要 Node.js 24 或以上。项目知识随仓库保存在 [context/](context/)，克隆后即可查询。
+
+例如，修改降级策略前，可以请助手「用 Context 查找 SharedWorker 何时允许降级到 direct，再对照源码定位要改的判断和要跑的测试」。排查握手与连接归属可从[运行时](context/socket-runtime/domain.md)开始，处理构建、测试或发布可从[工程流程](context/engineering/domain.md)开始。术语定义见 [CONTEXT.md](CONTEXT.md)。
+
+当改动影响公开契约、模块职责或长期开发流程时，请助手用 Context 更新对应文档，并在提交前审阅知识文档和插件生成的确认记录。
+
 ## 仓库结构
 
 | 路径 | 职责 |
@@ -59,7 +68,7 @@ pnpm playground:server
 | [packages/core](packages/core/README.md) | 私有连接引擎、runtime、transport 和页面 client |
 | [packages/docs](packages/docs/README.md) | 中文 VitePress 文档、生成 API 和内嵌演练场 |
 | [packages/test](packages/test/README.md) | 三浏览器 E2E、本地 ws 服务和发布包验收 |
-| [.changeset](.changeset/README.md) | 待消费变更说明及 beta 已消费条目 |
+| [.changeset](.changeset/README.md) | 待消费变更说明与预发布归档 |
 | [.github/workflows](.github/workflows/README.md) | PR 验证、版本 PR 和受保护发布流程 |
 
 应用示例只依赖 `socketfuse`、`socketfuse/protocol`、`socketfuse/worker`。不要把局部开发依赖提升到根；`ws` 及其类型仅放在 `packages/test`。
@@ -124,9 +133,7 @@ pnpm changeset:status
 
 说明应使用中文，描述用户能观察到的变化；破坏性调整应包含迁移信息。仅文档、测试、CI 和仓库维护变更通常不需要 Changeset。不要在业务 PR 中顺带 bump 版本或修改 CHANGELOG。
 
-当前使用 Changesets 3 的 beta 模式。版本生成后，已消费说明会移到 `.changeset/pre/`；它们用于退出 beta 时生成正式版记录，需要保留并提交。具体文件职责见 [.changeset/README.md](.changeset/README.md)。
-
-版本管理由维护者负责。常规自动流程创建 Version Packages PR，并在合并后发布已验收 tarball；beta 阶段维护者明确授权的手动版本准备与发布属于单独的发布操作，不改变普通 PR 规则，也不绕过现有 CI 的版本 PR 身份校验。流程与当前限制见 [workflow 文档](.github/workflows/README.md)。
+版本管理使用 Changesets。业务 PR 合并到 main 后，GitHub App 创建或更新 Version Packages PR。维护者审核并合并版本 PR 后，workflow 将已验收的 tarball 发布到 npm 的 `latest` 标签。详见 [Changesets 说明](.changeset/README.md)和[发布流程](.github/workflows/README.md)。
 
 ## 提交 Pull Request
 

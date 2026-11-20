@@ -16,6 +16,8 @@
 
 ## 开发
 
+维护指南或演练场时，用 Plugydown Context 插件定位示例对应的公开契约，并核对三个公开入口。见[运行时知识入口](../../context/socket-runtime/domain.md)。
+
 首次克隆后在根目录安装并构建公开包，详见 [贡献指南](../../CONTRIBUTING.md)。随后可运行：
 
 ```sh

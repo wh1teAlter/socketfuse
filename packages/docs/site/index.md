@@ -29,7 +29,7 @@ features:
 ## 从一个页面开始
 
 ```sh
-pnpm add socketfuse@beta
+pnpm add socketfuse
 ```
 
 ```ts
@@ -48,7 +48,7 @@ await ws.sendMessage({ type: 'subscribe', channel: 'notifications' })
 
 替换为你的服务地址；在另一个同源标签页使用相同 `id`、共享配置和 Worker 部署，即可加入已有连接。应用不再使用 client 时调用 `dispose()`。
 
-项目处于 beta 阶段，升级可能包含破坏性调整。本文档随 main 更新，中文内容为维护基准；已发布版本见 [npm](https://www.npmjs.com/package/socketfuse)，升级说明见 [CHANGELOG](https://github.com/wh1teAlter/socketfuse/blob/main/packages/socketfuse/CHANGELOG.md)。仓库 README 提供 [English](https://github.com/wh1teAlter/socketfuse/blob/main/README.md) 和[简体中文](https://github.com/wh1teAlter/socketfuse/blob/main/README.zh-CN.md)。
+本文档随 main 更新，中文内容为维护基准；已发布版本见 [npm](https://www.npmjs.com/package/socketfuse)，升级说明见 [CHANGELOG](https://github.com/wh1teAlter/socketfuse/blob/main/packages/socketfuse/CHANGELOG.md)。仓库 README 提供 [English](https://github.com/wh1teAlter/socketfuse/blob/main/README.md) 和[简体中文](https://github.com/wh1teAlter/socketfuse/blob/main/README.zh-CN.md)。
 
 ## 按场景阅读
 

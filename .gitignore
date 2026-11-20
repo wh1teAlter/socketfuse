@@ -5,6 +5,7 @@
 .eslintcache
 .husky/_/
 .idea
+/.scratch/
 .temp
 **/.vitepress/cache/
 **/.vitepress/dist/

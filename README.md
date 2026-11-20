@@ -1,6 +1,6 @@
 # SocketFuse
 
-[![npm beta](https://img.shields.io/npm/v/socketfuse/beta?label=npm%20beta)](https://www.npmjs.com/package/socketfuse)
+[![npm](https://img.shields.io/npm/v/socketfuse/latest)](https://www.npmjs.com/package/socketfuse)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](packages/socketfuse/LICENSE)
 
 **English** · [简体中文](README.zh-CN.md)
@@ -9,7 +9,7 @@ Share WebSocket connections across same-origin browser tabs, with SharedWorker a
 
 SocketFuse is for applications that receive live data in multiple tabs, such as notifications, market feeds, and collaboration tools. Clients using the same `id` and shared configuration in one SharedWorker reuse one physical connection, while each page keeps its own callbacks and lifecycle. It is framework agnostic, includes TypeScript types, and has no third-party runtime dependencies.
 
-**SocketFuse is in beta and upgrades may include breaking changes.** Install the npm `beta` tag and check the [changelog](packages/socketfuse/CHANGELOG.md) before upgrading. Repository documentation follows main. Chinese documentation is the source of truth; this README is maintained alongside it.
+Check the [changelog](packages/socketfuse/CHANGELOG.md) before upgrading. Repository documentation follows main. Chinese documentation is the source of truth; this README is maintained alongside it.
 
 ## Features
 
@@ -23,10 +23,10 @@ SocketFuse is for applications that receive live data in multiple tabs, such as 
 ## Installation
 
 ```sh
-pnpm add socketfuse@beta
+pnpm add socketfuse
 ```
 
-You can also use `npm install socketfuse@beta` or `yarn add socketfuse@beta`.
+You can also use `npm install socketfuse` or `yarn add socketfuse`.
 
 ## Quick start
 
@@ -107,6 +107,8 @@ Product guides and API comments are maintained in Chinese. Follow the contributi
 The public entry points are `socketfuse`, `socketfuse/protocol`, and `socketfuse/worker`. Applications should not import internal workspaces.
 
 ## Contributing
+
+We use the Plugydown Context plugin when developing SocketFuse. Ask it to find the repository knowledge for the area you plan to change. See the [contributor workflow](CONTRIBUTING.md#使用-context-插件辅助开发).
 
 Bug reports with minimal reproductions, documentation improvements, and feature proposals with clear use cases are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) (Chinese) for development setup, checks, and PR guidelines, and [AGENTS.md](AGENTS.md) for implementation conventions.
 

@@ -1,0 +1,24 @@
+{
+  "convergence": {
+    "bodyBytes": 5016,
+    "documentCount": 6,
+    "estimatedTokens": 2489,
+    "frontMatterBytes": 2450,
+    "perDomain": {
+      "engineering": {
+        "bodyBytes": 2233,
+        "documentCount": 3,
+        "estimatedTokens": 1086,
+        "frontMatterBytes": 1024
+      },
+      "socket-runtime": {
+        "bodyBytes": 2783,
+        "documentCount": 3,
+        "estimatedTokens": 1403,
+        "frontMatterBytes": 1426
+      }
+    },
+    "source": "init"
+  },
+  "format": 1
+}

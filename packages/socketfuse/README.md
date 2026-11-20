@@ -1,17 +1,17 @@
 # SocketFuse
 
-[![npm beta](https://img.shields.io/npm/v/socketfuse/beta?label=npm%20beta)](https://www.npmjs.com/package/socketfuse)
+[![npm](https://img.shields.io/npm/v/socketfuse/latest)](https://www.npmjs.com/package/socketfuse)
 
 [English](https://github.com/wh1teAlter/socketfuse/blob/main/README.md) · [简体中文](https://github.com/wh1teAlter/socketfuse/blob/main/README.zh-CN.md)
 
 Share one physical WebSocket across same-origin browser tabs using SharedWorker. Each page keeps its own client, callbacks, and lifecycle. Framework agnostic, with TypeScript types and no third-party runtime dependencies.
 
-SocketFuse is in beta; upgrades may include breaking changes. See the [changelog](https://github.com/wh1teAlter/socketfuse/blob/main/packages/socketfuse/CHANGELOG.md). Chinese documentation is the source of truth.
+Before upgrading, check the [changelog](https://github.com/wh1teAlter/socketfuse/blob/main/packages/socketfuse/CHANGELOG.md). Chinese documentation is the source of truth.
 
 ## Install
 
 ```sh
-pnpm add socketfuse@beta
+pnpm add socketfuse
 ```
 
 ## Quick start
@@ -56,6 +56,8 @@ This package bundles the private core implementation; applications should use on
 ## Documentation and contributing
 
 [Project overview](https://github.com/wh1teAlter/socketfuse#readme) · [中文文档](https://github.com/wh1teAlter/socketfuse/blob/main/packages/docs/site/guide/index.md) · [Contributing](https://github.com/wh1teAlter/socketfuse/blob/main/CONTRIBUTING.md) · [Issues](https://github.com/wh1teAlter/socketfuse/issues)
+
+Contributors use the Plugydown Context plugin to look up public API contracts and release checks. See the [contributor workflow](https://github.com/wh1teAlter/socketfuse/blob/main/CONTRIBUTING.md#使用-context-插件辅助开发).
 
 In the repository, `pnpm --filter socketfuse build` generates the public entry points and inline Worker. `pnpm release:verify` validates the actual tarball, consumer types, bundling, and SSR imports. Maintainer release procedures are documented in the [workflow guide](https://github.com/wh1teAlter/socketfuse/blob/main/.github/workflows/README.md).
 

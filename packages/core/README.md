@@ -23,6 +23,8 @@
 
 ## 开发
 
+修改实现前，用 Plugydown Context 插件查找与本次改动有关的连接所有权、降级或投递契约。见[运行时知识入口](../../context/socket-runtime/domain.md)。
+
 ```sh
 pnpm --filter @socketfuse/core typecheck
 pnpm --filter @socketfuse/core test

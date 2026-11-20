@@ -91,6 +91,12 @@ jobs:
               case "$path" in
                 packages/socketfuse/package.json|packages/socketfuse/CHANGELOG.md|.changeset/*.md)
                   ;;
+                .changeset/pre.json)
+                  # 正式版只允许 Changesets 清理退出预发布模式的状态文件。
+                  if [ -e "$path" ] || [ "$(git show "$BEFORE_SHA:$path" | jq -r '.mode')" != "exit" ]; then
+                    printf '%s\n' "$path"
+                  fi
+                  ;;
                 *)
                   printf '%s\n' "$path"
                   ;;
@@ -115,7 +121,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.34.5
+          version: 10.34.9
       - uses: actions/setup-node@v4
         with:
           node-version: 22.18.0
@@ -144,7 +150,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.34.5
+          version: 10.34.9
       - uses: actions/setup-node@v4
         with:
           node-version: 22.18.0
@@ -168,7 +174,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.34.5
+          version: 10.34.9
       - uses: actions/setup-node@v4
         with:
           node-version: 22.18.0
@@ -186,5 +192,7 @@ jobs:
           echo "SOCKETFUSE_RELEASE_ARTIFACT=$artifact_file" >> "$GITHUB_ENV"
       # 此命令只存在于已验证 Version PR 身份、受保护 environment 与 OIDC 的 job。
       - run: |
+          # latest 只接收正式版本；版本与实际 tarball 的一致性已在上一步校验。
+          jq -e '.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' packages/socketfuse/package.json > /dev/null
           sha256sum --check "$SOCKETFUSE_RELEASE_ARTIFACT.sha256"
-          npm publish "$SOCKETFUSE_RELEASE_ARTIFACT" --access public --tag beta
+          npm publish "$SOCKETFUSE_RELEASE_ARTIFACT" --access public --tag latest

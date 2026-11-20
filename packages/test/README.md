@@ -10,6 +10,8 @@
 
 ## 命令
 
+选择验证方式时，用 Plugydown Context 插件查询单测、三浏览器 E2E 和发布包验收各自覆盖的范围。见[工程流程](../../context/engineering/domain.md)。
+
 在仓库根目录执行：
 
 ```sh

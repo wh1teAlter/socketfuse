@@ -5,10 +5,10 @@ SocketFuse 是浏览器页面使用的 WebSocket 共享库。先准备一个能�
 ## 安装
 
 ```sh
-pnpm add socketfuse@beta
+pnpm add socketfuse
 ```
 
-也可使用 `npm install socketfuse@beta` 或 `yarn add socketfuse@beta`。项目仍处于 beta，升级前阅读 [CHANGELOG](https://github.com/wh1teAlter/socketfuse/blob/main/packages/socketfuse/CHANGELOG.md)。
+也可使用 `npm install socketfuse` 或 `yarn add socketfuse`。升级前阅读 [CHANGELOG](https://github.com/wh1teAlter/socketfuse/blob/main/packages/socketfuse/CHANGELOG.md)。
 
 ## 创建与发送
 

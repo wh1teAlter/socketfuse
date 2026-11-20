@@ -1,6 +1,6 @@
 # SocketFuse
 
-[![npm beta](https://img.shields.io/npm/v/socketfuse/beta?label=npm%20beta)](https://www.npmjs.com/package/socketfuse)
+[![npm](https://img.shields.io/npm/v/socketfuse/latest)](https://www.npmjs.com/package/socketfuse)
 [![MIT](https://img.shields.io/badge/license-MIT-blue.svg)](packages/socketfuse/LICENSE)
 
 [English](README.md) · **简体中文**
@@ -9,7 +9,7 @@
 
 SocketFuse 面向需要在多个标签页接收实时数据的应用，例如通知、行情和协作工具。同一 SharedWorker 中，使用相同 `id` 和共享配置的 client 复用一个物理连接，每个页面保留自己的业务回调与生命周期。框架无关，提供 TypeScript 类型，没有第三方运行时依赖。
 
-**项目处于 beta 阶段，升级可能包含破坏性变更。** 安装版本以 npm 的 `beta` 标签为准，升级前请阅读 [CHANGELOG](packages/socketfuse/CHANGELOG.md)。仓库文档随 main 更新；中文文档是维护基准，英文 README 与其同步。
+升级前请阅读 [CHANGELOG](packages/socketfuse/CHANGELOG.md)。仓库文档随 main 更新；中文文档是维护基准，英文 README 与其同步。
 
 ## 主要能力
 
@@ -23,10 +23,10 @@ SocketFuse 面向需要在多个标签页接收实时数据的应用，例如通
 ## 安装
 
 ```sh
-pnpm add socketfuse@beta
+pnpm add socketfuse
 ```
 
-也可使用 `npm install socketfuse@beta` 或 `yarn add socketfuse@beta`。
+也可使用 `npm install socketfuse` 或 `yarn add socketfuse`。
 
 ## 快速开始
 
@@ -107,6 +107,8 @@ flowchart LR
 公开入口固定为 `socketfuse`、`socketfuse/protocol` 和 `socketfuse/worker`。应用不应导入内部 workspace。
 
 ## 参与贡献
+
+开发 SocketFuse 时使用 Plugydown Context 插件。可以请它按计划修改的模块查找仓库知识，具体用法见[贡献指南](CONTRIBUTING.md#使用-context-插件辅助开发)。
 
 欢迎提交带最小复现的问题、文档改进和有明确使用场景的功能建议。开发环境、验证命令与 PR 要求见 [CONTRIBUTING.md](CONTRIBUTING.md)，实现约定见 [AGENTS.md](AGENTS.md)。
 

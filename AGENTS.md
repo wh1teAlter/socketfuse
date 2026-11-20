@@ -8,6 +8,8 @@ SocketFuse 是浏览器端、SharedWorker-first 的同源多标签页 WebSocket 
 
 ## 工作方式
 
+开发任务使用 Plugydown Context 插件，从 `context/` 按改动范围检索已有知识，并对照当前源码、测试与相邻文档。用法见[贡献指南](CONTRIBUTING.md#使用-context-插件辅助开发)。
+
 1. 先阅读与改动范围相邻的 `README.md`、规格和 tickets；以公开 API、运行时语义、依赖或模块职责为边界安排工作。
 2. 需要新抽象、结构调整或刻意简化时，先在变更说明或对应 README 写清：现有复用能力为何不足、选择的意图、以及必须保持的不变量。未获批准不得扩大范围。
 3. 新建模块，或改变模块职责、公开 API、依赖或使用方式时，同步创建或更新该模块的 `README.md`。README 只描述职责、公开 API、依赖、使用方式和边界，不复制内部实现。

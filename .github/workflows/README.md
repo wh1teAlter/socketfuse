@@ -20,25 +20,21 @@
 2. release workflow 使用 GitHub App token 创建或更新 `chore(release): version socketfuse` PR，分支为 `changeset-release/main`。
 3. 维护者审核版本、CHANGELOG、Changeset 消费结果与验收。版本 PR 不包含业务源码改动。
 4. PR 合并后，workflow 校验已合并 PR 的 App 作者、标题、目标和专用分支，以及版本提交文件白名单。
-5. 受保护的 `npm` environment 中重新验收实际 tarball，校验摘要，然后通过 OIDC 发布同一文件到 `beta`。
+5. 受保护的 `npm` environment 中重新验收实际 tarball，校验摘要，然后通过 OIDC 发布同一文件到 `latest`。
 
-Version Packages PR 当前文件白名单包括 `packages/socketfuse/package.json`、`packages/socketfuse/CHANGELOG.md` 与 `.changeset/*.md` 路径；shell 匹配也允许 beta 的 `pre/*.md` 归档。当前白名单不包含 `.changeset/pre.json`，因此退出 beta 所需的流程调整必须单独处理，不能声称现有 workflow 已支持正式版切换。
+Version Packages PR 允许修改公开包的 package.json、CHANGELOG 和 Changeset 说明。退出预发布模式时，Changesets 还会删除处于 `exit` 状态的 `.changeset/pre.json`。
 
-发布只针对 `socketfuse`，不移动 `latest` 标签。当前仓库版本见 [package.json](../../packages/socketfuse/package.json)，已发布版本和标签以 npm 为准：
+发布只针对 `socketfuse`。当前仓库版本见 [package.json](../../packages/socketfuse/package.json)，已发布版本和标签以 npm 为准：
 
 ```sh
 npm view socketfuse dist-tags --json
 ```
 
-## Beta 阶段的手动维护
+## 从 beta 转为正式版
 
-维护者明确授权时，可以单独进行 beta 版本准备和手动发布。beta 状态本身不要求手动发布；当前自动 workflow 也使用 beta 标签。手动发布是维护者选择的操作方式，不是绕过 CI 身份检查的开关。
+维护者执行 `pnpm changeset pre exit`，将状态变更和指向 1.0.0 的 major Changeset 一起提交。合并到 main 后，版本 PR 汇总 beta 归档和本次说明、更新包版本并清理预发布状态。维护者审核并合并该 PR 后，发布 job 校验版本号并将已验收的 tarball 发布到 npm 的 `latest` 标签。
 
-在干净工作树中运行 `pnpm changeset:version`，审核包版本与 CHANGELOG，并提交待消费条目移入 `.changeset/pre/` 的完整结果。不要删除 `pre/`；它在正式版生成时还会使用。详见 [Changesets 说明](../../.changeset/README.md)。
-
-**当前 workflow 会拒绝手工版本提交触发自动发布。** 手动 bump 的提交不具备 Version Packages PR 身份；推送后不能依赖自动 publish job，也不能把 `workflow_dispatch` 当成发布按钮。本节不修改这些门禁。
-
-发布前按贡献指南完成串行验收。手动发布同样只使用经过 `release:verify` 验收的单个 tarball，发布到 beta，不递归发布私有 workspace。npm 权限与认证需由维护者处理；本地终端不能假定具备 GitHub OIDC，包的 `publishConfig.provenance` 也不能代替受支持 CI 中的 provenance 生成。
+beta 阶段若获维护者明确授权，可单独消费 Changeset 并手动将验收过的单包 tarball 发布到 `beta`。该例外仅适用于预发布版本。正式版由上述 Version Packages PR 和受保护的发布 job 完成。
 
 ## 发布包验收
 
@@ -48,7 +44,7 @@ npm view socketfuse dist-tags --json
 
 ## GitHub 与 npm 账户配置
 
-workflow 使用 pnpm `10.34.5`、Node `22.18.0`，发布 job 安装 npm `11.5.1`。
+workflow 使用 pnpm `10.34.9`、Node `22.18.0`，发布 job 安装 npm `11.5.1`。
 
 | 配置位置 | 名称 | 用途 |
 | --- | --- | --- |

@@ -44,7 +44,7 @@
   "publishConfig": {
     "access": "public",
     "provenance": true,
-    "tag": "beta"
+    "tag": "latest"
   },
   "scripts": {
     "build": "node ./scripts/generate-inline-worker.mjs && tsdown",
