@@ -7,7 +7,7 @@
 import type { BackpressureOptions, ConnectionLimits, HeartbeatOptions, LeaseOptions, QueueOptions, ReconnectOptions, WorkerResourceLimits } from './types'
 
 /** page-to-Worker 控制协议的当前破坏性版本号。 */
-export const CONTROL_PROTOCOL_MAJOR: number = 3
+export const CONTROL_PROTOCOL_MAJOR: number = 4
 /** 一个 mebibyte 的字节数，统一用于内存与 payload 上限。 */
 export const MIB: number = 1024 * 1024
 /** 初始与重连 endpoint 允许的最大 UTF-16 字符数。 */

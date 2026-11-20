@@ -77,7 +77,7 @@ export type ClientOperation = { readonly sessionId: string } & (
   | { readonly type: 'complete-reconnect-plan', readonly requestId: string, readonly planId: string, readonly url?: string, readonly delay?: number }
   | { readonly type: 'reject-reconnect-plan', readonly requestId: string, readonly planId: string }
   | { readonly type: 'lease', readonly sequence: number }
-  | { readonly type: 'receipt', readonly deliveryId: number }
+  | { readonly type: 'receipt' | 'requeue', readonly deliveryId: number }
   | { readonly type: 'suspend' | 'restore' }
   | { readonly type: 'visibility', readonly visibility: ClientVisibility }
 )
@@ -189,7 +189,7 @@ export function isClientControlMessage(value: unknown): value is ClientControlMe
     const base = ['type', 'sessionId']
     if (value.type === 'lease')
       return exactKeys(value, [...base, 'sequence']) && integer(value.sequence, 1)
-    if (value.type === 'receipt')
+    if (value.type === 'receipt' || value.type === 'requeue')
       return exactKeys(value, [...base, 'deliveryId']) && integer(value.deliveryId, 1)
     if (value.type === 'suspend' || value.type === 'restore')
       return exactKeys(value, base)

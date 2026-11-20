@@ -6,7 +6,7 @@
 
 内部 `createConnectionRuntime` 接受端口，协调连接需求和回收；没有单独 npm 入口。自定义 Worker 通过 `socketfuse/worker` 的 runtime API 部署，以 `defineWorkerProtocol` 配对注册同步 adapter 和连接扩展。
 
-协议处理在向页面投递前每物理帧执行一次。回放仅保存业务投影快照；分派资格按帧选择，lease 与页面检查抑制过期执行，不承诺异步副作用互斥。异步准备独立于页面业务 handler，受总期限和未结算额度限制。
+协议处理在向页面投递前每物理帧执行一次。回放仅保存业务投影快照；页面发出 suspend 后才收到的已发送投递以 `requeue` 退回，作为最早数据放回回放队首；分派资格按帧选择，lease 与页面检查抑制过期执行，不承诺异步副作用互斥。异步准备独立于页面业务 handler，受总期限和未结算额度限制。
 
 ## 依赖与边界
 

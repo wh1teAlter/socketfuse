@@ -18,7 +18,7 @@ SocketFuse 始终观察 visibility 与 freeze/resume，以便 Worker 转移 disp
 启用 restore 后还会把这些信号用于消息暂停与回放。
 启用 restore 时，BFCache 的 `pagehide` 暂停当前页面。restore 关闭时，以及普通 `pagehide`，会自动分离，除非设置
 `autoClose: false`。暂停期间，direct 和 SharedWorker transport 都不会派发实时消息。启用回放后，
-消息只在 runtime 的每参与期唯一缓冲中保留，随后按 FIFO 顺序通过普通 `onMessage` 监听器派发，keyed handler 不接收回放，并带有
+消息只在 runtime 的每参与期唯一缓冲中保留；暂停时已在途、随后才到达页面的消息会退回该缓冲，不会丢失。缓冲中的消息随后按 FIFO 顺序通过普通 `onMessage` 监听器派发，keyed handler 不接收回放，并带有
 `event.replayed === true`。
 
 Worker 只派发事件，绝不等待页面处理器。页面业务 Promise 不占用 runtime 等待表；direct 的页面主线程仍受浏览器自身调度影响。

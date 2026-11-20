@@ -11,12 +11,14 @@ interface ReplayItem {
   readonly receivedAt: number
   /** 本条保留表示的预算。 */
   readonly bytes: number
+  /** 页面暂停后退回的已发送投递；它早于所有未退回的缓存项。 */
+  readonly requeued: boolean
 }
 
 /** 一个端口拥有的 delivery credit 和暂停/恢复 FIFO。 */
 export class ParticipantDelivery {
-  /** 尚未由页面传输层收取的 envelope 字节。 */
-  private readonly outstanding = new Map<number, number>()
+  /** 尚未由页面传输层收取或退回的投递；保留 envelope 以便退回时重新进入回放，总量受投递额度约束。 */
+  private readonly outstanding = new Map<number, { readonly bytes: number, readonly message: Extract<WorkerControlMessage, { type: 'message' }> }>()
   /** 尚未归还的总字节。 */
   private outstandingBytes = 0
   /** 单参与期不复用的投递序号。 */
@@ -64,14 +66,19 @@ export class ParticipantDelivery {
     this.send(message, bytes)
   }
 
-  /** receipt 仅归还当前 session 已发送的项；重复/过期 receipt 不改变计费。 */
-  receipt(deliveryId: number): void {
-    // 实际保留或投递表示的预算，不只计算可见业务值。
-    const bytes = this.outstanding.get(deliveryId)
-    if (bytes === undefined || this.disposed)
+  /**
+   * receipt 仅归还当前 session 已发送的项；重复/过期 receipt 不改变计费。
+   * @param requeue 页面在发出 suspend 后才收到该投递；它早于所有缓存项，启用回放时放回队首而不是丢失。
+   */
+  receipt(deliveryId: number, requeue = false): void {
+    // 已发送且尚未归还额度的投递。
+    const item = this.outstanding.get(deliveryId)
+    if (item === undefined || this.disposed)
       return
     this.outstanding.delete(deliveryId)
-    this.outstandingBytes -= bytes
+    this.outstandingBytes -= item.bytes
+    if (requeue && this.restore.replay)
+      this.pushReplay(item.message.data, item.message.receivedAt, true)
     this.overflowNotified = false
     this.notifyOverflow()
     this.drain()
@@ -113,28 +120,37 @@ export class ParticipantDelivery {
   /** 先登记额度再发送，防止同步测试端口归还 receipt 时找不到项。 */
   private send(message: Extract<WorkerControlMessage, { type: 'message' }>, bytes: number): boolean {
     this.sequence = message.deliveryId
-    this.outstanding.set(message.deliveryId, bytes)
+    this.outstanding.set(message.deliveryId, { bytes, message })
     this.outstandingBytes += bytes
     return this.post(message)
   }
 
-  /** 超大新帧只丢自己；容得下的帧才允许按 oldest-first 淘汰旧缓存。 */
-  private pushReplay(data: unknown, receivedAt: number): void {
+  /** 超大新帧只丢自己；容得下的帧才允许按 oldest-first 淘汰旧缓存，退回项若已是最旧则只丢它。 */
+  private pushReplay(data: unknown, receivedAt: number, requeued = false): void {
     // 实际保留或投递表示的预算，不只计算可见业务值。
     const bytes = estimateStructuredCloneBytes(data, this.restore.maxBytes)
     if (bytes > this.restore.maxBytes) {
       this.drop('replay', bytes)
       return
     }
+    // 实时数据排在队尾；退回项按 deliveryId 顺序到达，只排在更早的退回项之后。
+    let index = requeued ? this.replay.findIndex(item => !item.requeued) : this.replay.length
+    if (index < 0)
+      index = this.replay.length
     while (this.replay.length >= this.restore.maxMessages || this.replayBytes + bytes > this.restore.maxBytes) {
+      if (index === 0) {
+        this.drop('replay', bytes, 'drop-oldest')
+        return
+      }
       // 被 FIFO 容量策略淘汰的旧缓存项。
       const removed = this.replay.shift()
       if (removed === undefined)
         break
+      index--
       this.replayBytes -= removed.bytes
       this.drop('replay', removed.bytes, 'drop-oldest')
     }
-    this.replay.push({ data, receivedAt, bytes })
+    this.replay.splice(index, 0, { data, receivedAt, bytes, requeued })
     this.replayBytes += bytes
   }
 

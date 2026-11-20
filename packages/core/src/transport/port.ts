@@ -109,6 +109,8 @@ export class PortTransport {
   private validUntil = 0
   /** 最近成功附着的 epoch。 */
   private epoch = ''
+  /** 已向 runtime 发出 suspend 且尚未 restore；此后收到的投递必须退回，不能在页面丢弃。 */
+  private suspended = false
 
   /** 绑定新参与期，在调用方开始握手前就安装接收监听。 */
   constructor(readonly port: MessagePortLike, readonly sessionId: string, readonly kind: 'direct' | 'shared-worker',
@@ -223,6 +225,8 @@ export class PortTransport {
       return
     try {
       this.port.postMessage({ ...message, sessionId: this.sessionId })
+      if (message.type === 'suspend' || message.type === 'restore')
+        this.suspended = message.type === 'suspend'
     }
     catch {
       this.fail(new SocketFuseError('WORKER_DISCONNECTED', { retryable: true }))
@@ -383,6 +387,11 @@ export class PortTransport {
     if (value.type === 'message') {
       if (estimateStructuredCloneBytes(value, this.limits.maxDeliveryBytes) > this.limits.maxDeliveryBytes) {
         this.fail(new SocketFuseError('MESSAGE_TOO_LARGE'))
+        return
+      }
+      if (this.suspended) {
+        // runtime 可能在收到 suspend 前已发出此帧；同端口 FIFO 保证它先处理 suspend，退回项进入回放队首。
+        this.notify({ type: 'requeue', deliveryId: value.deliveryId })
         return
       }
       // 表示页面传输层已取走 envelope，不是页面业务成功或其 Promise 完成。

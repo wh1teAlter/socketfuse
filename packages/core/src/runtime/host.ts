@@ -682,7 +682,8 @@ export function createConnectionRuntime(options: ConnectionRuntimeOptions = {}):
           post(session, { type: 'lease-confirmed', sessionId: session.id, sequence: request.sequence, connectionEpoch: entry.controller.options.connectionEpoch, grants: entry.dispatch.grantsForClient(session.id) })
           return
         case 'receipt':
-          session.delivery?.receipt(request.deliveryId)
+        case 'requeue':
+          session.delivery?.receipt(request.deliveryId, request.type === 'requeue')
           return
         case 'visibility':
           session.visibility = request.visibility
